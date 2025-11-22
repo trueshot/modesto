@@ -1,0 +1,19 @@
+{
+  "id": "lodge",
+  "name": "Lodge Facility",
+  "location": {
+    "address": "Industrial Park, Lodge, SC 29082",
+    "city": "Lodge",
+    "state": "SC",
+    "country": "USA",
+    "latitude": 33.5123,
+    "longitude": -81.2456
+  },
+  "description": "Main warehouse facility with packing lines and cold storage",
+  "status": "active",
+  "createdDate": "2024-11-04",
+  "lastModified": "2024-11-06",
+  "specVersion": "2.0",
+  "specFile": "warehouse.json",
+  "svgFile": "warehouse.svg"
+}

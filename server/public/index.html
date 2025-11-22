@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ModelT Warehouse 3D Viewer</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #renderCanvas {
+            width: 100%;
+            height: 100vh;
+            touch-action: none;
+        }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            max-width: 300px;
+        }
+        #warehouseSelector {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 5px;
+            color: white;
+        }
+        #warehouseSelector select {
+            padding: 5px 10px;
+            margin: 0 5px;
+            border-radius: 3px;
+            border: 1px solid #666;
+            background: #333;
+            color: white;
+            cursor: pointer;
+        }
+        #debug {
+            position: absolute;
+            top: 50px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 11px;
+            max-height: 90vh;
+            overflow-y: auto;
+            max-width: 300px;
+        }
+        #cameraInfo {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 13px;
+            font-family: 'Courier New', monospace;
+            min-width: 250px;
+            border: 2px solid rgba(255, 200, 50, 0.8);
+        }
+        #cameraInfo h3 {
+            margin: 0 0 10px 0;
+            color: rgba(255, 200, 50, 1);
+            font-size: 14px;
+        }
+        #cameraInfo .param {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        #cameraInfo .param .label {
+            color: rgba(200, 200, 200, 1);
+        }
+        #cameraInfo .param .value {
+            color: rgba(100, 200, 255, 1);
+            font-weight: bold;
+        }
+        #cameraControls {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+            max-width: 90%;
+            justify-content: center;
+        }
+        .cameraBtn {
+            background: rgba(255, 100, 100, 0.8);
+            color: white;
+            border: 2px solid transparent;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .cameraBtn:hover {
+            background: rgba(255, 150, 150, 1);
+        }
+        .cameraBtn:active {
+            background: rgba(200, 50, 50, 1);
+        }
+        .cameraBtn.selected {
+            background: rgba(255, 200, 50, 1);
+            border-color: rgba(255, 255, 255, 0.9);
+            color: black;
+        }
+        .overviewBtn {
+            background: rgba(100, 100, 255, 0.8);
+        }
+        .overviewBtn:hover {
+            background: rgba(150, 150, 255, 1);
+        }
+        .overviewBtn.selected {
+            background: rgba(100, 200, 255, 1);
+            border-color: rgba(255, 255, 255, 0.9);
+            color: black;
+        }
+        .viewToggleBtn {
+            background: rgba(100, 200, 100, 0.8);
+            color: white;
+            border: 2px solid transparent;
+            padding: 5px 12px;
+            margin-left: 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .viewToggleBtn:hover {
+            background: rgba(150, 220, 150, 1);
+        }
+        .viewToggleBtn:active {
+            background: rgba(80, 180, 80, 1);
+        }
+        #svgContainer {
+            display: none;
+            width: 100%;
+            height: 100vh;
+            overflow: auto;
+            background: white;
+        }
+        #svgViewer {
+            max-width: 100%;
+            height: auto;
+        }
+    </style>
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+    <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+    <script src="/js/warehouseParser.js"></script>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <div id="warehouseSelector">
+        <label for="warehouse">Warehouse:</label>
+        <select id="warehouse" onchange="changeWarehouse(this.value)">
+            <option value="">Loading...</option>
+        </select>
+        <button id="viewToggle" class="viewToggleBtn" onclick="toggleView()">View 2D SVG</button>
+    </div>
+    <div id="svgContainer">
+        <div style="padding: 20px;">
+            <button class="viewToggleBtn" onclick="toggleView()" style="margin-bottom: 10px;">View 3D Model</button>
+            <div id="svgViewer" style="border: 1px solid #ccc; padding: 10px;"></div>
+        </div>
+    </div>
+    <div id="info">
+        <strong>ModelT 3D Viewer</strong><br>
+        <span id="status">Initializing...</span>
+    </div>
+    <div id="cameraControls">
+        <button class="cameraBtn overviewBtn" onclick="setCameraView('overview', this)">Overview</button>
+    </div>
+    <div id="debug">
+        <strong>Debug Info:</strong><br>
+        <div id="debugContent"></div>
+    </div>
+    <div id="cameraInfo" style="display: none;">
+        <h3 id="cameraName">Camera View</h3>
+        <div class="param">
+            <span class="label">Position (X, Y):</span>
+            <span class="value" id="camPos">-</span>
+        </div>
+        <div class="param">
+            <span class="label">Elevation:</span>
+            <span class="value" id="camElevation">-</span>
+        </div>
+        <div class="param">
+            <span class="label">Direction:</span>
+            <span class="value" id="camDirection">-</span>
+        </div>
+        <div class="param">
+            <span class="label">Tilt:</span>
+            <span class="value" id="camTilt">-</span>
+        </div>
+        <div class="param">
+            <span class="label">Viewing Angle:</span>
+            <span class="value" id="camViewAngle">-</span>
+        </div>
+        <div class="param">
+            <span class="label">Range:</span>
+            <span class="value" id="camRange">-</span>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+        const statusEl = document.getElementById("status");
+        const debugEl = document.getElementById("debugContent");
+        const warehouseSelector = document.getElementById("warehouse");
+
+        // Global references
+        let currentScene = null;
+        let currentCamera = null;
+        let arcRotateCamera = null;
+        let universalCamera = null;
+        let warehouseCameras = [];
+        let currentSelectedButton = null;
+        let currentCameraData = null;
+        let lensDistortionEffect = null;
+        let currentWarehouseId = null;
+
+        // Get warehouse ID from query parameter or default to 'lodge'
+        function getWarehouseIdFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('warehouse') || 'lodge';
+        }
+
+        // Load list of available warehouses
+        async function loadWarehouseList() {
+            try {
+                const response = await fetch('/api/warehouses');
+                const data = await response.json();
+
+                if (data.warehouses && data.warehouses.length > 0) {
+                    warehouseSelector.innerHTML = '';
+                    const selectedId = getWarehouseIdFromURL();
+
+                    data.warehouses.forEach(wh => {
+                        const option = document.createElement('option');
+                        option.value = wh.id;
+                        option.textContent = wh.name || wh.id;
+                        if (wh.id === selectedId) {
+                            option.selected = true;
+                        }
+                        warehouseSelector.appendChild(option);
+                    });
+
+                    // Load the selected warehouse
+                    await loadWarehouse(selectedId);
+                }
+            } catch (error) {
+                statusEl.textContent = `Error loading warehouses: ${error.message}`;
+                debugEl.textContent = error.stack;
+            }
+        }
+
+        // Change warehouse when selector changes
+        async function changeWarehouse(warehouseId) {
+            if (warehouseId) {
+                await loadWarehouse(warehouseId);
+            }
+        }
+
+        // Load warehouse from API
+        async function loadWarehouse(warehouseId) {
+            try {
+                currentWarehouseId = warehouseId;
+                statusEl.textContent = `Loading ${warehouseId}...`;
+
+                // Fetch SVG data via API
+                const response = await fetch(`/api/warehouses/${warehouseId}/svg-data`);
+                if (!response.ok) {
+                    throw new Error(`Failed to load SVG: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const svgText = data.svg;
+
+                // Store SVG data for toggle view
+                currentSvgData = svgText;
+
+                statusEl.textContent = "Parsing warehouse data...";
+
+                // Parse SVG
+                const parser = new DOMParser();
+                const svgDoc = parser.parseFromString(svgText, 'image/svg+xml');
+
+                // Check for ModelT format
+                const modelTSchema = svgDoc.getElementById('modelt-schema');
+                let warehouseData, isModelT = false;
+
+                if (modelTSchema) {
+                    isModelT = true;
+                    const modelTParser = new ModelTParser(svgDoc);
+                    warehouseData = modelTParser.parse();
+                } else {
+                    const warehouseParser = new WarehouseParser(svgDoc);
+                    warehouseData = warehouseParser.parse();
+                }
+
+                // Debug output
+                if (isModelT) {
+                    const isV2 = warehouseData.slabs && Array.isArray(warehouseData.slabs);
+
+                    if (isV2) {
+                        const slabsInfo = warehouseData.slabs.map(slab => `
+                            <strong>${slab.id}</strong>: ${slab.name}<br>
+                            &nbsp;&nbsp;Walls: ${slab.walls?.length || 0}
+                            (${slab.walls?.filter(w => w.type === 'slabPerimeter').length || 0} perimeter,
+                            ${slab.walls?.filter(w => w.type === 'perimeter').length || 0} standalone,
+                            ${slab.walls?.filter(w => w.type === 'partition').length || 0} partition)<br>
+                            &nbsp;&nbsp;Columns: ${slab.columns?.length || 0}<br>
+                            &nbsp;&nbsp;Doors: ${slab.doors?.length || 0}<br>
+                            &nbsp;&nbsp;Cameras: ${slab.cameras?.length || 0}<br>
+                        `).join('');
+
+                        debugEl.innerHTML = `
+                            <strong>ModelT v2.0 Format</strong><br>
+                            <strong>Facility:</strong> ${warehouseData.name}<br>
+                            <strong>Location:</strong> ${warehouseData.location?.city}, ${warehouseData.location?.state}<br>
+                            <strong>Slabs:</strong> ${warehouseData.slabs.length}<br>
+                            ${slabsInfo}
+                        `;
+                    } else {
+                        debugEl.innerHTML = `
+                            <strong>ModelT v1.0 Format</strong><br>
+                            <strong>Parsed Components:</strong><br>
+                            Slab: ${warehouseData.slab ? '✓' : '✗'}<br>
+                            Walls: ${warehouseData.walls ? '✓' : '✗'}<br>
+                            Partition Walls: ${warehouseData.partitionWalls?.length || 0}<br>
+                            Columns: ${warehouseData.columns?.length || 0}<br>
+                            Doors: ${warehouseData.doors?.length || 0}<br>
+                            Cameras: ${warehouseData.cameras?.length || 0}<br>
+                        `;
+                    }
+                }
+
+                statusEl.textContent = "Building 3D scene...";
+
+                // Dispose old scene if exists
+                if (currentScene) {
+                    currentScene.dispose();
+                }
+
+                // Create scene
+                const scene = createScene(warehouseData, isModelT);
+
+                // Populate camera buttons
+                populateCameraButtons(warehouseData, isModelT);
+
+                statusEl.textContent = "Ready!";
+
+            } catch (error) {
+                statusEl.textContent = `Error: ${error.message}`;
+                debugEl.innerHTML = `<pre style="color: red;">${error.stack}</pre>`;
+                console.error(error);
+            }
+        }
+
+        function createScene(warehouseData, isModelT) {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color3(0.8, 0.9, 1.0);
+
+            scene.metadata = {
+                isV2: warehouseData.slabs && Array.isArray(warehouseData.slabs),
+                warehouseData: warehouseData,
+                builder: null
+            };
+
+            // Get slab info for camera positioning
+            let centerX, centerY, centerZ;
+            if (isModelT) {
+                const isV2 = warehouseData.slabs && Array.isArray(warehouseData.slabs);
+                const corners = isV2 ? warehouseData.slabs[0].corners : warehouseData.slab.corners;
+                const xs = corners.map(c => c.x);
+                const ys = corners.map(c => c.y);
+                const minX = Math.min(...xs);
+                const maxX = Math.max(...xs);
+                const minY = Math.min(...ys);
+                const maxY = Math.max(...ys);
+                centerX = (minX + maxX) / 2;
+                centerY = 10;
+                centerZ = -((minY + maxY) / 2);
+            } else {
+                const slab = warehouseData.slab;
+                centerX = slab.x + slab.width / 2;
+                centerY = 10;
+                centerZ = -(slab.y + slab.height / 2);
+            }
+
+            // ArcRotate Camera
+            arcRotateCamera = new BABYLON.ArcRotateCamera(
+                "arcCamera",
+                -3 * Math.PI / 4,
+                Math.PI / 3,
+                600,
+                new BABYLON.Vector3(centerX, centerY, centerZ),
+                scene
+            );
+            arcRotateCamera.lowerRadiusLimit = 50;
+            arcRotateCamera.upperRadiusLimit = 1500;
+            arcRotateCamera.lowerBetaLimit = -Math.PI / 2;
+            arcRotateCamera.upperBetaLimit = Math.PI;
+
+            // Universal Camera
+            universalCamera = new BABYLON.UniversalCamera(
+                "fpCamera",
+                new BABYLON.Vector3(centerX, centerY, centerZ),
+                scene
+            );
+            universalCamera.speed = 2;
+            universalCamera.angularSensibility = 1000;
+
+            // Start with arc rotate camera
+            scene.activeCamera = arcRotateCamera;
+            arcRotateCamera.attachControl(canvas, true);
+
+            // Store global references
+            currentScene = scene;
+            currentCamera = arcRotateCamera;
+
+            // Lighting
+            const hemiLight = new BABYLON.HemisphericLight(
+                "hemiLight",
+                new BABYLON.Vector3(0, 1, 0),
+                scene
+            );
+            hemiLight.intensity = 0.7;
+
+            const dirLight = new BABYLON.DirectionalLight(
+                "dirLight",
+                new BABYLON.Vector3(-1, -2, -1),
+                scene
+            );
+            dirLight.intensity = 0.5;
+
+            // Ground plane
+            let groundWidth = 800;
+            let groundHeight = 800;
+            let groundCenterX = 0;
+            let groundCenterZ = 0;
+
+            if (isModelT && warehouseData.property && warehouseData.property.boundary) {
+                const boundary = warehouseData.property.boundary;
+                groundWidth = boundary.width;
+                groundHeight = boundary.height;
+                groundCenterX = boundary.x + boundary.width / 2;
+                groundCenterZ = -(boundary.y + boundary.height / 2);
+            }
+
+            const ground = BABYLON.MeshBuilder.CreateGround(
+                "ground",
+                { width: groundWidth, height: groundHeight },
+                scene
+            );
+            ground.position.x = groundCenterX;
+            ground.position.y = 0;
+            ground.position.z = groundCenterZ;
+
+            const groundMaterial = new BABYLON.StandardMaterial("groundMat", scene);
+            groundMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.6, 0.35);
+            groundMaterial.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+            ground.material = groundMaterial;
+
+            // Build warehouse
+            let builder, meshes;
+            if (isModelT) {
+                builder = new ModelTBuilder(scene, warehouseData);
+                meshes = builder.build();
+                scene.metadata.builder = builder;
+            } else {
+                builder = new WarehouseBuilder(scene, warehouseData);
+                meshes = builder.build();
+            }
+
+            // Add coordinate axes
+            const axisSize = 100;
+
+            const axisX = BABYLON.MeshBuilder.CreateLines("axisX", {
+                points: [
+                    new BABYLON.Vector3(0, 0, 0),
+                    new BABYLON.Vector3(axisSize, 0, 0)
+                ]
+            }, scene);
+            axisX.color = new BABYLON.Color3(1, 0, 0);
+
+            const axisY = BABYLON.MeshBuilder.CreateLines("axisY", {
+                points: [
+                    new BABYLON.Vector3(0, 0, 0),
+                    new BABYLON.Vector3(0, axisSize, 0)
+                ]
+            }, scene);
+            axisY.color = new BABYLON.Color3(0, 1, 0);
+
+            const axisZ = BABYLON.MeshBuilder.CreateLines("axisZ", {
+                points: [
+                    new BABYLON.Vector3(0, 0, 0),
+                    new BABYLON.Vector3(0, 0, axisSize)
+                ]
+            }, scene);
+            axisZ.color = new BABYLON.Color3(0, 0, 1);
+
+            return scene;
+        }
+
+        function populateCameraButtons(warehouseData, isModelT) {
+            const controlsDiv = document.getElementById("cameraControls");
+
+            // Clear existing buttons (except overview)
+            const buttons = controlsDiv.querySelectorAll('.cameraBtn:not(.overviewBtn)');
+            buttons.forEach(btn => btn.remove());
+
+            // Get cameras from warehouse data
+            warehouseCameras = [];
+            if (isModelT) {
+                const isV2 = warehouseData.slabs && Array.isArray(warehouseData.slabs);
+                if (isV2) {
+                    warehouseData.slabs.forEach(slab => {
+                        if (slab.cameras && slab.cameras.length > 0) {
+                            warehouseCameras.push(...slab.cameras.map(cam => ({
+                                ...cam,
+                                slabElevation: slab.elevation || 4
+                            })));
+                        }
+                    });
+                } else {
+                    if (warehouseData.cameras) {
+                        warehouseCameras.push(...warehouseData.cameras.map(cam => ({
+                            ...cam,
+                            slabElevation: 4
+                        })));
+                    }
+                }
+            }
+
+            // Add button for each camera
+            warehouseCameras.forEach(cam => {
+                const btn = document.createElement('button');
+                btn.className = 'cameraBtn';
+                btn.textContent = `${cam.name || cam.id} (#${cam.number || '?'})`;
+                btn.onclick = (e) => setCameraView(cam.id, e.target);
+                controlsDiv.appendChild(btn);
+            });
+
+            // Select overview button by default
+            const overviewBtn = document.querySelector('.overviewBtn');
+            if (overviewBtn) {
+                overviewBtn.classList.add('selected');
+                currentSelectedButton = overviewBtn;
+            }
+        }
+
+        function updateCameraInfoPanel(cam) {
+            document.getElementById('cameraInfo').style.display = 'block';
+            document.getElementById('cameraName').textContent = `${cam.name || cam.id} (#${cam.number || '?'})`;
+
+            currentCameraData = {
+                name: cam.name || cam.id,
+                number: cam.number || '?',
+                initialX: cam.x,
+                initialY: cam.y,
+                slabElevation: cam.slabElevation,
+                initialElevation: cam.elevation || 12,
+                viewingAngle: cam.viewingAngle || 90,
+                range: cam.range || 50
+            };
+        }
+
+        function updateCameraInfoRealtime() {
+            if (!universalCamera || !currentCameraData) return;
+            if (currentScene.activeCamera !== universalCamera) return;
+
+            const pos = universalCamera.position;
+            const svgX = pos.x;
+            const svgY = -pos.z;
+            const elevation = pos.y - (currentCameraData.slabElevation || 4);
+
+            let directionDeg = -(universalCamera.rotation.y * 180 / Math.PI);
+            while (directionDeg < 0) directionDeg += 360;
+            while (directionDeg >= 360) directionDeg -= 360;
+
+            let tiltDeg = universalCamera.rotation.x * 180 / Math.PI;
+
+            document.getElementById('camPos').textContent = `(${svgX.toFixed(1)}, ${svgY.toFixed(1)})`;
+            document.getElementById('camElevation').textContent = `${elevation.toFixed(1)}ft above slab`;
+
+            const compassName = getCompassName(directionDeg);
+            document.getElementById('camDirection').textContent = `${compassName} (${directionDeg.toFixed(0)}°)`;
+            document.getElementById('camTilt').textContent = `${tiltDeg.toFixed(1)}° down`;
+            document.getElementById('camViewAngle').textContent = `${currentCameraData.viewingAngle}°`;
+            document.getElementById('camRange').textContent = `${currentCameraData.range}ft`;
+        }
+
+        function getCompassName(deg) {
+            if (deg >= 337.5 || deg < 22.5) return 'North';
+            if (deg >= 22.5 && deg < 67.5) return 'NE';
+            if (deg >= 67.5 && deg < 112.5) return 'East';
+            if (deg >= 112.5 && deg < 157.5) return 'SE';
+            if (deg >= 157.5 && deg < 202.5) return 'South';
+            if (deg >= 202.5 && deg < 247.5) return 'SW';
+            if (deg >= 247.5 && deg < 292.5) return 'West';
+            if (deg >= 292.5 && deg < 337.5) return 'NW';
+            return '';
+        }
+
+        function setCameraView(cameraId, buttonElement) {
+            if (!currentScene) return;
+
+            if (currentSelectedButton) {
+                currentSelectedButton.classList.remove('selected');
+            }
+            if (buttonElement) {
+                buttonElement.classList.add('selected');
+                currentSelectedButton = buttonElement;
+            }
+
+            if (cameraId === 'overview') {
+                document.getElementById('cameraInfo').style.display = 'none';
+
+                if (currentScene.activeCamera !== arcRotateCamera) {
+                    currentCamera.detachControl();
+                    currentScene.activeCamera = arcRotateCamera;
+                    arcRotateCamera.attachControl(canvas, true);
+                    currentCamera = arcRotateCamera;
+                }
+
+                const isV2 = currentScene.metadata && currentScene.metadata.isV2;
+                const warehouseData = currentScene.metadata && currentScene.metadata.warehouseData;
+
+                if (warehouseData) {
+                    const corners = isV2 ? warehouseData.slabs[0].corners : warehouseData.slab.corners;
+                    const xs = corners.map(c => c.x);
+                    const ys = corners.map(c => c.y);
+                    const centerX = (Math.min(...xs) + Math.max(...xs)) / 2;
+                    const centerY = 10;
+                    const centerZ = -((Math.min(...ys) + Math.max(...ys)) / 2);
+
+                    arcRotateCamera.setTarget(new BABYLON.Vector3(centerX, centerY, centerZ));
+                }
+
+                arcRotateCamera.alpha = -3 * Math.PI / 4;
+                arcRotateCamera.beta = Math.PI / 3;
+                arcRotateCamera.radius = 600;
+                return;
+            }
+
+            const cam = warehouseCameras.find(c => c.id === cameraId);
+            if (!cam) return;
+
+            updateCameraInfoPanel(cam);
+
+            if (currentScene.activeCamera !== universalCamera) {
+                currentCamera.detachControl();
+                currentScene.activeCamera = universalCamera;
+                universalCamera.attachControl(canvas, true);
+                currentCamera = universalCamera;
+            }
+
+            const camPosX = cam.x;
+            const camPosY = cam.slabElevation + (cam.elevation || 12);
+            const camPosZ = -cam.y;
+
+            universalCamera.position = new BABYLON.Vector3(camPosX, camPosY, camPosZ);
+
+            const directionRad = cam.direction * Math.PI / 180;
+            universalCamera.rotation.y = -directionRad;
+
+            const tiltRad = cam.tilt * Math.PI / 180;
+            universalCamera.rotation.x = tiltRad;
+
+            const viewingAngleDeg = cam.viewingAngle || 90;
+            const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
+
+            const hFovRad = viewingAngleDeg * Math.PI / 180;
+            const vFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) / aspectRatio);
+
+            universalCamera.fov = vFovRad;
+
+            console.log(`Camera ${cam.name}: viewingAngle=${viewingAngleDeg}° → fov=${vFovRad.toFixed(3)} rad`);
+        }
+
+        let currentSvgData = null;
+
+        function toggleView() {
+            const renderCanvas = document.getElementById("renderCanvas");
+            const svgContainer = document.getElementById("svgContainer");
+            const viewToggle = document.getElementById("viewToggle");
+
+            if (renderCanvas.style.display !== "none") {
+                // Switch to SVG view
+                renderCanvas.style.display = "none";
+                svgContainer.style.display = "block";
+                viewToggle.textContent = "View 3D Model";
+
+                // Load and display SVG
+                if (currentWarehouseId && currentSvgData) {
+                    displaySvg(currentSvgData);
+                }
+            } else {
+                // Switch to 3D view
+                renderCanvas.style.display = "block";
+                svgContainer.style.display = "none";
+                viewToggle.textContent = "View 2D SVG";
+
+                // Resume rendering
+                if (currentScene && engine) {
+                    engine.runRenderLoop(() => {
+                        currentScene.render();
+                        updateCameraInfoRealtime();
+                    });
+                }
+            }
+        }
+
+        function displaySvg(svgData) {
+            const svgViewer = document.getElementById("svgViewer");
+            svgViewer.innerHTML = svgData;
+
+            // Make SVG responsive
+            const svg = svgViewer.querySelector("svg");
+            if (svg) {
+                svg.style.maxWidth = "100%";
+                svg.style.height = "auto";
+                svg.style.border = "1px solid #999";
+            }
+        }
+
+        // Initialize
+        async function init() {
+            try {
+                await loadWarehouseList();
+
+                if (currentScene) {
+                    engine.runRenderLoop(() => {
+                        currentScene.render();
+                        updateCameraInfoRealtime();
+                    });
+                }
+            } catch (error) {
+                statusEl.textContent = `Initialization error: ${error.message}`;
+                console.error(error);
+            }
+        }
+
+        window.addEventListener("resize", () => {
+            engine.resize();
+        });
+
+        // Start initialization
+        init();
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# Suggested Names for Structural Support Columns
+# Tree Names (common North American trees)
+
+oak
+maple
+pine
+birch
+cedar
+elm
+ash
+willow
+spruce
+fir
+poplar
+cherry
+walnut
+hickory
+sycamore
+redwood
+cypress
+beech
+magnolia
+dogwood

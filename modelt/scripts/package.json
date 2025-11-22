@@ -1,0 +1,13 @@
+{
+  "name": "modelt-scripts",
+  "version": "1.0.0",
+  "description": "ModelT warehouse specification utilities",
+  "main": "warehouseParser.js",
+  "scripts": {
+    "parse": "node warehouseParser.js",
+    "harvest": "node harvestWarehouseSVG2.js"
+  },
+  "dependencies": {
+    "xml2js": "^0.4.23"
+  }
+}

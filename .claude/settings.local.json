@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(flowbrain)",
+      "Bash(node --version:*)",
+      "Bash(gh repo list:*)",
+      "Bash(git push:*)",
+      "Bash(gh auth status:*)",
+      "Bash(gh auth:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nArchive current working modelt skill as baseline v1.0\n\nCreates _baseline/ directory containing:\n- Working SKILL.md with complete reference documentation\n- generate-svg.js script (tested and functional)\n- All naming convention files and JSON registry\n- MODELT_SPECIFICATION.md complete technical reference\n\nThis baseline allows safe iteration on the skill while maintaining\na known-good state to fall back to if needed.\n\nThe _baseline/ directory is NOT read by Claude and will not interfere\nwith skill operation. It serves as a reference point for changes.\n\n🤖 Generated with Claude Code\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(ln:*)",
+      "Bash(readlink:*)",
+      "Skill(modelt-warehouse-builder)",
+      "Bash(mkdir:*)",
+      "Bash(node generate-svg.js:*)",
+      "Bash(npm install:*)",
+      "Bash(timeout 5 node:*)",
+      "Bash(netstat:*)",
+      "Bash(tree:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
