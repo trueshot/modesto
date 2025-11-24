@@ -157,12 +157,50 @@
             display: none;
             width: 100%;
             height: 100vh;
-            overflow: auto;
             background: white;
+            flex-direction: column;
+        }
+        #svgContainer.active {
+            display: flex;
+        }
+        #svgControls {
+            position: sticky;
+            top: 0;
+            background: white;
+            padding: 10px;
+            border-bottom: 2px solid #ccc;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            z-index: 100;
+        }
+        .zoomBtn {
+            background: rgba(100, 200, 100, 0.8);
+            color: white;
+            border: 2px solid transparent;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .zoomBtn:hover {
+            background: rgba(150, 220, 150, 1);
+        }
+        .zoomBtn.active {
+            background: rgba(50, 180, 50, 1);
+            border-color: rgba(255, 255, 255, 0.9);
+        }
+        #svgViewerContainer {
+            flex: 1;
+            overflow: auto;
         }
         #svgViewer {
-            max-width: 100%;
-            height: auto;
+            display: inline-block;
+            padding: 20px;
+            transform-origin: top left;
+            transition: transform 0.1s;
         }
     </style>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
@@ -180,9 +218,15 @@
         <button id="viewToggle" class="viewToggleBtn" onclick="toggleView()">View 2D SVG</button>
     </div>
     <div id="svgContainer">
-        <div style="padding: 20px;">
-            <button class="viewToggleBtn" onclick="toggleView()" style="margin-bottom: 10px;">View 3D Model</button>
-            <div id="svgViewer" style="border: 1px solid #ccc; padding: 10px;"></div>
+        <div id="svgControls">
+            <button class="viewToggleBtn" onclick="toggleView()">View 3D Model</button>
+            <span style="margin-left: 20px; color: #666;">Zoom:</span>
+            <button class="zoomBtn active" onclick="setSvgZoom(1)">1x</button>
+            <button class="zoomBtn" onclick="setSvgZoom(2)">2x</button>
+            <button class="zoomBtn" onclick="setSvgZoom(3)">3x</button>
+        </div>
+        <div id="svgViewerContainer">
+            <div id="svgViewer"></div>
         </div>
     </div>
     <div id="info">
@@ -222,6 +266,19 @@
             <span class="label">Range:</span>
             <span class="value" id="camRange">-</span>
         </div>
+        <hr style="border-color: rgba(255,255,255,0.3); margin: 8px 0;">
+        <div class="param">
+            <span class="label">Pointing At:</span>
+            <span class="value" id="targetSurface">-</span>
+        </div>
+        <div class="param">
+            <span class="label">Target (X, Y):</span>
+            <span class="value" id="targetCoords">-</span>
+        </div>
+        <div class="param">
+            <span class="label">Distance:</span>
+            <span class="value" id="targetDistance">-</span>
+        </div>
     </div>
 
     <script>
@@ -241,6 +298,199 @@
         let currentCameraData = null;
         let lensDistortionEffect = null;
         let currentWarehouseId = null;
+        let currentSvgZoom = 1;
+        let currentSvgData = null;
+        let ws = null;
+        let viewMarker = null;  // Floating marker box in front of camera
+
+        // WebSocket setup
+        function initWebSocket() {
+            ws = new WebSocket('ws://localhost:8080');
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                // Register with current warehouse (if one is loaded)
+                if (currentWarehouseId) {
+                    console.log(`Registering with WebSocket server for warehouse: ${currentWarehouseId}`);
+                    ws.send(JSON.stringify({
+                        type: 'register',
+                        warehouseId: currentWarehouseId
+                    }));
+                } else {
+                    console.log('No warehouse loaded yet, will register after warehouse loads');
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+
+                    // Handle test messages from Claude
+                    if (data.type === 'test') {
+                        console.log('🔵 TEST MESSAGE FROM CLAUDE:', data.message);
+                        console.log('   Full payload:', data);
+                    }
+
+                    // Handle reload warehouse command from Claude
+                    else if (data.type === 'reload-warehouse') {
+                        console.log('🔄 RELOADING WAREHOUSE:', data.warehouseId);
+                        // Camera view will be automatically restored from sessionStorage after reload
+                        loadWarehouse(data.warehouseId);
+                    }
+
+                    // Handle queries from Claude
+                    else if (data.type === 'query') {
+                        handleQuery(data);
+                    }
+                } catch (error) {
+                    console.error('WebSocket message error:', error);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, reconnecting in 3s...');
+                setTimeout(initWebSocket, 3000);
+            };
+        }
+
+        // Handle queries from Claude via WebSocket
+        function handleQuery(query) {
+            if (query.command === 'get-camera-intersection') {
+                const cameraId = query.cameraId;
+                const intersection = getCameraIntersection(cameraId);
+
+                // Send response back via WebSocket
+                ws.send(JSON.stringify({
+                    type: 'query-response',
+                    queryId: query.queryId,
+                    command: query.command,
+                    result: intersection
+                }));
+            }
+            else if (query.command === 'get-current-view') {
+                // Return current camera view and what they're pointing at
+                const result = {
+                    activeCamera: currentScene.activeCamera === universalCamera ? 'camera-view' : 'overview',
+                    cameraId: currentCameraData ? currentCameraData.name : null,
+                    cameraNumber: currentCameraData ? currentCameraData.number : null,
+                    position: universalCamera ? {
+                        x: universalCamera.position.x.toFixed(1),
+                        y: universalCamera.position.y.toFixed(1),
+                        z: universalCamera.position.z.toFixed(1)
+                    } : null,
+                    target: {
+                        surface: document.getElementById('targetSurface').textContent,
+                        coords: document.getElementById('targetCoords').textContent,
+                        distance: document.getElementById('targetDistance').textContent
+                    }
+                };
+
+                ws.send(JSON.stringify({
+                    type: 'query-response',
+                    queryId: query.queryId,
+                    command: query.command,
+                    result: result
+                }));
+            }
+        }
+
+        // Get camera intersection data using raycasting
+        function getCameraIntersection(cameraId) {
+            if (!currentScene) {
+                return { error: 'No scene loaded' };
+            }
+
+            // Find camera in warehouse data
+            const camera = warehouseCameras.find(c => c.id === cameraId);
+            if (!camera) {
+                return { error: `Camera "${cameraId}" not found` };
+            }
+
+            // Get slab elevation (default 4)
+            const slabElevation = camera.slabElevation || 4;
+            const cameraY = slabElevation + (camera.elevation || 12);
+
+            // Create camera position in Babylon coords
+            const cameraPos = new BABYLON.Vector3(camera.x, cameraY, -camera.y);
+
+            // Calculate viewing direction from camera orientation
+            const directionRad = camera.direction * Math.PI / 180;
+            const tiltRad = camera.tilt * Math.PI / 180;
+
+            // Direction vector (accounting for tilt)
+            const horizontalDist = Math.cos(tiltRad);
+            const verticalDist = -Math.sin(tiltRad); // Negative because tilting down
+
+            const direction = new BABYLON.Vector3(
+                horizontalDist * Math.sin(directionRad),
+                verticalDist,
+                -horizontalDist * Math.cos(directionRad)
+            );
+
+            // Create ray from camera position
+            const ray = new BABYLON.Ray(cameraPos, direction, camera.range || 50);
+
+            // Perform raycast picking
+            const hit = currentScene.pickWithRay(ray, (mesh) => {
+                // Only pick walls (segments), doors, slabs, columns (not cameras, lines, etc.)
+                return mesh.name && (
+                    mesh.name.includes('_seg') ||  // Wall segments like mercury_mercury_perimeter_seg0
+                    mesh.name.includes('door') ||
+                    mesh.name.includes('slab') ||
+                    mesh.name.includes('partition') ||
+                    mesh.name.includes('column')  // Columns
+                );
+            });
+
+            if (hit && hit.hit) {
+                return {
+                    camera: {
+                        id: camera.id,
+                        name: camera.name || camera.id,
+                        number: camera.number,
+                        position: { x: camera.x, y: camera.y, elevation: camera.elevation },
+                        direction: camera.direction,
+                        tilt: camera.tilt
+                    },
+                    intersection: {
+                        hit: true,
+                        objectName: hit.pickedMesh.name,
+                        objectType: hit.pickedMesh.name.includes('wall') ? 'wall' :
+                                   hit.pickedMesh.name.includes('door') ? 'door' :
+                                   hit.pickedMesh.name.includes('slab') ? 'slab' : 'unknown',
+                        point: {
+                            x: hit.pickedPoint.x,
+                            y: hit.pickedPoint.y,
+                            z: hit.pickedPoint.z
+                        },
+                        svgCoords: {
+                            x: Math.round(hit.pickedPoint.x * 10) / 10,
+                            y: Math.round(-hit.pickedPoint.z * 10) / 10
+                        },
+                        distance: Math.round(hit.distance * 10) / 10
+                    }
+                };
+            } else {
+                return {
+                    camera: {
+                        id: camera.id,
+                        name: camera.name || camera.id,
+                        number: camera.number,
+                        position: { x: camera.x, y: camera.y, elevation: camera.elevation },
+                        direction: camera.direction,
+                        tilt: camera.tilt
+                    },
+                    intersection: {
+                        hit: false,
+                        message: 'Camera view line does not intersect any objects within range'
+                    }
+                };
+            }
+        }
 
         // Get warehouse ID from query parameter or default to 'lodge'
         function getWarehouseIdFromURL() {
@@ -372,6 +622,49 @@
                 populateCameraButtons(warehouseData, isModelT);
 
                 statusEl.textContent = "Ready!";
+
+                // Register with WebSocket server now that warehouse is loaded
+                if (ws && ws.readyState === WebSocket.OPEN && currentWarehouseId) {
+                    console.log(`Registering with WebSocket server for warehouse: ${currentWarehouseId}`);
+                    ws.send(JSON.stringify({
+                        type: 'register',
+                        warehouseId: currentWarehouseId
+                    }));
+                }
+
+                // Restore previous camera view from sessionStorage
+                const savedCameraId = sessionStorage.getItem('currentCameraId');
+                const savedRotation = sessionStorage.getItem('cameraRotation');
+                if (savedCameraId) {
+                    console.log(`Restoring camera view: ${savedCameraId}`);
+                    // Give the scene a moment to fully initialize
+                    setTimeout(() => {
+                        const buttons = document.querySelectorAll('.cameraBtn');
+                        buttons.forEach(btn => {
+                            if (btn.textContent.toLowerCase().includes(savedCameraId.toLowerCase()) ||
+                                (savedCameraId === 'overview' && btn.classList.contains('overviewBtn'))) {
+                                btn.click();
+
+                                // Restore camera rotation after camera is set
+                                if (savedRotation && savedCameraId !== 'overview') {
+                                    setTimeout(() => {
+                                        try {
+                                            const rotation = JSON.parse(savedRotation);
+                                            if (universalCamera) {
+                                                universalCamera.rotation.x = rotation.x;
+                                                universalCamera.rotation.y = rotation.y;
+                                                universalCamera.rotation.z = rotation.z;
+                                                console.log(`Restored camera rotation:`, rotation);
+                                            }
+                                        } catch (e) {
+                                            console.error('Failed to restore camera rotation:', e);
+                                        }
+                                    }, 100);
+                                }
+                            }
+                        });
+                    }, 100);
+                }
 
             } catch (error) {
                 statusEl.textContent = `Error: ${error.message}`;
@@ -589,6 +882,58 @@
             };
         }
 
+        let lastHitMeshName = null;
+
+        function updateViewMarker() {
+            if (!viewMarker || !universalCamera) return;
+            if (currentScene.activeCamera !== universalCamera) return;
+
+            // Raycast from camera to find wall intersection
+            const direction = universalCamera.getDirection(BABYLON.Vector3.Forward());
+            const ray = new BABYLON.Ray(universalCamera.position, direction, 200);
+
+            const hit = currentScene.pickWithRay(ray, (mesh) => {
+                // Only pick walls (segments), doors, slabs, columns
+                return mesh.name && (
+                    mesh.name.includes('_seg') ||  // Wall segments
+                    mesh.name.includes('door') ||
+                    mesh.name.includes('slab') ||
+                    mesh.name.includes('partition') ||
+                    mesh.name.includes('column')  // Columns
+                );
+            });
+
+            if (hit && hit.hit) {
+                // Stick to the wall at intersection point
+                viewMarker.position = hit.pickedPoint;
+                viewMarker.isVisible = true;
+
+                // Update info panel in real-time
+                const svgX = hit.pickedPoint.x.toFixed(1);
+                const svgY = (-hit.pickedPoint.z).toFixed(1);
+                const distance = hit.distance.toFixed(1);
+
+                document.getElementById('targetSurface').textContent = hit.pickedMesh.name;
+                document.getElementById('targetCoords').textContent = `(${svgX}, ${svgY})`;
+                document.getElementById('targetDistance').textContent = `${distance}ft`;
+
+                // Track last hit for change detection
+                lastHitMeshName = hit.pickedMesh.name;
+            } else {
+                // No hit - float 15 feet in front
+                const distance = 15;
+                viewMarker.position = universalCamera.position.add(direction.scale(distance));
+                viewMarker.isVisible = true;
+
+                // Update info panel
+                document.getElementById('targetSurface').textContent = 'Open space';
+                document.getElementById('targetCoords').textContent = '-';
+                document.getElementById('targetDistance').textContent = '-';
+
+                lastHitMeshName = null;
+            }
+        }
+
         function updateCameraInfoRealtime() {
             if (!universalCamera || !currentCameraData) return;
             if (currentScene.activeCamera !== universalCamera) return;
@@ -627,7 +972,12 @@
         }
 
         function setCameraView(cameraId, buttonElement) {
-            if (!currentScene) return;
+            if (!currentScene) {
+                return;
+            }
+
+            // Store current camera in sessionStorage
+            sessionStorage.setItem('currentCameraId', cameraId);
 
             if (currentSelectedButton) {
                 currentSelectedButton.classList.remove('selected');
@@ -639,6 +989,12 @@
 
             if (cameraId === 'overview') {
                 document.getElementById('cameraInfo').style.display = 'none';
+
+                // Remove view marker when switching to overview
+                if (viewMarker) {
+                    viewMarker.dispose();
+                    viewMarker = null;
+                }
 
                 if (currentScene.activeCamera !== arcRotateCamera) {
                     currentCamera.detachControl();
@@ -668,7 +1024,9 @@
             }
 
             const cam = warehouseCameras.find(c => c.id === cameraId);
-            if (!cam) return;
+            if (!cam) {
+                return;
+            }
 
             updateCameraInfoPanel(cam);
 
@@ -691,6 +1049,81 @@
             const tiltRad = cam.tilt * Math.PI / 180;
             universalCamera.rotation.x = tiltRad;
 
+            // Create floating view marker sphere
+            if (!viewMarker) {
+                viewMarker = BABYLON.MeshBuilder.CreateSphere(
+                    'viewMarker',
+                    { diameter: 0.8 },
+                    currentScene
+                );
+                const markerMat = new BABYLON.StandardMaterial('viewMarkerMat', currentScene);
+                markerMat.diffuseColor = new BABYLON.Color3(0, 1, 0); // Bright green
+                markerMat.emissiveColor = new BABYLON.Color3(0, 0.5, 0); // Glowing green
+                viewMarker.material = markerMat;
+
+                // Make sphere clickable to mark position
+                viewMarker.actionManager = new BABYLON.ActionManager(currentScene);
+                viewMarker.actionManager.registerAction(
+                    new BABYLON.ExecuteCodeAction(
+                        BABYLON.ActionManager.OnPickTrigger,
+                        function() {
+                            // Get current target info from info panel
+                            const targetSurface = document.getElementById('targetSurface').textContent;
+                            const targetCoords = document.getElementById('targetCoords').textContent;
+                            const targetDistance = document.getElementById('targetDistance').textContent;
+
+                            // Parse coordinates
+                            const coordMatch = targetCoords.match(/\(([^,]+),\s*([^)]+)\)/);
+                            if (coordMatch) {
+                                const x = parseFloat(coordMatch[1]);
+                                const y = parseFloat(coordMatch[2]);
+
+                                // Get current camera rotation for restoration after reload
+                                const cameraRotation = universalCamera ? {
+                                    x: universalCamera.rotation.x,
+                                    y: universalCamera.rotation.y,
+                                    z: universalCamera.rotation.z
+                                } : null;
+
+                                // Save camera orientation to sessionStorage
+                                if (cameraRotation && currentCameraData) {
+                                    sessionStorage.setItem('cameraRotation', JSON.stringify(cameraRotation));
+                                    console.log(`Saved camera rotation:`, cameraRotation);
+                                }
+
+                                // Send marked position to server via WebSocket
+                                if (ws && ws.readyState === WebSocket.OPEN) {
+                                    ws.send(JSON.stringify({
+                                        type: 'mark-position',
+                                        warehouseId: currentWarehouseId,
+                                        camera: {
+                                            id: currentCameraData ? currentCameraData.id : null,
+                                            name: currentCameraData ? currentCameraData.name : null,
+                                            number: currentCameraData ? currentCameraData.number : null,
+                                            rotation: cameraRotation
+                                        },
+                                        position: {
+                                            x: x,
+                                            y: y,
+                                            surface: targetSurface,
+                                            distance: targetDistance
+                                        },
+                                        timestamp: Date.now()
+                                    }));
+                                    console.log(`Marked position: (${x}, ${y}) on ${targetSurface} from camera ${currentCameraData ? currentCameraData.name : 'unknown'}`);
+
+                                    // Visual feedback - flash the sphere
+                                    markerMat.emissiveColor = new BABYLON.Color3(1, 1, 0); // Yellow flash
+                                    setTimeout(() => {
+                                        markerMat.emissiveColor = new BABYLON.Color3(0, 0.5, 0); // Back to green
+                                    }, 200);
+                                }
+                            }
+                        }
+                    )
+                );
+            }
+
             const viewingAngleDeg = cam.viewingAngle || 90;
             const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
 
@@ -698,11 +1131,24 @@
             const vFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) / aspectRatio);
 
             universalCamera.fov = vFovRad;
-
-            console.log(`Camera ${cam.name}: viewingAngle=${viewingAngleDeg}° → fov=${vFovRad.toFixed(3)} rad`);
         }
 
-        let currentSvgData = null;
+        function setSvgZoom(zoomLevel) {
+            currentSvgZoom = zoomLevel;
+            const svgViewer = document.getElementById("svgViewer");
+
+            // Apply zoom transform
+            svgViewer.style.transform = `scale(${zoomLevel})`;
+
+            // Update button states
+            const zoomBtns = document.querySelectorAll('.zoomBtn');
+            zoomBtns.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.textContent === `${zoomLevel}x`) {
+                    btn.classList.add('active');
+                }
+            });
+        }
 
         function toggleView() {
             const renderCanvas = document.getElementById("renderCanvas");
@@ -712,8 +1158,11 @@
             if (renderCanvas.style.display !== "none") {
                 // Switch to SVG view
                 renderCanvas.style.display = "none";
-                svgContainer.style.display = "block";
+                svgContainer.classList.add("active");
                 viewToggle.textContent = "View 3D Model";
+
+                // Reset zoom to 1x when switching to SVG view
+                setSvgZoom(1);
 
                 // Load and display SVG
                 if (currentWarehouseId && currentSvgData) {
@@ -722,7 +1171,7 @@
             } else {
                 // Switch to 3D view
                 renderCanvas.style.display = "block";
-                svgContainer.style.display = "none";
+                svgContainer.classList.remove("active");
                 viewToggle.textContent = "View 2D SVG";
 
                 // Resume rendering
@@ -739,24 +1188,35 @@
             const svgViewer = document.getElementById("svgViewer");
             svgViewer.innerHTML = svgData;
 
-            // Make SVG responsive
+            // Apply SVG styles and current zoom level
             const svg = svgViewer.querySelector("svg");
             if (svg) {
-                svg.style.maxWidth = "100%";
-                svg.style.height = "auto";
+                svg.style.display = "block";
                 svg.style.border = "1px solid #999";
             }
+
+            // Apply current zoom level
+            setSvgZoom(currentSvgZoom);
         }
 
         // Initialize
         async function init() {
+            console.log('╔════════════════════════════════════════╗');
+            console.log('║  ModelT Viewer v2.1 - 2025-01-24 15:45 ║');
+            console.log('║  Camera raycasting + logging enabled   ║');
+            console.log('╚════════════════════════════════════════╝');
+
             try {
+                // Initialize WebSocket connection
+                initWebSocket();
+
                 await loadWarehouseList();
 
                 if (currentScene) {
                     engine.runRenderLoop(() => {
                         currentScene.render();
                         updateCameraInfoRealtime();
+                        updateViewMarker();
                     });
                 }
             } catch (error) {

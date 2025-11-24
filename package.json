@@ -1,0 +1,13 @@
+{
+  "name": "zebra-apriltag-printer",
+  "version": "1.0.0",
+  "description": "Generate AprilTag ZPL for Zebra ZT421 printer",
+  "main": "generate-zpl.js",
+  "scripts": {
+    "generate": "node generate-zpl.js"
+  },
+  "dependencies": {
+    "jimp": "^1.6.0",
+    "svg2img": "^0.1.12"
+  }
+}

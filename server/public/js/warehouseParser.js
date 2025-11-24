@@ -87,21 +87,24 @@ class ModelTBuilder {
      * Build a single slab (v2 format)
      */
     buildSlabV2(slab) {
-        const { id, name, elevation = 4, corners, walls = [], columns = [], doors = [], cameras = [], boxes = [] } = slab;
+        const { id, name, elevation = 4, corners, variant, walls = [], columns = [], doors = [], cameras = [], boxes = [] } = slab;
 
         // Build slab footprint
         if (corners && corners.length > 0) {
             this.buildSlabMesh(corners, elevation, id);
         }
 
-        // Build walls (all types)
-        walls.forEach(wall => {
-            if (wall.type === 'slabPerimeter' || wall.type === 'perimeter') {
-                this.buildWallMesh(wall, elevation, id, doors);
-            } else if (wall.type === 'partition') {
-                this.buildPartitionWallMesh(wall, elevation, id, doors);
-            }
-        });
+        // Build walls only if not a pavement slab
+        // Pavement slabs (variant: "pavement") are outdoor surfaces with no walls
+        if (variant !== 'pavement') {
+            walls.forEach(wall => {
+                if (wall.type === 'slabPerimeter' || wall.type === 'perimeter') {
+                    this.buildWallMesh(wall, elevation, id, doors);
+                } else if (wall.type === 'partition') {
+                    this.buildPartitionWallMesh(wall, elevation, id, doors);
+                }
+            });
+        }
 
         // Build columns
         columns.forEach(column => {
@@ -210,18 +213,12 @@ class ModelTBuilder {
             // Find doors on this wall segment
             const segmentDoors = this.findDoorsOnSegment(wallDoors, p1, p2, isHorizontal, isVertical);
 
-            console.log(`Segment ${i}: p1=(${p1.x},${p1.y}) p2=(${p2.x},${p2.y}) doors=${segmentDoors.length}`);
-            if (segmentDoors.length > 0) {
-                console.log(`  Doors:`, segmentDoors.map(d => `${d.id} at (${d.x},${d.y})`));
-            }
-
             if (segmentDoors.length === 0) {
                 // No doors - create simple box wall
                 this.createSimpleWallSegment(slabId, wall.id, i, p1, p2, dx, dy, length,
                     isHorizontal, isVertical, wallHeight, wallThickness, slabTop, wallMaterial, 'walls');
             } else {
                 // Has doors - create wall with cutouts
-                console.log(`Creating wall with doors for segment ${i}`);
                 this.createWallSegmentWithDoors(slabId, wall.id, i, p1, p2, dx, dy, length,
                     isHorizontal, isVertical, wallHeight, wallThickness, slabTop, segmentDoors, wallMaterial, 'walls');
             }
@@ -323,8 +320,6 @@ class ModelTBuilder {
             this.scene
         );
 
-        console.log(`  Wall mesh created for segment ${segIndex}, length=${length}`);
-
         // Position and orient to match simple walls
         if (isHorizontal) {
             // Horizontal wall: runs east-west
@@ -336,7 +331,6 @@ class ModelTBuilder {
                 wallMesh.position.x = p1.x;
                 wallMesh.position.y = slabTop;
                 wallMesh.position.z = -p1.y;
-                console.log(`  Horizontal EAST wall at p1=(${p1.x}, ${p1.y}) p2=(${p2.x}, ${p2.y})`);
             } else {
                 // Going WEST (negative X direction)
                 // Need to flip the wall 180° around Y axis and position at p1
@@ -344,7 +338,6 @@ class ModelTBuilder {
                 wallMesh.position.x = p1.x;
                 wallMesh.position.y = slabTop;
                 wallMesh.position.z = -p1.y;
-                console.log(`  Horizontal WEST wall at p1=(${p1.x}, ${p1.y}) p2=(${p2.x}, ${p2.y})`);
             }
 
         } else if (isVertical) {
@@ -357,7 +350,6 @@ class ModelTBuilder {
                 wallMesh.position.x = p1.x;
                 wallMesh.position.y = slabTop;
                 wallMesh.position.z = -p1.y;
-                console.log(`  Vertical SOUTH wall at p1=(${p1.x}, ${p1.y}) p2=(${p2.x}, ${p2.y})`);
             } else {
                 // Going NORTH (negative Y direction in SVG, positive Z in Babylon)
                 // Need to flip
@@ -365,7 +357,6 @@ class ModelTBuilder {
                 wallMesh.position.x = p1.x;
                 wallMesh.position.y = slabTop;
                 wallMesh.position.z = -p1.y;
-                console.log(`  Vertical NORTH wall at p1=(${p1.x}, ${p1.y}) p2=(${p2.x}, ${p2.y})`);
             }
         }
 
@@ -383,20 +374,12 @@ class ModelTBuilder {
         const doorHeight = 10.0; // Standard door height
         const profile = [];
 
-        console.log(`    Generating profile: p1=(${p1.x},${p1.y}) p2=(${p2.x},${p2.y}) length=${segmentLength}`);
-        console.log(`    ${doors.length} doors:`, doors.map(d => `${d.id} at (${d.x},${d.y})`));
-
         // Sort doors by absolute position along the segment (0 to length)
         const sortedDoors = doors.slice().sort((a, b) => {
             const posA = isHorizontal ? Math.abs(a.x - p1.x) : Math.abs(a.y - p1.y);
             const posB = isHorizontal ? Math.abs(b.x - p1.x) : Math.abs(b.y - p1.y);
             return posA - posB;
         });
-
-        console.log(`    Sorted:`, sortedDoors.map(d => {
-            const pos = isHorizontal ? Math.abs(d.x - p1.x) : Math.abs(d.y - p1.y);
-            return `${d.id} at ${pos}`;
-        }));
 
         // Start at bottom left (0, 0, 0) - using XZ plane where X=length, Z=height
         profile.push(new BABYLON.Vector3(0, 0, 0));
@@ -411,8 +394,6 @@ class ModelTBuilder {
             const doorWidth = door.bayWidth || 10;
             const doorStart = doorPos - doorWidth / 2;
             const doorEnd = doorPos + doorWidth / 2;
-
-            console.log(`    Door ${door.id}: pos=${doorPos} start=${doorStart} end=${doorEnd}`);
 
             // If there's wall before this door, add bottom segment
             if (doorStart > currentPos + 0.1) {
@@ -460,7 +441,11 @@ class ModelTBuilder {
         partitionMaterial.diffuseColor = new BABYLON.Color3(0, 0.27, 0.62);
 
         // Filter doors that belong to this wall
-        const wallDoors = doors.filter(d => d.wallId === wall.id);
+        // Match either "beatrice" or "mercury_beatrice" format
+        const wallDoors = doors.filter(d =>
+            d.wallId === wall.id ||
+            d.wallId === `${slabId}_${wall.id}`
+        );
 
         let currentX = wall.start.x;
         let currentY = wall.start.y;
@@ -496,15 +481,12 @@ class ModelTBuilder {
             // Find doors on this segment
             const segmentDoors = this.findDoorsOnSegment(wallDoors, p1, p2, isHorizontal, isVertical);
 
-            console.log(`Partition ${wall.id} segment ${segIdx}: p1=(${p1.x},${p1.y}) p2=(${p2.x},${p2.y}) doors=${segmentDoors.length}`);
-
             if (segmentDoors.length === 0) {
                 // No doors - create simple box wall
                 this.createSimplePartitionSegment(slabId, wall.id, segIdx, p1, p2, dx, dy, length,
                     isHorizontal, isVertical, wallHeight, wallThickness, slabTop, partitionMaterial);
             } else {
                 // Has doors - create wall with cutouts using same method as perimeter walls
-                console.log(`Creating partition wall with doors for segment ${segIdx}`);
                 this.createWallSegmentWithDoors(slabId, wall.id, segIdx, p1, p2, dx, dy, length,
                     isHorizontal, isVertical, wallHeight, wallThickness, slabTop, segmentDoors, partitionMaterial, 'partitionWalls');
             }
@@ -779,11 +761,6 @@ class ModelTBuilder {
         const startPoint = this.svgToBabylon(camera.x, camera.y, cameraY);
         const endPoint = this.svgToBabylon(endX, endY, endZ);
 
-        console.log(`Camera ${camera.id}: tilt=${tilt}°`);
-        console.log(`  Start: (${startPoint.x.toFixed(1)}, ${startPoint.y.toFixed(1)}, ${startPoint.z.toFixed(1)})`);
-        console.log(`  End: (${endPoint.x.toFixed(1)}, ${endPoint.y.toFixed(1)}, ${endPoint.z.toFixed(1)})`);
-        console.log(`  Angle check: atan2(${(startPoint.y - endPoint.y).toFixed(1)}, ${horizontalDistance.toFixed(1)}) = ${(Math.atan2(startPoint.y - endPoint.y, horizontalDistance) * 180 / Math.PI).toFixed(1)}°`);
-
         const frustumLine = BABYLON.MeshBuilder.CreateLines(
             `${slabId}_${camera.id}_frustum`,
             {
@@ -794,6 +771,82 @@ class ModelTBuilder {
 
         frustumLine.color = new BABYLON.Color3(1, 0, 0);
         this.meshes.cameras.push(frustumLine);
+
+        // Perform raycasting to find intersection point
+        const cameraPos = this.svgToBabylon(camera.x, camera.y, cameraY);
+        const directionRad = -direction * Math.PI / 180;  // NEGATIVE to match frustum line!
+        const tiltRadians = tilt * Math.PI / 180;
+
+        // Calculate direction vector (accounting for tilt)
+        const horizontalDist = Math.cos(tiltRadians);
+        const verticalDist = -Math.sin(tiltRadians); // Negative because tilting down
+
+        const rayDirection = new BABYLON.Vector3(
+            horizontalDist * Math.sin(directionRad),
+            verticalDist,
+            horizontalDist * Math.cos(directionRad)  // Positive cos to match frustum
+        );
+
+        // Create ray from camera position
+        const ray = new BABYLON.Ray(cameraPos, rayDirection, range);
+
+        // Perform raycast picking
+        const hit = this.scene.pickWithRay(ray, (mesh) => {
+            // Only pick walls (segments), doors, slabs (not cameras, lines, etc.)
+            const isPick = mesh.name && (
+                mesh.name.includes('_seg') ||  // Wall segments like mercury_mercury_perimeter_seg0
+                mesh.name.includes('door') ||
+                mesh.name.includes('slab') ||
+                mesh.name.includes('partition')
+            );
+            return isPick;
+        });
+
+        // If hit, create a bullseye marker at the intersection point
+        if (hit && hit.hit) {
+            // Create bullseye disc
+            const bullseye = BABYLON.MeshBuilder.CreateDisc(
+                `${slabId}_${camera.id}_target`,
+                { radius: 1.5, tessellation: 32 },
+                this.scene
+            );
+
+            bullseye.position = hit.pickedPoint;
+
+            // Orient the disc to face the camera
+            const normal = hit.getNormal(true);
+            if (normal) {
+                bullseye.lookAt(cameraPos);
+            }
+
+            // Create bullseye material
+            const bullseyeMaterial = new BABYLON.StandardMaterial(`targetMat_${slabId}_${camera.id}`, this.scene);
+            bullseyeMaterial.diffuseColor = new BABYLON.Color3(1, 1, 0); // Yellow
+            bullseyeMaterial.emissiveColor = new BABYLON.Color3(0.5, 0.5, 0); // Glowing yellow
+            bullseyeMaterial.alpha = 0.8;
+            bullseye.material = bullseyeMaterial;
+
+            // Create inner red circle for center of bullseye
+            const center = BABYLON.MeshBuilder.CreateDisc(
+                `${slabId}_${camera.id}_target_center`,
+                { radius: 0.5, tessellation: 32 },
+                this.scene
+            );
+
+            center.position = hit.pickedPoint.add(normal ? normal.scale(0.01) : new BABYLON.Vector3(0, 0.01, 0));
+
+            if (normal) {
+                center.lookAt(cameraPos);
+            }
+
+            const centerMaterial = new BABYLON.StandardMaterial(`targetCenterMat_${slabId}_${camera.id}`, this.scene);
+            centerMaterial.diffuseColor = new BABYLON.Color3(1, 0, 0); // Red
+            centerMaterial.emissiveColor = new BABYLON.Color3(0.5, 0, 0); // Glowing red
+            center.material = centerMaterial;
+
+            this.meshes.cameras.push(bullseye);
+            this.meshes.cameras.push(center);
+        }
     }
 
     /**

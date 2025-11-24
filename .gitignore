@@ -1,1 +1,4 @@
 /server/node_modules
+/node_modules
+.claude/settings.local.json
+/tools/node_modules

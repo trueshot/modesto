@@ -18,7 +18,15 @@
       "Bash(npm install:*)",
       "Bash(timeout 5 node:*)",
       "Bash(netstat:*)",
-      "Bash(tree:*)"
+      "Bash(tree:*)",
+      "WebSearch",
+      "Bash(npm run generate:*)",
+      "Bash(node:*)",
+      "Bash(cat:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(curl:*)",
+      "Bash(bash:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

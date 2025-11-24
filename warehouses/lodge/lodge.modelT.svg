@@ -1,0 +1,1818 @@
+<svg width="1976.9" height="2079.0" viewBox="0 0 523 550" version="1.1" id="facility-svg" xmlns="http://www.w3.org/2000/svg">
+  <g id="layer1">
+    <!-- Property boundary -->
+    <rect id="land" width="523" height="550" x="0" y="0" style="fill:#e0e0e0;fill-opacity:0.3;stroke:none"/>
+
+    
+    <!-- Slab: venus (North Loading Dock) -->
+    <g id="slab_venus">
+      <!-- Slab footprint -->
+      <path id="slab" d="M 170,60 L 330,60 L 330,100 L 170,100 Z" style="fill:#8888aa;fill-opacity:0.8;stroke:#000000;stroke-width:0.05"/>
+
+      <!-- Structural Columns -->
+      <g id="venus_columns" style="display:inline">
+        
+      </g>
+
+      <!-- Walls -->
+      <g id="venus_walls" style="display:inline;fill:#00449e;fill-opacity:1">
+        
+        
+        
+      </g>
+
+      <!-- Doors -->
+      <g id="venus_doors" style="display:inline">
+        
+      </g>
+
+      <!-- Cameras -->
+      <g id="venus_cameras" style="display:inline">
+        
+      </g>
+    </g>
+
+    <!-- Slab: mercury (Main Warehouse) -->
+    <g id="slab_mercury">
+      <!-- Slab footprint -->
+      <path id="slab" d="M 170,100 L 330,100 L 330,278 L 348,278 L 348,330 L 330,330 L 330,400 L 150,400 L 150,278 L 170,278 Z" style="fill:#8888aa;fill-opacity:0.8;stroke:#000000;stroke-width:0.05"/>
+
+      <!-- Structural Columns -->
+      <g id="mercury_columns" style="display:inline">
+        
+  <g id="oak" class="column">
+    <!-- H-beam structural column -->
+    <g transform="translate(228,116)">
+      <!-- Left vertical bar -->
+      <rect x="-0.5" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Right vertical bar -->
+      <rect x="0.3" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Horizontal crossbar -->
+      <rect x="-0.5" y="-0.1" width="1" height="0.2" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Column label -->
+      <text x="0" y="2" font-size="1" text-anchor="middle" fill="#333" font-weight="bold">Oak</text>
+    </g>
+  </g>
+  <g id="maple" class="column">
+    <!-- H-beam structural column -->
+    <g transform="translate(256,116)">
+      <!-- Left vertical bar -->
+      <rect x="-0.5" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Right vertical bar -->
+      <rect x="0.3" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Horizontal crossbar -->
+      <rect x="-0.5" y="-0.1" width="1" height="0.2" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Column label -->
+      <text x="0" y="2" font-size="1" text-anchor="middle" fill="#333" font-weight="bold">Maple</text>
+    </g>
+  </g>
+  <g id="pine" class="column">
+    <!-- H-beam structural column -->
+    <g transform="translate(286,116)">
+      <!-- Left vertical bar -->
+      <rect x="-0.5" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Right vertical bar -->
+      <rect x="0.3" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Horizontal crossbar -->
+      <rect x="-0.5" y="-0.1" width="1" height="0.2" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Column label -->
+      <text x="0" y="2" font-size="1" text-anchor="middle" fill="#333" font-weight="bold">Pine</text>
+    </g>
+  </g>
+  <g id="birch" class="column">
+    <!-- H-beam structural column -->
+    <g transform="translate(228,175)">
+      <!-- Left vertical bar -->
+      <rect x="-0.5" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Right vertical bar -->
+      <rect x="0.3" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Horizontal crossbar -->
+      <rect x="-0.5" y="-0.1" width="1" height="0.2" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Column label -->
+      <text x="0" y="2" font-size="1" text-anchor="middle" fill="#333" font-weight="bold">Birch</text>
+    </g>
+  </g>
+  <g id="cedar" class="column">
+    <!-- H-beam structural column -->
+    <g transform="translate(256,175)">
+      <!-- Left vertical bar -->
+      <rect x="-0.5" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Right vertical bar -->
+      <rect x="0.3" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Horizontal crossbar -->
+      <rect x="-0.5" y="-0.1" width="1" height="0.2" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Column label -->
+      <text x="0" y="2" font-size="1" text-anchor="middle" fill="#333" font-weight="bold">Cedar</text>
+    </g>
+  </g>
+  <g id="elm" class="column">
+    <!-- H-beam structural column -->
+    <g transform="translate(286,175)">
+      <!-- Left vertical bar -->
+      <rect x="-0.5" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Right vertical bar -->
+      <rect x="0.3" y="-0.5" width="0.2" height="1" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Horizontal crossbar -->
+      <rect x="-0.5" y="-0.1" width="1" height="0.2" fill="#4a4a4a" stroke="#000" stroke-width="0.05"/>
+
+      <!-- Column label -->
+      <text x="0" y="2" font-size="1" text-anchor="middle" fill="#333" font-weight="bold">Elm</text>
+    </g>
+  </g>
+      </g>
+
+      <!-- Walls -->
+      <g id="mercury_walls" style="display:inline;fill:#00449e;fill-opacity:1">
+        
+  <g id="corner_NW_mercury_perimeter_corner0" transform="translate(170,100)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0.8" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_NE_mercury_perimeter_corner1" transform="translate(329,100)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_SW_mercury_perimeter_corner2" transform="translate(329,278)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0.8" width="1" height="0.2"/>
+    <rect x="0.8" y="0" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_NE_mercury_perimeter_corner3" transform="translate(347,278)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_SE_mercury_perimeter_corner4" transform="translate(347,329)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0.8" width="1" height="0.2"/>
+    <rect x="0" y="0" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_NW_mercury_perimeter_corner5" transform="translate(329,329)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0.8" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_SE_mercury_perimeter_corner6" transform="translate(329,399)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0.8" width="1" height="0.2"/>
+    <rect x="0" y="0" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_SW_mercury_perimeter_corner7" transform="translate(150,399)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0.8" width="1" height="0.2"/>
+    <rect x="0.8" y="0" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_NW_mercury_perimeter_corner8" transform="translate(150,278)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0.8" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_SE_mercury_perimeter_corner9" transform="translate(170,278)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0.8" width="1" height="0.2"/>
+    <rect x="0" y="0" width="0.2" height="0.2"/>
+  </g>
+  <g id="wall_h_mercury_perimeter_seg0" transform="translate(171,100)">
+    <rect width="158" height="0.2" x="0" y="0"/>
+    <rect width="158" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="wall_v_mercury_perimeter_seg1" transform="translate(329,101)">
+    <rect width="0.2" height="177" x="0" y="0"/>
+    <rect width="0.2" height="177" x="0.8" y="0"/>
+  </g>
+  <g id="wall_h_mercury_perimeter_seg2" transform="translate(330,278)">
+    <rect width="17" height="0.2" x="0" y="0"/>
+    <rect width="17" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="wall_v_mercury_perimeter_seg3" transform="translate(347,279)">
+    <rect width="0.2" height="50" x="0" y="0"/>
+    <rect width="0.2" height="50" x="0.8" y="0"/>
+  </g>
+  <g id="wall_h_mercury_perimeter_seg4" transform="translate(330,329)">
+    <rect width="17" height="0.2" x="0" y="0"/>
+    <rect width="17" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="wall_v_mercury_perimeter_seg5" transform="translate(329,330)">
+    <rect width="0.2" height="69" x="0" y="0"/>
+    <rect width="0.2" height="69" x="0.8" y="0"/>
+  </g>
+  <g id="wall_h_mercury_perimeter_seg6" transform="translate(151,399)">
+    <rect width="178" height="0.2" x="0" y="0"/>
+    <rect width="178" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="wall_v_mercury_perimeter_seg7" transform="translate(150,279)">
+    <rect width="0.2" height="120" x="0" y="0"/>
+    <rect width="0.2" height="120" x="0.8" y="0"/>
+  </g>
+  <g id="wall_h_mercury_perimeter_seg8" transform="translate(151,278)">
+    <rect width="19" height="0.2" x="0" y="0"/>
+    <rect width="19" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="wall_v_mercury_perimeter_seg9" transform="translate(170,101)">
+    <rect width="0.2" height="177" x="0" y="0"/>
+    <rect width="0.2" height="177" x="0.8" y="0"/>
+  </g>
+        
+        
+  <g id="endcap_west_abigail_start" transform="translate(171,239)">
+    <rect width="0.5" height="0.2" x="0" y="0"/>
+    <rect width="0.5" height="0.2" x="0" y="0.8"/>
+    <rect width="0.2" height="1" x="0" y="0"/>
+  </g>
+  <g id="wall_h_abigail_seg0" transform="translate(171.5,239)">
+    <rect width="157" height="0.2" x="0" y="0"/>
+    <rect width="157" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="endcap_east_abigail_end" transform="translate(328.5,239)">
+    <rect width="0.5" height="0.2" x="0" y="0"/>
+    <rect width="0.5" height="0.2" x="0" y="0.8"/>
+    <rect width="0.2" height="1" x="0.3" y="0"/>
+  </g>
+  <g id="endcap_west_alice_start" transform="translate(180,385)">
+    <rect width="0.5" height="0.2" x="0" y="0"/>
+    <rect width="0.5" height="0.2" x="0" y="0.8"/>
+    <rect width="0.2" height="1" x="0" y="0"/>
+  </g>
+  <g id="wall_h_alice_seg0" transform="translate(180.5,385)">
+    <rect width="43.5" height="0.2" x="0" y="0"/>
+    <rect width="43.5" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="corner_NE_alice_corner0" transform="translate(224,385)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="wall_v_alice_seg1" transform="translate(224,386)">
+    <rect width="0.2" height="13.5" x="0" y="0"/>
+    <rect width="0.2" height="13.5" x="0.8" y="0"/>
+  </g>
+  <g id="endcap_south_alice_end" transform="translate(224,399.5)">
+    <rect width="0.2" height="0.5" x="0" y="0"/>
+    <rect width="0.2" height="0.5" x="0.8" y="0"/>
+    <rect width="1" height="0.2" x="0" y="0.3"/>
+  </g>
+  <g id="endcap_south_amelia_start" transform="translate(316,399.5)">
+    <rect width="0.2" height="0.5" x="0" y="0"/>
+    <rect width="0.2" height="0.5" x="0.8" y="0"/>
+    <rect width="1" height="0.2" x="0" y="0.3"/>
+  </g>
+  <g id="wall_v_amelia_seg0" transform="translate(316,395)">
+    <rect width="0.2" height="4.5" x="0" y="0"/>
+    <rect width="0.2" height="4.5" x="0.8" y="0"/>
+  </g>
+  <g id="corner_NW_amelia_corner0" transform="translate(316,394)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0.8" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="wall_h_amelia_seg1" transform="translate(317,394)">
+    <rect width="12.5" height="0.2" x="0" y="0"/>
+    <rect width="12.5" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="endcap_east_amelia_end" transform="translate(329.5,394)">
+    <rect width="0.5" height="0.2" x="0" y="0"/>
+    <rect width="0.5" height="0.2" x="0" y="0.8"/>
+    <rect width="0.2" height="1" x="0.3" y="0"/>
+  </g>
+  <g id="endcap_west_anne_start" transform="translate(150,278)">
+    <rect width="0.5" height="0.2" x="0" y="0"/>
+    <rect width="0.5" height="0.2" x="0" y="0.8"/>
+    <rect width="0.2" height="1" x="0" y="0"/>
+  </g>
+  <g id="wall_h_anne_seg0" transform="translate(150.5,278)">
+    <rect width="28.5" height="0.2" x="0" y="0"/>
+    <rect width="28.5" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="corner_NE_anne_corner0" transform="translate(179,278)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="wall_v_anne_seg1" transform="translate(179,279)">
+    <rect width="0.2" height="120.5" x="0" y="0"/>
+    <rect width="0.2" height="120.5" x="0.8" y="0"/>
+  </g>
+  <g id="endcap_south_anne_end" transform="translate(179,399.5)">
+    <rect width="0.2" height="0.5" x="0" y="0"/>
+    <rect width="0.2" height="0.5" x="0.8" y="0"/>
+    <rect width="1" height="0.2" x="0" y="0.3"/>
+  </g>
+  <g id="endcap_west_beatrice_start" transform="translate(180,308)">
+    <rect width="0.5" height="0.2" x="0" y="0"/>
+    <rect width="0.5" height="0.2" x="0" y="0.8"/>
+    <rect width="0.2" height="1" x="0" y="0"/>
+  </g>
+  <g id="wall_h_beatrice_seg0" transform="translate(180.5,308)">
+    <rect width="142" height="0.2" x="0" y="0"/>
+    <rect width="142" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="endcap_east_beatrice_end" transform="translate(322.5,308)">
+    <rect width="0.5" height="0.2" x="0" y="0"/>
+    <rect width="0.5" height="0.2" x="0" y="0.8"/>
+    <rect width="0.2" height="1" x="0.3" y="0"/>
+  </g>
+      </g>
+
+      <!-- Doors -->
+      <g id="mercury_doors" style="display:inline">
+        
+  <g id="door_washington" transform="translate(190,100)">
+    <rect x="-8" y="0" width="0" height="1" fill="#00449e"/>
+    <rect x="-8" y="0" width="16" height="1" fill="#8888aa"/>
+    <rect x="8" y="0" width="0" height="1" fill="#00449e"/>
+    <line x1="-8" y1="0.33" x2="8" y2="0.33" stroke="#666" stroke-width="0.05"/>
+    <line x1="-8" y1="0.67" x2="8" y2="0.67" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_lincoln" transform="translate(220,100)">
+    <rect x="-8" y="0" width="0" height="1" fill="#00449e"/>
+    <rect x="-8" y="0" width="16" height="1" fill="#8888aa"/>
+    <rect x="8" y="0" width="0" height="1" fill="#00449e"/>
+    <line x1="-8" y1="0.33" x2="8" y2="0.33" stroke="#666" stroke-width="0.05"/>
+    <line x1="-8" y1="0.67" x2="8" y2="0.67" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_jefferson" transform="translate(329,272)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_adams" transform="translate(329,262)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_madison" transform="translate(329,252)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_monroe" transform="translate(329,242)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_jackson" transform="translate(329,227)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_vanburen" transform="translate(329,217)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_harrison" transform="translate(329,207)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_tyler" transform="translate(329,197)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_polk" transform="translate(329,187)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_taylor" transform="translate(329,177)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_grant" transform="translate(170,267)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_hayes" transform="translate(170,257)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_garfield" transform="translate(170,247)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_arthur" transform="translate(170,227)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_cleveland" transform="translate(170,217)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_mckinley" transform="translate(170,207)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_roosevelt" transform="translate(157,400)">
+    <rect x="-5" y="0" width="0.666666666666667" height="1" fill="#00449e"/>
+    <rect x="-4.333333333333333" y="0" width="8.666666666666666" height="1" fill="#8888aa"/>
+    <rect x="4.333333333333333" y="0" width="0.666666666666667" height="1" fill="#00449e"/>
+    <line x1="-4.333333333333333" y1="0.33" x2="4.333333333333333" y2="0.33" stroke="#666" stroke-width="0.05"/>
+    <line x1="-4.333333333333333" y1="0.67" x2="4.333333333333333" y2="0.67" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_taft" transform="translate(170,400)">
+    <rect x="-5" y="0" width="0.666666666666667" height="1" fill="#00449e"/>
+    <rect x="-4.333333333333333" y="0" width="8.666666666666666" height="1" fill="#8888aa"/>
+    <rect x="4.333333333333333" y="0" width="0.666666666666667" height="1" fill="#00449e"/>
+    <line x1="-4.333333333333333" y1="0.33" x2="4.333333333333333" y2="0.33" stroke="#666" stroke-width="0.05"/>
+    <line x1="-4.333333333333333" y1="0.67" x2="4.333333333333333" y2="0.67" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_wilson" transform="translate(150,382)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_harding" transform="translate(150,362)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_coolidge" transform="translate(150,342)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_hoover" transform="translate(150,322)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_truman" transform="translate(150,302)">
+    <rect x="0" y="-5" width="1" height="0.666666666666667" fill="#00449e"/>
+    <rect x="0" y="-4.333333333333333" width="1" height="8.666666666666666" fill="#8888aa"/>
+    <rect x="0" y="4.333333333333333" width="1" height="0.666666666666667" fill="#00449e"/>
+    <line x1="0.33" y1="-4.333333333333333" x2="0.33" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-4.333333333333333" x2="0.67" y2="4.333333333333333" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_carter" transform="translate(330,136)">
+    <rect x="0" y="-8" width="1" height="0" fill="#00449e"/>
+    <rect x="0" y="-8" width="1" height="16" fill="#8888aa"/>
+    <rect x="0" y="8" width="1" height="0" fill="#00449e"/>
+    <line x1="0.33" y1="-8" x2="0.33" y2="8" stroke="#666" stroke-width="0.05"/>
+    <line x1="0.67" y1="-8" x2="0.67" y2="8" stroke="#666" stroke-width="0.05"/>
+  </g>
+  <g id="door_eisenhower" transform="translate(194,239)">
+    <rect x="-7.5" y="0" width="0.5" height="1" fill="#00449e"/>
+    <rect x="-7" y="0" width="14" height="1" fill="#ffffff"/>
+    <rect x="7" y="0" width="0.5" height="1" fill="#00449e"/>
+  </g>
+  <g id="door_kennedy" transform="translate(224,239)">
+    <rect x="-7.5" y="0" width="0.5" height="1" fill="#00449e"/>
+    <rect x="-7" y="0" width="14" height="1" fill="#ffffff"/>
+    <rect x="7" y="0" width="0.5" height="1" fill="#00449e"/>
+  </g>
+  <g id="door_johnson" transform="translate(254,239)">
+    <rect x="-7.5" y="0" width="0.5" height="1" fill="#00449e"/>
+    <rect x="-7" y="0" width="14" height="1" fill="#ffffff"/>
+    <rect x="7" y="0" width="0.5" height="1" fill="#00449e"/>
+  </g>
+  <g id="door_nixon" transform="translate(284,239)">
+    <rect x="-7.5" y="0" width="0.5" height="1" fill="#00449e"/>
+    <rect x="-7" y="0" width="14" height="1" fill="#ffffff"/>
+    <rect x="7" y="0" width="0.5" height="1" fill="#00449e"/>
+  </g>
+  <g id="door_quincy" transform="translate(198.1,307.8)">
+    <rect x="-4" y="0" width="0" height="1" fill="#00449e"/>
+    <rect x="-4" y="0" width="8" height="1" fill="#8888aa"/>
+    <rect x="4" y="0" width="0" height="1" fill="#00449e"/>
+    <line x1="-4" y1="0.33" x2="4" y2="0.33" stroke="#666" stroke-width="0.05"/>
+    <line x1="-4" y1="0.67" x2="4" y2="0.67" stroke="#666" stroke-width="0.05"/>
+  </g>
+      </g>
+
+      <!-- Cameras -->
+      <g id="mercury_cameras" style="display:inline">
+        
+  <g id="bagel" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="179" cy="351" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="179" y="349.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">1</text>
+
+    <!-- Elevation indicator -->
+    <text x="179" y="353" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="179" y1="351" x2="197.15497285975556" y2="381.2149488331217" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 179,351 L 213.2026996344958,359.527690791714 A 35.24976840387213,35.24976840387213 0 0,1 170.472309208286,385.2026996344958 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="bacon" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="179" cy="350" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="179" y="348.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">2</text>
+
+    <!-- Elevation indicator -->
+    <text x="179" y="352" font-size="0.8" text-anchor="middle" fill="#666">14'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="179" y1="350" x2="200.9076229840606" y2="308.79775366104764" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 179,350 L 165.35664098531572,305.37458344190065 A 46.66443022460954,46.66443022460954 0 0,1 223.62541655809932,336.3566409853157 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="beef" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="171" cy="399" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="171" y="397.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">3</text>
+
+    <!-- Elevation indicator -->
+    <text x="171" y="401" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="171" y1="399" x2="171" y2="366.03027096654455" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 171,399 L 147.68688102656063,375.6868810265606 A 32.96972903345547,32.96972903345547 0 0,1 194.31311897343937,375.6868810265606 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="biscuit" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="180" cy="275" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="180" y="273.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">4</text>
+
+    <!-- Elevation indicator -->
+    <text x="180" y="277" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="180" y1="275" x2="168.7874271406945" y2="240.49124910153742" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 180,275 L 147.6701419260566,258.52711453278295 A 36.28464797538176,36.28464797538176 0 0,1 196.47288546721708,242.6701419260566 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="bread" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="323" cy="283" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="323" y="281.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">5</text>
+
+    <!-- Elevation indicator -->
+    <text x="323" y="285" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="323" y1="283" x2="372.8782025129912" y2="286.4878236872063" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 323,283 L 360.7354790111386,250.19704855047465 A 50,50 0 0,1 355.8029514495254,320.7354790111386 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="brownie" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="323" cy="274" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="323" y="272.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">6</text>
+
+    <!-- Elevation indicator -->
+    <text x="323" y="276" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="323" y1="274" x2="290.03027096654455" y2="274" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 323,274 L 306.5151354832723,302.5526228988618 A 32.96972903345547,32.96972903345547 0 0,1 306.5151354832723,245.44737710113822 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="burger" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="274" cy="116" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="274" y="114.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">7</text>
+
+    <!-- Elevation indicator -->
+    <text x="274" y="118" font-size="0.8" text-anchor="middle" fill="#666">15'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="274" y1="116" x2="247.82447868170433" y2="115.08593065371747" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 274,116 L 252.03397956356957,130.26490046374963 A 26.19147645808391,26.19147645808391 0 0,1 253.08255684000648,100.2375759889919 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="butter" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="263" cy="223" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="263" y="221.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">8</text>
+
+    <!-- Elevation indicator -->
+    <text x="263" y="225" font-size="0.8" text-anchor="middle" fill="#666">15'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="263" y1="223" x2="263" y2="223" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 263,223 L 263,223 A 9.184850993605148e-16,9.184850993605148e-16 0 0,1 263,223 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="cake" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="315" cy="239" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="315" y="237.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">9</text>
+
+    <!-- Elevation indicator -->
+    <text x="315" y="241" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="315" y1="239" x2="315" y2="206.03027096654452" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 315,239 L 291.6868810265606,215.68688102656063 A 32.96972903345547,32.96972903345547 0 0,1 338.3131189734394,215.68688102656063 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="candy" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="235" cy="237" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="235" y="235.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">10</text>
+
+    <!-- Elevation indicator -->
+    <text x="235" y="239" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="235" y1="237" x2="235" y2="204.03027096654452" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 235,237 L 211.68688102656063,213.68688102656063 A 32.96972903345547,32.96972903345547 0 0,1 258.3131189734394,213.68688102656063 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="cheese" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="276" cy="237" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="276" y="235.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">11</text>
+
+    <!-- Elevation indicator -->
+    <text x="276" y="239" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="276" y1="237" x2="276" y2="204.03027096654452" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 276,237 L 252.68688102656063,213.68688102656063 A 32.96972903345547,32.96972903345547 0 0,1 299.3131189734394,213.68688102656063 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="chicken" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="228" cy="175" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="228" y="173.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">12</text>
+
+    <!-- Elevation indicator -->
+    <text x="228" y="177" font-size="0.8" text-anchor="middle" fill="#666">15'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="228" y1="175" x2="228" y2="133.78783870818066" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 228,175 L 198.8586012832008,145.8586012832008 A 41.212161291819335,41.212161291819335 0 0,1 257.1413987167992,145.8586012832008 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="chili" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="228" cy="175" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="228" y="173.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">13</text>
+
+    <!-- Elevation indicator -->
+    <text x="228" y="177" font-size="0.8" text-anchor="middle" fill="#666">15'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="228" y1="175" x2="269.2121612918193" y2="175" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 228,175 L 257.1413987167992,145.8586012832008 A 41.212161291819335,41.212161291819335 0 0,1 257.1413987167992,204.1413987167992 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+  <g id="chocolate" class="camera">
+    <!-- Camera position circle -->
+    <circle cx="228" cy="175" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
+
+    <!-- Camera number label -->
+    <text x="228" y="173.5" font-size="1.5" text-anchor="middle" fill="#ff0000" font-weight="bold">14</text>
+
+    <!-- Elevation indicator -->
+    <text x="228" y="177" font-size="0.8" text-anchor="middle" fill="#666">15'</text>
+
+    <!-- Center direction line (dashed) - shows horizontal projection -->
+    <line x1="228" y1="175" x2="228" y2="216.21216129181934" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+
+    <!-- Viewing cone (horizontal projection on floor) -->
+    <path d="M 228,175 L 257.1413987167992,204.1413987167992 A 41.212161291819335,41.212161291819335 0 0,1 198.8586012832008,204.1413987167992 Z"
+          fill="#ff0000"
+          fill-opacity="0.1"
+          stroke="#ff0000"
+          stroke-width="0.1"
+          stroke-dasharray="0.3,0.3"/>
+  </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- Embedded ModelT JSON source data (non-visual, machine-readable) -->
+  <script type="application/json" id="modelt-schema">
+{
+  "name": "Lodge Facility - Simplified Test",
+  "location": {
+    "address": "Industrial Park, Lodge, SC 29082",
+    "city": "Lodge",
+    "state": "SC",
+    "country": "USA",
+    "latitude": 33.5123,
+    "longitude": -81.2456
+  },
+  "property": {
+    "boundary": {
+      "x": 0,
+      "y": 0,
+      "width": 523,
+      "height": 550
+    }
+  },
+  "slabs": [
+    {
+      "id": "venus",
+      "name": "North Loading Dock",
+      "variant": "pavement",
+      "elevation": 4,
+      "start": {
+        "x": 170,
+        "y": 60
+      },
+      "segments": [
+        {
+          "direction": "east",
+          "length": 160
+        },
+        {
+          "direction": "south",
+          "length": 40
+        },
+        {
+          "direction": "west",
+          "length": 160
+        },
+        {
+          "direction": "north",
+          "length": 40
+        }
+      ],
+      "walls": [
+        {
+          "id": "venus_perimeter",
+          "type": "slabPerimeter",
+          "start": {
+            "x": 170,
+            "y": 60
+          },
+          "segments": [
+            {
+              "direction": "east",
+              "length": 160
+            },
+            {
+              "direction": "south",
+              "length": 40
+            },
+            {
+              "direction": "west",
+              "length": 160
+            },
+            {
+              "direction": "north",
+              "length": 40
+            }
+          ],
+          "corners": [
+            {
+              "x": 170,
+              "y": 60
+            },
+            {
+              "x": 330,
+              "y": 60
+            },
+            {
+              "x": 330,
+              "y": 100
+            },
+            {
+              "x": 170,
+              "y": 100
+            }
+          ]
+        }
+      ],
+      "columns": [],
+      "doors": [],
+      "cameras": [],
+      "corners": [
+        {
+          "x": 170,
+          "y": 60
+        },
+        {
+          "x": 330,
+          "y": 60
+        },
+        {
+          "x": 330,
+          "y": 100
+        },
+        {
+          "x": 170,
+          "y": 100
+        }
+      ]
+    },
+    {
+      "id": "mercury",
+      "name": "Main Warehouse",
+      "variant": "building",
+      "elevation": 4,
+      "start": {
+        "x": 170,
+        "y": 100
+      },
+      "segments": [
+        {
+          "direction": "east",
+          "length": 160
+        },
+        {
+          "direction": "south",
+          "length": 178
+        },
+        {
+          "direction": "east",
+          "length": 18
+        },
+        {
+          "direction": "south",
+          "length": 52
+        },
+        {
+          "direction": "west",
+          "length": 18
+        },
+        {
+          "direction": "south",
+          "length": 70
+        },
+        {
+          "direction": "west",
+          "length": 180
+        },
+        {
+          "direction": "north",
+          "length": 122
+        },
+        {
+          "direction": "east",
+          "length": 20
+        },
+        {
+          "direction": "north",
+          "length": 178
+        }
+      ],
+      "walls": [
+        {
+          "id": "mercury_perimeter",
+          "type": "slabPerimeter",
+          "start": {
+            "x": 170,
+            "y": 100
+          },
+          "segments": [
+            {
+              "direction": "east",
+              "length": 160
+            },
+            {
+              "direction": "south",
+              "length": 178
+            },
+            {
+              "direction": "east",
+              "length": 18
+            },
+            {
+              "direction": "south",
+              "length": 52
+            },
+            {
+              "direction": "west",
+              "length": 18
+            },
+            {
+              "direction": "south",
+              "length": 70
+            },
+            {
+              "direction": "west",
+              "length": 180
+            },
+            {
+              "direction": "north",
+              "length": 122
+            },
+            {
+              "direction": "east",
+              "length": 20
+            },
+            {
+              "direction": "north",
+              "length": 178
+            }
+          ],
+          "corners": [
+            {
+              "x": 170,
+              "y": 100
+            },
+            {
+              "x": 330,
+              "y": 100
+            },
+            {
+              "x": 330,
+              "y": 278
+            },
+            {
+              "x": 348,
+              "y": 278
+            },
+            {
+              "x": 348,
+              "y": 330
+            },
+            {
+              "x": 330,
+              "y": 330
+            },
+            {
+              "x": 330,
+              "y": 400
+            },
+            {
+              "x": 150,
+              "y": 400
+            },
+            {
+              "x": 150,
+              "y": 278
+            },
+            {
+              "x": 170,
+              "y": 278
+            }
+          ]
+        },
+        {
+          "id": "abigail",
+          "type": "partition",
+          "start": {
+            "x": 171,
+            "y": 239
+          },
+          "segments": [
+            {
+              "direction": "east",
+              "length": 158
+            }
+          ]
+        },
+        {
+          "id": "alice",
+          "type": "partition",
+          "start": {
+            "x": 180,
+            "y": 385
+          },
+          "segments": [
+            {
+              "direction": "east",
+              "length": 45
+            },
+            {
+              "direction": "south",
+              "length": 15
+            }
+          ]
+        },
+        {
+          "id": "amelia",
+          "type": "partition",
+          "start": {
+            "x": 316,
+            "y": 400
+          },
+          "segments": [
+            {
+              "direction": "north",
+              "length": 6
+            },
+            {
+              "direction": "east",
+              "length": 14
+            }
+          ]
+        },
+        {
+          "id": "anne",
+          "type": "partition",
+          "start": {
+            "x": 150,
+            "y": 278
+          },
+          "segments": [
+            {
+              "direction": "east",
+              "length": 30
+            },
+            {
+              "direction": "south",
+              "length": 122
+            }
+          ]
+        },
+        {
+          "id": "beatrice",
+          "type": "partition",
+          "start": {
+            "x": 180,
+            "y": 308
+          },
+          "segments": [
+            {
+              "direction": "east",
+              "length": 143
+            }
+          ]
+        }
+      ],
+      "columns": [
+        {
+          "id": "oak",
+          "name": "Oak",
+          "x": 228,
+          "y": 116,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 58ft W / 16ft N"
+        },
+        {
+          "id": "maple",
+          "name": "Maple",
+          "x": 256,
+          "y": 116,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 86ft W / 16ft N"
+        },
+        {
+          "id": "pine",
+          "name": "Pine",
+          "x": 286,
+          "y": 116,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 116ft W / 16ft N"
+        },
+        {
+          "id": "birch",
+          "name": "Birch",
+          "x": 228,
+          "y": 175,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 58ft W / 75ft N"
+        },
+        {
+          "id": "cedar",
+          "name": "Cedar",
+          "x": 256,
+          "y": 175,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 86ft W / 75ft N"
+        },
+        {
+          "id": "elm",
+          "name": "Elm",
+          "x": 286,
+          "y": 175,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 116ft W / 75ft N"
+        }
+      ],
+      "doors": [
+        {
+          "id": "washington",
+          "wallId": "mercury_perimeter",
+          "x": 190,
+          "y": 100,
+          "bayWidth": 16,
+          "doorWidth": 192,
+          "type": "bay",
+          "orientation": "horizontal",
+          "facing": "north"
+        },
+        {
+          "id": "lincoln",
+          "wallId": "mercury_perimeter",
+          "x": 220,
+          "y": 100,
+          "bayWidth": 16,
+          "doorWidth": 192,
+          "type": "bay",
+          "orientation": "horizontal",
+          "facing": "north"
+        },
+        {
+          "id": "jefferson",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 272,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "adams",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 262,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "madison",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 252,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "monroe",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 242,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "jackson",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 227,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "vanburen",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 217,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "harrison",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 207,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "tyler",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 197,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "polk",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 187,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "taylor",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 177,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "grant",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 267,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "hayes",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 257,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "garfield",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 247,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "arthur",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 227,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "cleveland",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 217,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "mckinley",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 207,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "roosevelt",
+          "wallId": "mercury_perimeter",
+          "x": 157,
+          "y": 400,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "horizontal",
+          "facing": "south"
+        },
+        {
+          "id": "taft",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 400,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "horizontal",
+          "facing": "south"
+        },
+        {
+          "id": "wilson",
+          "wallId": "mercury_perimeter",
+          "x": 150,
+          "y": 382,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "harding",
+          "wallId": "mercury_perimeter",
+          "x": 150,
+          "y": 362,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "coolidge",
+          "wallId": "mercury_perimeter",
+          "x": 150,
+          "y": 342,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "hoover",
+          "wallId": "mercury_perimeter",
+          "x": 150,
+          "y": 322,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "truman",
+          "wallId": "mercury_perimeter",
+          "x": 150,
+          "y": 302,
+          "bayWidth": 10,
+          "doorWidth": 104,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west"
+        },
+        {
+          "id": "carter",
+          "wallId": "mercury_perimeter",
+          "x": 330,
+          "y": 136,
+          "bayWidth": 16,
+          "doorWidth": 192,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "east"
+        },
+        {
+          "id": "eisenhower",
+          "wallId": "abigail",
+          "x": 194,
+          "y": 239,
+          "width": 15,
+          "type": "interior",
+          "orientation": "horizontal",
+          "facing": "north"
+        },
+        {
+          "id": "kennedy",
+          "wallId": "abigail",
+          "x": 224,
+          "y": 239,
+          "width": 15,
+          "type": "interior",
+          "orientation": "horizontal",
+          "facing": "north"
+        },
+        {
+          "id": "johnson",
+          "wallId": "abigail",
+          "x": 254,
+          "y": 239,
+          "width": 15,
+          "type": "interior",
+          "orientation": "horizontal",
+          "facing": "north"
+        },
+        {
+          "id": "nixon",
+          "wallId": "abigail",
+          "x": 284,
+          "y": 239,
+          "width": 15,
+          "type": "interior",
+          "orientation": "horizontal",
+          "facing": "north"
+        },
+        {
+          "id": "quincy",
+          "wallId": "beatrice",
+          "x": 198.1,
+          "y": 307.8,
+          "bayWidth": 8,
+          "doorWidth": 96,
+          "type": "bay",
+          "orientation": "horizontal",
+          "facing": "south"
+        }
+      ],
+      "cameras": [
+        {
+          "id": "bagel",
+          "name": "Bagel",
+          "number": 1,
+          "x": 179,
+          "y": 351,
+          "elevation": 12,
+          "direction": 149,
+          "tilt": 18.8,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 2, East wall, 50ft from south, looking SW"
+        },
+        {
+          "id": "bacon",
+          "name": "Bacon",
+          "number": 2,
+          "x": 179,
+          "y": 350,
+          "elevation": 14,
+          "direction": 28,
+          "tilt": 16.7,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 2, East wall, 50ft from south, looking NW"
+        },
+        {
+          "id": "beef",
+          "name": "Beef",
+          "number": 3,
+          "x": 171,
+          "y": 399,
+          "elevation": 12,
+          "direction": 0,
+          "tilt": 20,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 2, South wall, 9ft from east"
+        },
+        {
+          "id": "biscuit",
+          "name": "Biscuit",
+          "number": 4,
+          "x": 180,
+          "y": 275,
+          "elevation": 12,
+          "direction": 342,
+          "tilt": 18.3,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Main Floor, West wall, 13ft from south"
+        },
+        {
+          "id": "bread",
+          "name": "Bread",
+          "number": 5,
+          "x": 323,
+          "y": 283,
+          "elevation": 12,
+          "direction": 94,
+          "tilt": 7.4,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Main Floor, East wall, 5ft from south"
+        },
+        {
+          "id": "brownie",
+          "name": "Brownie",
+          "number": 6,
+          "x": 323,
+          "y": 274,
+          "elevation": 12,
+          "direction": 270,
+          "tilt": 20,
+          "viewingAngle": 120,
+          "range": 50,
+          "location": "Main Floor, East wall, 14ft from south"
+        },
+        {
+          "id": "burger",
+          "name": "Burger",
+          "number": 7,
+          "x": 274,
+          "y": 116,
+          "elevation": 15,
+          "direction": 272,
+          "tilt": 29.8,
+          "viewingAngle": 70,
+          "range": 50,
+          "location": "Packing Line 1, ceiling, 58ft W / 21ft N"
+        },
+        {
+          "id": "butter",
+          "name": "Butter",
+          "number": 8,
+          "x": 263,
+          "y": 223,
+          "elevation": 15,
+          "direction": 180,
+          "tilt": 90,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 1, ceiling, 93ft W / 16ft N"
+        },
+        {
+          "id": "cake",
+          "name": "Cake",
+          "number": 9,
+          "x": 315,
+          "y": 239,
+          "elevation": 12,
+          "direction": 0,
+          "tilt": 20,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 1, South wall, 15ft from east"
+        },
+        {
+          "id": "candy",
+          "name": "Candy",
+          "number": 10,
+          "x": 235,
+          "y": 237,
+          "elevation": 12,
+          "direction": 0,
+          "tilt": 20,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 1, South wall, 95ft from west"
+        },
+        {
+          "id": "cheese",
+          "name": "Cheese",
+          "number": 11,
+          "x": 276,
+          "y": 237,
+          "elevation": 12,
+          "direction": 0,
+          "tilt": 20,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 1, South wall, 54ft from west"
+        },
+        {
+          "id": "chicken",
+          "name": "Chicken",
+          "number": 12,
+          "x": 228,
+          "y": 175,
+          "elevation": 15,
+          "direction": 0,
+          "tilt": 20,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 1, on Beam #4 (Birch), facing north"
+        },
+        {
+          "id": "chili",
+          "name": "Chili",
+          "number": 13,
+          "x": 228,
+          "y": 175,
+          "elevation": 15,
+          "direction": 90,
+          "tilt": 20,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 1, on Beam #4 (Birch), facing east"
+        },
+        {
+          "id": "chocolate",
+          "name": "Chocolate",
+          "number": 14,
+          "x": 228,
+          "y": 175,
+          "elevation": 15,
+          "direction": 180,
+          "tilt": 20,
+          "viewingAngle": 90,
+          "range": 50,
+          "location": "Packing Line 1, on Beam #4 (Birch), facing south"
+        }
+      ],
+      "corners": [
+        {
+          "x": 170,
+          "y": 100
+        },
+        {
+          "x": 330,
+          "y": 100
+        },
+        {
+          "x": 330,
+          "y": 278
+        },
+        {
+          "x": 348,
+          "y": 278
+        },
+        {
+          "x": 348,
+          "y": 330
+        },
+        {
+          "x": 330,
+          "y": 330
+        },
+        {
+          "x": 330,
+          "y": 400
+        },
+        {
+          "x": 150,
+          "y": 400
+        },
+        {
+          "x": 150,
+          "y": 278
+        },
+        {
+          "x": 170,
+          "y": 278
+        }
+      ]
+    }
+  ]
+}
+  </script>
+</svg>
