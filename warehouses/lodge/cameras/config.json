@@ -1,0 +1,155 @@
+{
+  "facility": "lodge",
+  "facilityName": "Lodge Facility",
+  "location": "Lodge, SC",
+  "nvr": {
+    "ip": "192.168.0.165",
+    "port": 554,
+    "username": "admin",
+    "password": "",
+    "protocol": "rtsp"
+  },
+  "channels": [
+    {
+      "channel": 1,
+      "nvrPath": "ch01/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch01/0",
+      "resolution": "3072x2048",
+      "modelTCameraId": "bagel",
+      "modelTCameraName": "Bagel",
+      "modelTCameraNumber": 1,
+      "location": "Packing Line 2, East wall, 50ft from south, looking SW"
+    },
+    {
+      "channel": 2,
+      "nvrPath": "ch02/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch02/0",
+      "resolution": "3072x2048",
+      "modelTCameraId": "bacon",
+      "modelTCameraName": "Bacon",
+      "modelTCameraNumber": 2,
+      "location": "Packing Line 2, East wall, 50ft from south, looking NW"
+    },
+    {
+      "channel": 4,
+      "nvrPath": "ch04/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch04/0",
+      "resolution": "3840x2160",
+      "modelTCameraId": "beef",
+      "modelTCameraName": "Beef",
+      "modelTCameraNumber": 3,
+      "location": "Packing Line 2, South wall, 9ft from east"
+    },
+    {
+      "channel": 5,
+      "nvrPath": "ch05/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch05/0",
+      "resolution": "3840x2160",
+      "modelTCameraId": "biscuit",
+      "modelTCameraName": "Biscuit",
+      "modelTCameraNumber": 4,
+      "location": "Main Floor, West wall, 13ft from south"
+    },
+    {
+      "channel": 6,
+      "nvrPath": "ch06/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch06/0",
+      "resolution": "3072x2048",
+      "modelTCameraId": "bread",
+      "modelTCameraName": "Bread",
+      "modelTCameraNumber": 5,
+      "location": "Main Floor, East wall, 5ft from south"
+    },
+    {
+      "channel": 7,
+      "nvrPath": "ch07/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch07/0",
+      "resolution": "4096x3072",
+      "modelTCameraId": "brownie",
+      "modelTCameraName": "Brownie",
+      "modelTCameraNumber": 6,
+      "location": "Main Floor, East wall, 14ft from south"
+    },
+    {
+      "channel": 8,
+      "nvrPath": "ch08/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch08/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "burger",
+      "modelTCameraName": "Burger",
+      "modelTCameraNumber": 7,
+      "location": "Packing Line 1, ceiling, 58ft W / 21ft N"
+    },
+    {
+      "channel": 9,
+      "nvrPath": "ch09/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch09/0",
+      "resolution": "4096x3072",
+      "modelTCameraId": "butter",
+      "modelTCameraName": "Butter",
+      "modelTCameraNumber": 8,
+      "location": "Packing Line 1, ceiling, 93ft W / 16ft N"
+    },
+    {
+      "channel": 10,
+      "nvrPath": "ch10/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch10/0",
+      "resolution": "4096x3072",
+      "modelTCameraId": "cake",
+      "modelTCameraName": "Cake",
+      "modelTCameraNumber": 9,
+      "location": "Packing Line 1, South wall, 15ft from east"
+    },
+    {
+      "channel": 12,
+      "nvrPath": "ch12/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch12/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "candy",
+      "modelTCameraName": "Candy",
+      "modelTCameraNumber": 10,
+      "location": "Packing Line 1, South wall, 95ft from west"
+    },
+    {
+      "channel": 13,
+      "nvrPath": "ch13/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch13/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "cheese",
+      "modelTCameraName": "Cheese",
+      "modelTCameraNumber": 11,
+      "location": "Packing Line 1, South wall, 54ft from west"
+    },
+    {
+      "channel": 14,
+      "nvrPath": "ch14/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch14/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "chicken",
+      "modelTCameraName": "Chicken",
+      "modelTCameraNumber": 12,
+      "location": "Packing Line 1, on Beam #4 (Birch), facing north"
+    },
+    {
+      "channel": 15,
+      "nvrPath": "ch15/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch15/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "chili",
+      "modelTCameraName": "Chili",
+      "modelTCameraNumber": 13,
+      "location": "Packing Line 1, on Beam #4 (Birch), facing east"
+    },
+    {
+      "channel": 16,
+      "nvrPath": "ch16/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch16/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "chocolate",
+      "modelTCameraName": "Chocolate",
+      "modelTCameraNumber": 14,
+      "location": "Packing Line 1, on Beam #4 (Birch), facing south"
+    }
+  ],
+  "notes": "NVR channels mapped to ModelT camera definitions. Note: NVR has channels 1,2,4-10,12-16 (no channel 3 or 11)."
+}
