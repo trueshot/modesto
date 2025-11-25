@@ -8,7 +8,22 @@
       "Bash(node:*)",
       "Bash(npm install)",
       "Bash(curl:*)",
-      "Bash(tasklist:*)"
+      "Bash(tasklist:*)",
+      "Bash(python grab_all_screenshots.py:*)",
+      "Bash(pip install:*)",
+      "Bash(python api/server.py:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(tree:*)",
+      "Bash(git config:*)",
+      "Bash(export GIT_ASKPASS=\"\")",
+      "Bash(export SSH_ASKPASS=\"\")",
+      "Bash(git push)",
+      "Bash(pkill -9 -f \"git push\")",
+      "Bash(git pull:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(find:*)",
+      "Bash(dir:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
