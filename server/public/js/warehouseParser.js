@@ -574,21 +574,526 @@ class ModelTBuilder {
     }
 
     /**
-     * Build a door mesh (v2)
+     * Build a door mesh (v2) - dispatches to type-specific builders
      */
     buildDoorMesh(door, slabElevation, slabId) {
         const slabTop = slabElevation;
-        const doorHeight = 10.0;
+
+        // Dispatch to type-specific builder
+        switch (door.type) {
+            case 'cooler':
+                this.buildCoolerDoor(door, slabTop, slabId);
+                break;
+            case 'bay':
+                this.buildBayDoor(door, slabTop, slabId);
+                break;
+            case 'rollup':
+                this.buildRollupDoor(door, slabTop, slabId);
+                break;
+            case 'personnel':
+                this.buildPersonnelDoor(door, slabTop, slabId);
+                break;
+            case 'interior':
+                // Interior openings have no physical door, just the wall cutout
+                break;
+            default:
+                this.buildGenericDoor(door, slabTop, slabId);
+        }
+
+        // Create floor label for all door types
+        this.createDoorLabel(door, slabTop, slabId);
+    }
+
+    /**
+     * Build a cooler door with door frames on both sides
+     * Orange frame = exterior side (facing direction)
+     * Pink frame = interior side (opposite of facing)
+     * Each frame: left piece, right piece, top piece (4" wide, 1" thick)
+     */
+    buildCoolerDoor(door, slabTop, slabId) {
+        const openingWidth = door.openingWidth || door.bayWidth || door.width || 8;
+        const openingHeight = door.openingHeight || 8;
+        const doorBase = slabTop;
+
+        const frameWidth = 4 / 12;      // 4 inches = 0.33 ft
+        const frameThick = 1 / 12;      // 1 inch = 0.083 ft (sticks out from wall)
+        const wallThickness = 0.5;      // Wall is 0.5 ft thick
+        const wallHalf = wallThickness / 2;
+
+        // Orange = exterior side (the "facing" direction)
+        const orangeMat = new BABYLON.StandardMaterial(`coolerOrangeMat_${slabId}_${door.id}`, this.scene);
+        orangeMat.diffuseColor = new BABYLON.Color3(1, 0.5, 0); // Orange
+        orangeMat.emissiveColor = new BABYLON.Color3(0.2, 0.1, 0); // Slight glow
+
+        // Pink = interior side (opposite of facing)
+        const pinkMat = new BABYLON.StandardMaterial(`coolerPinkMat_${slabId}_${door.id}`, this.scene);
+        pinkMat.diffuseColor = new BABYLON.Color3(1, 0.4, 0.7); // Pink
+        pinkMat.emissiveColor = new BABYLON.Color3(0.2, 0.08, 0.14); // Slight glow
+
+        // Exterior frame sits on wall face (wallHalf + half of frame thickness)
+        const exteriorDist = wallHalf + frameThick / 2;
+        const interiorDist = -(wallHalf + frameThick / 2);
+
+        // Build frame on exterior side (orange)
+        this.buildDoorFrame(door, slabId, 'exterior', openingWidth, openingHeight,
+            doorBase, frameWidth, frameThick, exteriorDist, orangeMat);
+
+        // Build frame on interior side (pink)
+        this.buildDoorFrame(door, slabId, 'interior', openingWidth, openingHeight,
+            doorBase, frameWidth, frameThick, interiorDist, pinkMat);
+    }
+
+    /**
+     * Build a door frame (3 pieces: left, right, top) on one side of wall
+     */
+    buildDoorFrame(door, slabId, side, openingWidth, openingHeight, doorBase, frameWidth, frameThick, facingDist, material) {
+        const leftRightHeight = openingHeight + frameWidth; // Extends 4" above opening
+        const leftRightCenterY = doorBase + leftRightHeight / 2;
+        const topWidth = openingWidth + frameWidth * 2; // Spans over left and right pieces
+        const topCenterY = doorBase + openingHeight + frameWidth / 2;
+
+        // Get offset perpendicular to wall (in facing direction)
+        const perpOffset = this.getFacingOffset(door.facing, facingDist);
+
+        // Get offset parallel to wall (left/right of opening)
+        const leftDist = -(openingWidth / 2 + frameWidth / 2);
+        const rightDist = (openingWidth / 2 + frameWidth / 2);
+
+        // For horizontal doors (E-W wall), left/right is in X direction
+        // For vertical doors (N-S wall), left/right is in Y direction
+        const isVertical = door.orientation === 'vertical';
+
+        // Left piece
+        const leftParallel = isVertical
+            ? { x: 0, y: leftDist }
+            : { x: leftDist, y: 0 };
+
+        const leftPiece = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_${side}_left`,
+            {
+                width: isVertical ? frameThick : frameWidth,
+                height: leftRightHeight,
+                depth: isVertical ? frameWidth : frameThick
+            },
+            this.scene
+        );
+        leftPiece.position = this.svgToBabylon(
+            door.x + perpOffset.x + leftParallel.x,
+            door.y + perpOffset.y + leftParallel.y,
+            leftRightCenterY
+        );
+        leftPiece.material = material;
+        leftPiece.isPickable = false;
+        this.meshes.doors.push(leftPiece);
+
+        // Right piece
+        const rightParallel = isVertical
+            ? { x: 0, y: rightDist }
+            : { x: rightDist, y: 0 };
+
+        const rightPiece = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_${side}_right`,
+            {
+                width: isVertical ? frameThick : frameWidth,
+                height: leftRightHeight,
+                depth: isVertical ? frameWidth : frameThick
+            },
+            this.scene
+        );
+        rightPiece.position = this.svgToBabylon(
+            door.x + perpOffset.x + rightParallel.x,
+            door.y + perpOffset.y + rightParallel.y,
+            leftRightCenterY
+        );
+        rightPiece.material = material;
+        rightPiece.isPickable = false;
+        this.meshes.doors.push(rightPiece);
+
+        // Top piece (sits on top of left and right)
+        const topPiece = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_${side}_top`,
+            {
+                width: isVertical ? frameThick : topWidth,
+                height: frameWidth,
+                depth: isVertical ? topWidth : frameThick
+            },
+            this.scene
+        );
+        topPiece.position = this.svgToBabylon(
+            door.x + perpOffset.x,
+            door.y + perpOffset.y,
+            topCenterY
+        );
+        topPiece.material = material;
+        topPiece.isPickable = false;
+        this.meshes.doors.push(topPiece);
+
+        // Store metadata on left piece
+        leftPiece.metadata = {
+            type: 'cooler',
+            facing: door.facing,
+            side: side,
+            doorId: door.id,
+            slabId: slabId
+        };
+    }
+
+    /**
+     * Get offset in the facing direction
+     */
+    getFacingOffset(facing, distance) {
+        switch (facing) {
+            case 'north': return { x: 0, y: -distance };
+            case 'south': return { x: 0, y: distance };
+            case 'east': return { x: distance, y: 0 };
+            case 'west': return { x: -distance, y: 0 };
+            default: return { x: 0, y: 0 };
+        }
+    }
+
+    /**
+     * Get door rotation based on orientation and facing direction
+     */
+    getDoorRotation(door) {
+        // Horizontal doors face north or south
+        // Vertical doors face east or west
+        switch (door.facing) {
+            case 'north': return Math.PI;        // 180°
+            case 'south': return 0;              // 0°
+            case 'east': return Math.PI / 2;    // 90°
+            case 'west': return -Math.PI / 2;   // -90°
+            default:
+                // Fallback to orientation-based
+                return door.orientation === 'vertical' ? Math.PI / 2 : 0;
+        }
+    }
+
+    /**
+     * Get frame offset based on door facing
+     */
+    getFrameOffset(door, distance) {
+        switch (door.facing) {
+            case 'north':
+            case 'south':
+                return { x: distance, y: 0 };
+            case 'east':
+            case 'west':
+                return { x: 0, y: distance };
+            default:
+                return door.orientation === 'vertical'
+                    ? { x: 0, y: distance }
+                    : { x: distance, y: 0 };
+        }
+    }
+
+    /**
+     * Get track offset based on door facing and slide direction
+     */
+    getTrackOffset(door, slideDirection, openingWidth) {
+        const offset = slideDirection === 'left' ? -openingWidth * 0.25 : openingWidth * 0.25;
+        switch (door.facing) {
+            case 'north':
+            case 'south':
+                return { x: offset, y: 0 };
+            case 'east':
+            case 'west':
+                return { x: 0, y: offset };
+            default:
+                return door.orientation === 'vertical'
+                    ? { x: 0, y: offset }
+                    : { x: offset, y: 0 };
+        }
+    }
+
+    /**
+     * Build a bay door - loading dock door with dock seal and leveler
+     */
+    buildBayDoor(door, slabTop, slabId) {
+        const openingWidth = door.openingWidth || door.bayWidth || door.width || 10;
+        const openingHeight = door.openingHeight || 12;
+        const doorBase = slabTop;
+        const doorCenterY = doorBase + openingHeight / 2;
+
+        // Dock seal (black rubber frame around door)
+        if (door.hasDockSeal !== false) {
+            const sealMaterial = new BABYLON.StandardMaterial(`baySealMat_${slabId}_${door.id}`, this.scene);
+            sealMaterial.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1); // Black rubber
+
+            const sealWidth = 1.0; // 1 foot wide seal
+            const sealDepth = 1.5; // Sticks out 1.5 feet
+
+            // Left seal
+            const leftSeal = BABYLON.MeshBuilder.CreateBox(
+                `${slabId}_${door.id}_leftSeal`,
+                { width: sealWidth, height: openingHeight, depth: sealDepth },
+                this.scene
+            );
+            const leftOffset = door.orientation === 'vertical' ? { x: 0, y: -openingWidth / 2 - sealWidth / 2 } : { x: -openingWidth / 2 - sealWidth / 2, y: 0 };
+            leftSeal.position = this.svgToBabylon(door.x + leftOffset.x, door.y + leftOffset.y, doorCenterY);
+            if (door.orientation === 'vertical') leftSeal.rotation.y = Math.PI / 2;
+            leftSeal.material = sealMaterial;
+            leftSeal.isPickable = false;
+            this.meshes.doors.push(leftSeal);
+
+            // Right seal
+            const rightSeal = BABYLON.MeshBuilder.CreateBox(
+                `${slabId}_${door.id}_rightSeal`,
+                { width: sealWidth, height: openingHeight, depth: sealDepth },
+                this.scene
+            );
+            const rightOffset = door.orientation === 'vertical' ? { x: 0, y: openingWidth / 2 + sealWidth / 2 } : { x: openingWidth / 2 + sealWidth / 2, y: 0 };
+            rightSeal.position = this.svgToBabylon(door.x + rightOffset.x, door.y + rightOffset.y, doorCenterY);
+            if (door.orientation === 'vertical') rightSeal.rotation.y = Math.PI / 2;
+            rightSeal.material = sealMaterial;
+            rightSeal.isPickable = false;
+            this.meshes.doors.push(rightSeal);
+
+            // Top seal
+            const topSeal = BABYLON.MeshBuilder.CreateBox(
+                `${slabId}_${door.id}_topSeal`,
+                { width: openingWidth + sealWidth * 2, height: sealWidth, depth: sealDepth },
+                this.scene
+            );
+            topSeal.position = this.svgToBabylon(door.x, door.y, doorBase + openingHeight + sealWidth / 2);
+            if (door.orientation === 'vertical') topSeal.rotation.y = Math.PI / 2;
+            topSeal.material = sealMaterial;
+            topSeal.isPickable = false;
+            this.meshes.doors.push(topSeal);
+        }
+
+        // Roll-up door panel (metal slats)
+        const panelMaterial = new BABYLON.StandardMaterial(`bayPanelMat_${slabId}_${door.id}`, this.scene);
+        panelMaterial.diffuseColor = new BABYLON.Color3(0.7, 0.7, 0.7); // Light gray metal
+        panelMaterial.alpha = 0.3;
+
+        const panel = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_panel`,
+            { width: openingWidth - 0.5, height: openingHeight - 0.5, depth: 0.15 },
+            this.scene
+        );
+        panel.position = this.svgToBabylon(door.x, door.y, doorCenterY);
+        if (door.orientation === 'vertical') panel.rotation.y = Math.PI / 2;
+        panel.material = panelMaterial;
+        panel.isPickable = false;
+        this.meshes.doors.push(panel);
+
+        // Dock leveler (if enabled)
+        if (door.hasDockLeveler !== false) {
+            const levelerMaterial = new BABYLON.StandardMaterial(`bayLevelerMat_${slabId}_${door.id}`, this.scene);
+            levelerMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4); // Dark gray metal
+            levelerMaterial.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5);
+
+            const levelerWidth = door.levelerWidth || 8;
+            const levelerDepth = door.levelerDepth || 6;
+
+            const leveler = BABYLON.MeshBuilder.CreateBox(
+                `${slabId}_${door.id}_leveler`,
+                { width: levelerWidth, height: 0.3, depth: levelerDepth },
+                this.scene
+            );
+            // Position leveler on interior side of door
+            const levelerOffset = this.getLevelerOffset(door, levelerDepth);
+            leveler.position = this.svgToBabylon(door.x + levelerOffset.x, door.y + levelerOffset.y, slabTop + 0.15);
+            if (door.orientation === 'vertical') leveler.rotation.y = Math.PI / 2;
+            leveler.material = levelerMaterial;
+            leveler.isPickable = false;
+            this.meshes.doors.push(leveler);
+        }
+
+        panel.metadata = {
+            type: door.type,
+            facing: door.facing,
+            openingWidth: openingWidth,
+            slabId: slabId,
+            doorId: door.id
+        };
+    }
+
+    /**
+     * Get leveler offset based on door facing direction
+     */
+    getLevelerOffset(door, levelerDepth) {
+        const offset = levelerDepth / 2 + 0.5;
+        switch (door.facing) {
+            case 'north': return { x: 0, y: -offset };
+            case 'south': return { x: 0, y: offset };
+            case 'east': return { x: offset, y: 0 };
+            case 'west': return { x: -offset, y: 0 };
+            default: return { x: 0, y: 0 };
+        }
+    }
+
+    /**
+     * Build a rollup door - standalone roll-up without dock equipment
+     */
+    buildRollupDoor(door, slabTop, slabId) {
+        const openingWidth = door.openingWidth || door.bayWidth || door.width || 10;
+        const openingHeight = door.openingHeight || 10;
+        const doorBase = slabTop;
+        const doorCenterY = doorBase + openingHeight / 2;
+        const housingHeight = door.housingHeight || 2;
+        const trackWidth = door.trackWidth || 0.5;
+
+        // Metal frame
+        const frameMaterial = new BABYLON.StandardMaterial(`rollupFrameMat_${slabId}_${door.id}`, this.scene);
+        frameMaterial.diffuseColor = new BABYLON.Color3(0.35, 0.35, 0.35);
+
+        // Guide tracks (left and right)
+        const leftTrack = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_leftTrack`,
+            { width: trackWidth, height: openingHeight, depth: 0.3 },
+            this.scene
+        );
+        const leftOffset = door.orientation === 'vertical' ? { x: 0, y: -openingWidth / 2 - trackWidth / 2 } : { x: -openingWidth / 2 - trackWidth / 2, y: 0 };
+        leftTrack.position = this.svgToBabylon(door.x + leftOffset.x, door.y + leftOffset.y, doorCenterY);
+        if (door.orientation === 'vertical') leftTrack.rotation.y = Math.PI / 2;
+        leftTrack.material = frameMaterial;
+        leftTrack.isPickable = false;
+        this.meshes.doors.push(leftTrack);
+
+        const rightTrack = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_rightTrack`,
+            { width: trackWidth, height: openingHeight, depth: 0.3 },
+            this.scene
+        );
+        const rightOffset = door.orientation === 'vertical' ? { x: 0, y: openingWidth / 2 + trackWidth / 2 } : { x: openingWidth / 2 + trackWidth / 2, y: 0 };
+        rightTrack.position = this.svgToBabylon(door.x + rightOffset.x, door.y + rightOffset.y, doorCenterY);
+        if (door.orientation === 'vertical') rightTrack.rotation.y = Math.PI / 2;
+        rightTrack.material = frameMaterial;
+        rightTrack.isPickable = false;
+        this.meshes.doors.push(rightTrack);
+
+        // Roll housing (cylinder above door)
+        const housing = BABYLON.MeshBuilder.CreateCylinder(
+            `${slabId}_${door.id}_housing`,
+            { diameter: housingHeight, height: openingWidth + trackWidth * 2, tessellation: 16 },
+            this.scene
+        );
+        housing.position = this.svgToBabylon(door.x, door.y, doorBase + openingHeight + housingHeight / 2);
+        housing.rotation.z = Math.PI / 2;
+        if (door.orientation === 'vertical') {
+            housing.rotation.z = 0;
+            housing.rotation.x = Math.PI / 2;
+        }
+        housing.material = frameMaterial;
+        housing.isPickable = false;
+        this.meshes.doors.push(housing);
+
+        // Roll-up panel (semi-transparent)
+        const panelMaterial = new BABYLON.StandardMaterial(`rollupPanelMat_${slabId}_${door.id}`, this.scene);
+        panelMaterial.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.6);
+        panelMaterial.alpha = 0.25;
+
+        const panel = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_panel`,
+            { width: openingWidth - 0.3, height: openingHeight - 0.3, depth: 0.1 },
+            this.scene
+        );
+        panel.position = this.svgToBabylon(door.x, door.y, doorCenterY);
+        if (door.orientation === 'vertical') panel.rotation.y = Math.PI / 2;
+        panel.material = panelMaterial;
+        panel.isPickable = false;
+        this.meshes.doors.push(panel);
+
+        panel.metadata = {
+            type: door.type,
+            facing: door.facing,
+            openingWidth: openingWidth,
+            slabId: slabId,
+            doorId: door.id
+        };
+    }
+
+    /**
+     * Build a personnel door - standard hinged door
+     */
+    buildPersonnelDoor(door, slabTop, slabId) {
+        const openingWidth = door.openingWidth || door.bayWidth || door.width || 3;
+        const openingHeight = door.openingHeight || 7;
+        const doorBase = slabTop;
+        const doorCenterY = doorBase + openingHeight / 2;
+        const frameWidth = door.frameWidth || 0.25;
+        const hingePosition = door.hingePosition || 'left';
+
+        // Door frame
+        const frameMaterial = new BABYLON.StandardMaterial(`personnelFrameMat_${slabId}_${door.id}`, this.scene);
+        frameMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.35, 0.3);
+
+        // Top frame
+        const topFrame = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_topFrame`,
+            { width: openingWidth + frameWidth * 2, height: frameWidth, depth: frameWidth },
+            this.scene
+        );
+        topFrame.position = this.svgToBabylon(door.x, door.y, doorBase + openingHeight + frameWidth / 2);
+        if (door.orientation === 'vertical') topFrame.rotation.y = Math.PI / 2;
+        topFrame.material = frameMaterial;
+        topFrame.isPickable = false;
+        this.meshes.doors.push(topFrame);
+
+        // Left frame
+        const leftFrame = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_leftFrame`,
+            { width: frameWidth, height: openingHeight, depth: frameWidth },
+            this.scene
+        );
+        const leftOffset = door.orientation === 'vertical' ? { x: 0, y: -openingWidth / 2 - frameWidth / 2 } : { x: -openingWidth / 2 - frameWidth / 2, y: 0 };
+        leftFrame.position = this.svgToBabylon(door.x + leftOffset.x, door.y + leftOffset.y, doorCenterY);
+        if (door.orientation === 'vertical') leftFrame.rotation.y = Math.PI / 2;
+        leftFrame.material = frameMaterial;
+        leftFrame.isPickable = false;
+        this.meshes.doors.push(leftFrame);
+
+        // Right frame
+        const rightFrame = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_rightFrame`,
+            { width: frameWidth, height: openingHeight, depth: frameWidth },
+            this.scene
+        );
+        const rightOffset = door.orientation === 'vertical' ? { x: 0, y: openingWidth / 2 + frameWidth / 2 } : { x: openingWidth / 2 + frameWidth / 2, y: 0 };
+        rightFrame.position = this.svgToBabylon(door.x + rightOffset.x, door.y + rightOffset.y, doorCenterY);
+        if (door.orientation === 'vertical') rightFrame.rotation.y = Math.PI / 2;
+        rightFrame.material = frameMaterial;
+        rightFrame.isPickable = false;
+        this.meshes.doors.push(rightFrame);
+
+        // Door panel
+        const panelMaterial = new BABYLON.StandardMaterial(`personnelPanelMat_${slabId}_${door.id}`, this.scene);
+        panelMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.4, 0.3); // Wood brown
+
+        const panel = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_panel`,
+            { width: openingWidth - 0.2, height: openingHeight - 0.2, depth: 0.15 },
+            this.scene
+        );
+        panel.position = this.svgToBabylon(door.x, door.y, doorCenterY);
+        if (door.orientation === 'vertical') panel.rotation.y = Math.PI / 2;
+        panel.material = panelMaterial;
+        panel.isPickable = false;
+        this.meshes.doors.push(panel);
+
+        panel.metadata = {
+            type: door.type,
+            facing: door.facing,
+            openingWidth: openingWidth,
+            slabId: slabId,
+            doorId: door.id
+        };
+    }
+
+    /**
+     * Build a generic door (fallback for unknown types)
+     */
+    buildGenericDoor(door, slabTop, slabId) {
+        const doorHeight = door.openingHeight || 10.0;
         const doorBase = slabTop;
         const doorCenterY = doorBase + doorHeight / 2;
 
         const doorMaterial = new BABYLON.StandardMaterial(`doorMat_${slabId}_${door.id}`, this.scene);
         doorMaterial.diffuseColor = new BABYLON.Color3(0.6, 0.4, 0.2);
-        doorMaterial.alpha = 0.2;  // More transparent (was 0.5)
+        doorMaterial.alpha = 0.2;
 
-        // Interior doors use 'width' field, exterior use 'bayWidth'
-        const bayWidth = door.bayWidth || door.width || 10;
-        const doorWidth = door.doorWidth ? (door.doorWidth / 12) : (bayWidth * 0.9);
+        const bayWidth = door.openingWidth || door.bayWidth || door.width || 10;
 
         const doorFrame = BABYLON.MeshBuilder.CreateBox(
             `${slabId}_${door.id}`,
@@ -596,19 +1101,13 @@ class ModelTBuilder {
             this.scene
         );
 
-        doorFrame.position = this.svgToBabylon(
-            door.x,
-            door.y,
-            doorCenterY
-        );
+        doorFrame.position = this.svgToBabylon(door.x, door.y, doorCenterY);
 
         if (door.orientation === 'vertical') {
             doorFrame.rotation.y = Math.PI / 2;
         }
 
         doorFrame.material = doorMaterial;
-
-        // Don't let door frame block clicks on labels
         doorFrame.isPickable = false;
 
         doorFrame.metadata = {
@@ -620,9 +1119,6 @@ class ModelTBuilder {
         };
 
         this.meshes.doors.push(doorFrame);
-
-        // Create floor label for door
-        this.createDoorLabel(door, slabTop, slabId);
     }
 
     /**

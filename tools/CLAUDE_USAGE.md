@@ -101,18 +101,88 @@ node modelt-cli.js lodge list-cameras
 
 ### Doors
 
-#### Add Door
+Doors support 5 types: **bay**, **rollup**, **personnel**, **cooler**, **interior**
+
+#### Add Bay Door (Loading Dock)
 ```bash
 node modelt-cli.js lodge add-door \
   --slab mercury \
   --wall mercury_perimeter \
   --x 180 \
   --y 400 \
-  --bayWidth 10 \
-  --doorWidth 104 \
   --type bay \
+  --openingWidth 10 \
+  --openingHeight 12 \
   --orientation horizontal \
-  --facing south
+  --facing south \
+  --hardwareSide exterior \
+  --hasDockSeal true \
+  --hasDockLeveler true \
+  --levelerWidth 8 \
+  --levelerDepth 6
+```
+
+#### Add Roll-up Door
+```bash
+node modelt-cli.js lodge add-door \
+  --slab mercury \
+  --wall mercury_perimeter \
+  --x 250 \
+  --y 400 \
+  --type rollup \
+  --openingWidth 10 \
+  --openingHeight 10 \
+  --orientation horizontal \
+  --facing south \
+  --housingHeight 2 \
+  --trackWidth 0.5
+```
+
+#### Add Personnel Door
+```bash
+node modelt-cli.js lodge add-door \
+  --slab mercury \
+  --wall mercury_perimeter \
+  --x 300 \
+  --y 400 \
+  --type personnel \
+  --openingWidth 3 \
+  --openingHeight 7 \
+  --orientation horizontal \
+  --facing south \
+  --swingDirection inward \
+  --hingePosition left
+```
+
+#### Add Cooler Door
+```bash
+node modelt-cli.js lodge add-door \
+  --slab mercury \
+  --wall partition_1 \
+  --x 220 \
+  --y 200 \
+  --type cooler \
+  --openingWidth 6 \
+  --openingHeight 8 \
+  --orientation vertical \
+  --facing east \
+  --insulation 4 \
+  --slideDirection left
+```
+
+#### Add Interior Opening
+```bash
+node modelt-cli.js lodge add-door \
+  --slab mercury \
+  --wall partition_1 \
+  --x 240 \
+  --y 200 \
+  --type interior \
+  --openingWidth 8 \
+  --openingHeight 10 \
+  --orientation vertical \
+  --facing east \
+  --hasPhysicalDoor false
 ```
 
 **Output:**
@@ -125,16 +195,39 @@ node modelt-cli.js lodge add-door \
     "wallId": "mercury_perimeter",
     "x": 180,
     "y": 400,
-    "bayWidth": 10,
-    "doorWidth": 104,
     "type": "bay",
+    "openingWidth": 10,
+    "openingHeight": 12,
     "orientation": "horizontal",
-    "facing": "south"
+    "facing": "south",
+    "hardwareSide": "exterior",
+    "hasDockSeal": true,
+    "hasDockLeveler": true
   }
 }
 ```
 
-**Claude should say:** "Added door **biden** on mercury_perimeter wall at position (180, 400) facing south"
+**Claude should say:** "Added bay door **biden** on mercury_perimeter wall at position (180, 400) facing south with dock seal and leveler"
+
+#### Core Door Properties (All Types)
+| Property | Description | Values |
+|----------|-------------|--------|
+| `--type` | Door type | bay, rollup, personnel, cooler, interior |
+| `--openingWidth` | Width of opening (feet) | Number |
+| `--openingHeight` | Height of opening (feet) | Number |
+| `--orientation` | Wall orientation | horizontal, vertical |
+| `--facing` | Direction through door | north, south, east, west |
+| `--hardwareSide` | Which side has hardware | interior, exterior |
+| `--state` | Door state | open, closed, partial |
+
+#### Type-Specific Properties
+| Type | Properties |
+|------|------------|
+| bay | `hasDockSeal`, `hasDockLeveler`, `hasSafetyStriping`, `dockSealWidth`, `dockSealHeight`, `levelerWidth`, `levelerDepth` |
+| rollup | `housingHeight`, `trackWidth` |
+| personnel | `frameWidth`, `swingDirection` (inward/outward), `hingePosition` (left/right) |
+| cooler | `insulation`, `slideDirection` (left/right), `trackPosition` |
+| interior | `hasPhysicalDoor` (true/false) |
 
 #### Move Door
 ```bash
@@ -144,7 +237,7 @@ node modelt-cli.js lodge move-door roosevelt 3 0
 
 #### Update Door Properties
 ```bash
-node modelt-cli.js lodge update-door taft --bayWidth 12
+node modelt-cli.js lodge update-door taft --openingWidth 12 --hasDockSeal true
 ```
 
 #### Delete Door

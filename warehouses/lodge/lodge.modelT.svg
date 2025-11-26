@@ -577,8 +577,7 @@
     <rect x="-4" y="0" width="0" height="1" fill="#00449e"/>
     <rect x="-4" y="0" width="8" height="1" fill="#8888aa"/>
     <rect x="4" y="0" width="0" height="1" fill="#00449e"/>
-    <line x1="-4" y1="0.33" x2="4" y2="0.33" stroke="#666" stroke-width="0.05"/>
-    <line x1="-4" y1="0.67" x2="4" y2="0.67" stroke="#666" stroke-width="0.05"/>
+    <rect x="-4" y="0" width="8" height="1" fill="#aaccff" fill-opacity="0.3"/>
   </g>
       </g>
 
@@ -659,10 +658,10 @@
     <text x="180" y="277" font-size="0.8" text-anchor="middle" fill="#666">12'</text>
 
     <!-- Center direction line (dashed) - shows horizontal projection -->
-    <line x1="180" y1="275" x2="168.7874271406945" y2="240.49124910153742" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
+    <line x1="180" y1="275" x2="168.75244728280677" y2="323.71850323926174" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
 
     <!-- Viewing cone (horizontal projection on floor) -->
-    <path d="M 180,275 L 149.22887336477137,255.77206604192486 A 36.28464797538176,36.28464797538176 0 0,1 193.59246837135333,241.35746022858655 Z"
+    <path d="M 180,275 L 202.69952498697734,319.55032620941836 A 50,50 0 0,1 140.06822449763536,305.0907511576024 Z"
           fill="#ff0000"
           fill-opacity="0.1"
           stroke="#ff0000"
@@ -1616,9 +1615,13 @@
           "y": 307.8,
           "bayWidth": 8,
           "doorWidth": 96,
-          "type": "bay",
+          "type": "cooler",
           "orientation": "horizontal",
-          "facing": "south"
+          "facing": "north",
+          "openingWidth": 8,
+          "openingHeight": 8,
+          "insulation": 4,
+          "slideDirection": "left"
         }
       ],
       "cameras": [
@@ -1668,12 +1671,12 @@
           "x": 180,
           "y": 275,
           "elevation": 12,
-          "direction": 342,
-          "tilt": 18.3,
+          "direction": 193,
+          "tilt": -4.3,
           "viewingAngle": 80,
           "range": 50,
           "location": "Main Floor, West wall, 13ft from south",
-          "roll": -15
+          "roll": 0
         },
         {
           "id": "bread",

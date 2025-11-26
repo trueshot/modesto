@@ -1006,6 +1006,7 @@
             arcRotateCamera.upperRadiusLimit = 1500;
             arcRotateCamera.lowerBetaLimit = -Math.PI / 2;
             arcRotateCamera.upperBetaLimit = Math.PI;
+            arcRotateCamera.inertia = 0; // No momentum
 
             // Universal Camera
             universalCamera = new BABYLON.UniversalCamera(
@@ -1015,6 +1016,7 @@
             );
             universalCamera.speed = 2;
             universalCamera.angularSensibility = 1000;
+            universalCamera.inertia = 0; // No momentum
 
             // Start with arc rotate camera
             scene.activeCamera = arcRotateCamera;
@@ -1024,20 +1026,29 @@
             currentScene = scene;
             currentCamera = arcRotateCamera;
 
-            // Lighting
+            // Lighting - configured for visible edges
             const hemiLight = new BABYLON.HemisphericLight(
                 "hemiLight",
                 new BABYLON.Vector3(0, 1, 0),
                 scene
             );
-            hemiLight.intensity = 0.7;
+            hemiLight.intensity = 0.4; // Reduced for more contrast
+            hemiLight.groundColor = new BABYLON.Color3(0.2, 0.2, 0.25); // Darker ground bounce
 
             const dirLight = new BABYLON.DirectionalLight(
                 "dirLight",
                 new BABYLON.Vector3(-1, -2, -1),
                 scene
             );
-            dirLight.intensity = 0.5;
+            dirLight.intensity = 0.7;
+
+            // Second directional light from opposite side for edge definition
+            const dirLight2 = new BABYLON.DirectionalLight(
+                "dirLight2",
+                new BABYLON.Vector3(1, -1, 1),
+                scene
+            );
+            dirLight2.intensity = 0.3;
 
             // Ground plane
             let groundWidth = 800;

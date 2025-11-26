@@ -228,6 +228,7 @@ class ModelTEditor {
 
   /**
    * Add a door with auto-assigned name
+   * Supports all door types: bay, rollup, personnel, cooler, interior
    */
   addDoor(slabId, spec) {
     const slab = this.findSlab(slabId);
@@ -235,24 +236,72 @@ class ModelTEditor {
 
     const allDoors = this.getAllDoors();
     const id = this.nameManager.getNextDoorName(allDoors);
+    const type = spec.type || 'bay';
 
+    // Core properties (all doors)
     const door = {
       id,
       wallId: spec.wallId,
       x: spec.x,
       y: spec.y,
-      bayWidth: spec.bayWidth || 10,
-      doorWidth: spec.doorWidth || 104,
-      type: spec.type || 'bay',
+      type,
       orientation: spec.orientation || 'horizontal',
       facing: spec.facing
     };
 
-    // Interior doors use 'width' instead of 'bayWidth'
-    if (spec.type === 'interior' && spec.width) {
-      door.width = spec.width;
-      delete door.bayWidth;
-      delete door.doorWidth;
+    // Opening dimensions - support both old and new naming
+    door.openingWidth = spec.openingWidth || spec.bayWidth || spec.width || 10;
+    door.openingHeight = spec.openingHeight || 10;
+
+    // Optional core properties
+    if (spec.hardwareSide) door.hardwareSide = spec.hardwareSide;
+    if (spec.state) door.state = spec.state;
+
+    // Legacy properties for backward compatibility
+    if (spec.bayWidth) door.bayWidth = spec.bayWidth;
+    if (spec.doorWidth) door.doorWidth = spec.doorWidth;
+    if (spec.width) door.width = spec.width;
+
+    // Type-specific properties
+    switch (type) {
+      case 'bay':
+        // Loading dock door
+        if (spec.hasDockSeal !== undefined) door.hasDockSeal = spec.hasDockSeal;
+        if (spec.hasDockLeveler !== undefined) door.hasDockLeveler = spec.hasDockLeveler;
+        if (spec.hasSafetyStriping !== undefined) door.hasSafetyStriping = spec.hasSafetyStriping;
+        if (spec.dockSealWidth) door.dockSealWidth = spec.dockSealWidth;
+        if (spec.dockSealHeight) door.dockSealHeight = spec.dockSealHeight;
+        if (spec.levelerWidth) door.levelerWidth = spec.levelerWidth;
+        if (spec.levelerDepth) door.levelerDepth = spec.levelerDepth;
+        break;
+
+      case 'rollup':
+        // Standalone roll-up door
+        if (spec.housingHeight) door.housingHeight = spec.housingHeight;
+        if (spec.trackWidth) door.trackWidth = spec.trackWidth;
+        break;
+
+      case 'personnel':
+        // Standard hinged door
+        if (spec.frameWidth) door.frameWidth = spec.frameWidth;
+        if (spec.swingDirection) door.swingDirection = spec.swingDirection;
+        if (spec.hingePosition) door.hingePosition = spec.hingePosition;
+        break;
+
+      case 'cooler':
+        // Insulated sliding door
+        if (spec.insulation) door.insulation = spec.insulation;
+        if (spec.slideDirection) door.slideDirection = spec.slideDirection;
+        if (spec.trackPosition) door.trackPosition = spec.trackPosition;
+        break;
+
+      case 'interior':
+        // Opening in partition wall
+        if (spec.hasPhysicalDoor !== undefined) door.hasPhysicalDoor = spec.hasPhysicalDoor;
+        // Interior doors don't need bayWidth/doorWidth
+        delete door.bayWidth;
+        delete door.doorWidth;
+        break;
     }
 
     slab.doors.push(door);

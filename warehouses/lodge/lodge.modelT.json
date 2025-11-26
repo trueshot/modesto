@@ -729,9 +729,13 @@
           "y": 307.8,
           "bayWidth": 8,
           "doorWidth": 96,
-          "type": "bay",
+          "type": "cooler",
           "orientation": "horizontal",
-          "facing": "south"
+          "facing": "north",
+          "openingWidth": 8,
+          "openingHeight": 8,
+          "insulation": 4,
+          "slideDirection": "left"
         }
       ],
       "cameras": [
@@ -781,12 +785,12 @@
           "x": 180,
           "y": 275,
           "elevation": 12,
-          "direction": 342,
-          "tilt": 18.3,
+          "direction": 193,
+          "tilt": -4.3,
           "viewingAngle": 80,
           "range": 50,
           "location": "Main Floor, West wall, 13ft from south",
-          "roll": -15
+          "roll": 0
         },
         {
           "id": "bread",

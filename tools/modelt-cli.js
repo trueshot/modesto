@@ -147,15 +147,43 @@ async function main() {
       // ==================== DOORS ====================
       case 'add-door': {
         const door = editor.addDoor(options.slab, {
+          // Core properties
           wallId: options.wall,
           x: options.x,
           y: options.y,
-          bayWidth: options.bayWidth,
-          doorWidth: options.doorWidth,
           type: options.type,
           orientation: options.orientation,
           facing: options.facing,
-          width: options.width
+          // Opening dimensions (new + legacy)
+          openingWidth: options.openingWidth,
+          openingHeight: options.openingHeight,
+          bayWidth: options.bayWidth,
+          doorWidth: options.doorWidth,
+          width: options.width,
+          // Optional core
+          hardwareSide: options.hardwareSide,
+          state: options.state,
+          // Bay door properties
+          hasDockSeal: options.hasDockSeal,
+          hasDockLeveler: options.hasDockLeveler,
+          hasSafetyStriping: options.hasSafetyStriping,
+          dockSealWidth: options.dockSealWidth,
+          dockSealHeight: options.dockSealHeight,
+          levelerWidth: options.levelerWidth,
+          levelerDepth: options.levelerDepth,
+          // Rollup door properties
+          housingHeight: options.housingHeight,
+          trackWidth: options.trackWidth,
+          // Personnel door properties
+          frameWidth: options.frameWidth,
+          swingDirection: options.swingDirection,
+          hingePosition: options.hingePosition,
+          // Cooler door properties
+          insulation: options.insulation,
+          slideDirection: options.slideDirection,
+          trackPosition: options.trackPosition,
+          // Interior door properties
+          hasPhysicalDoor: options.hasPhysicalDoor
         });
         editor.commit();
         result = {
