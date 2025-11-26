@@ -89,6 +89,22 @@ npm run dev
 
 Requires `nodemon` (installed with dev dependencies).
 
+## Key Source Files (for Claude)
+
+When editing the digital twin viewer, these are the files you need:
+
+| File | Purpose |
+|------|---------|
+| `public/index.html` | BabylonJS 3D viewer - UI, camera controls, image overlay, WebSocket integration |
+| `public/js/warehouseParser.js` | Parses ModelT JSON into BabylonJS meshes |
+| `server.js` | Express server, WebSocket server, API routes |
+
+### Viewer Features in index.html
+- **Camera selector** - Dropdown to switch between warehouse cameras
+- **Show Image button** - Overlays actual camera screenshot on 3D view
+- **Position marking** - Click green sphere to mark positions for adding components
+- **WebSocket** - Real-time communication with CLI tools for reload/position marking
+
 ## Related
 
 - ModelT scripts: `../modelt/`

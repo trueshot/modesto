@@ -17,6 +17,42 @@
       <!-- Walls -->
       <g id="venus_walls" style="display:inline;fill:#00449e;fill-opacity:1">
         
+  <g id="corner_NW_venus_perimeter_corner0" transform="translate(170,60)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0.8" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_NE_venus_perimeter_corner1" transform="translate(329,60)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0" width="1" height="0.2"/>
+    <rect x="0" y="0.8" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_SE_venus_perimeter_corner2" transform="translate(329,99)">
+    <rect x="0.8" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0.8" width="1" height="0.2"/>
+    <rect x="0" y="0" width="0.2" height="0.2"/>
+  </g>
+  <g id="corner_SW_venus_perimeter_corner3" transform="translate(170,99)">
+    <rect x="0" y="0" width="0.2" height="1"/>
+    <rect x="0" y="0.8" width="1" height="0.2"/>
+    <rect x="0.8" y="0" width="0.2" height="0.2"/>
+  </g>
+  <g id="wall_h_venus_perimeter_seg0" transform="translate(171,60)">
+    <rect width="158" height="0.2" x="0" y="0"/>
+    <rect width="158" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="wall_v_venus_perimeter_seg1" transform="translate(329,61)">
+    <rect width="0.2" height="38" x="0" y="0"/>
+    <rect width="0.2" height="38" x="0.8" y="0"/>
+  </g>
+  <g id="wall_h_venus_perimeter_seg2" transform="translate(171,99)">
+    <rect width="158" height="0.2" x="0" y="0"/>
+    <rect width="158" height="0.2" x="0" y="0.8"/>
+  </g>
+  <g id="wall_v_venus_perimeter_seg3" transform="translate(170,61)">
+    <rect width="0.2" height="38" x="0" y="0"/>
+    <rect width="0.2" height="38" x="0.8" y="0"/>
+  </g>
         
         
       </g>
@@ -233,16 +269,16 @@
   </g>
         
         
-  <g id="endcap_west_abigail_start" transform="translate(171,239)">
+  <g id="endcap_west_abigail_start" transform="translate(170,239)">
     <rect width="0.5" height="0.2" x="0" y="0"/>
     <rect width="0.5" height="0.2" x="0" y="0.8"/>
     <rect width="0.2" height="1" x="0" y="0"/>
   </g>
-  <g id="wall_h_abigail_seg0" transform="translate(171.5,239)">
+  <g id="wall_h_abigail_seg0" transform="translate(170.5,239)">
     <rect width="157" height="0.2" x="0" y="0"/>
     <rect width="157" height="0.2" x="0" y="0.8"/>
   </g>
-  <g id="endcap_east_abigail_end" transform="translate(328.5,239)">
+  <g id="endcap_east_abigail_end" transform="translate(327.5,239)">
     <rect width="0.5" height="0.2" x="0" y="0"/>
     <rect width="0.5" height="0.2" x="0" y="0.8"/>
     <rect width="0.2" height="1" x="0.3" y="0"/>
@@ -517,7 +553,7 @@
     <line x1="0.33" y1="-8" x2="0.33" y2="8" stroke="#666" stroke-width="0.05"/>
     <line x1="0.67" y1="-8" x2="0.67" y2="8" stroke="#666" stroke-width="0.05"/>
   </g>
-  <g id="door_eisenhower" transform="translate(194,239)">
+  <g id="door_eisenhower" transform="translate(179,239)">
     <rect x="-7.5" y="0" width="0.5" height="1" fill="#00449e"/>
     <rect x="-7" y="0" width="14" height="1" fill="#ffffff"/>
     <rect x="7" y="0" width="0.5" height="1" fill="#00449e"/>
@@ -626,7 +662,7 @@
     <line x1="180" y1="275" x2="168.7874271406945" y2="240.49124910153742" stroke="#ff0000" stroke-width="0.1" stroke-dasharray="0.5,0.5" opacity="0.7"/>
 
     <!-- Viewing cone (horizontal projection on floor) -->
-    <path d="M 180,275 L 147.6701419260566,258.52711453278295 A 36.28464797538176,36.28464797538176 0 0,1 196.47288546721708,242.6701419260566 Z"
+    <path d="M 180,275 L 149.22887336477137,255.77206604192486 A 36.28464797538176,36.28464797538176 0 0,1 193.59246837135333,241.35746022858655 Z"
           fill="#ff0000"
           fill-opacity="0.1"
           stroke="#ff0000"
@@ -1111,7 +1147,7 @@
           "id": "abigail",
           "type": "partition",
           "start": {
-            "x": 171,
+            "x": 170,
             "y": 239
           },
           "segments": [
@@ -1536,7 +1572,7 @@
         {
           "id": "eisenhower",
           "wallId": "abigail",
-          "x": 194,
+          "x": 179,
           "y": 239,
           "width": 15,
           "type": "interior",
@@ -1634,9 +1670,10 @@
           "elevation": 12,
           "direction": 342,
           "tilt": 18.3,
-          "viewingAngle": 90,
+          "viewingAngle": 80,
           "range": 50,
-          "location": "Main Floor, West wall, 13ft from south"
+          "location": "Main Floor, West wall, 13ft from south",
+          "roll": -15
         },
         {
           "id": "bread",

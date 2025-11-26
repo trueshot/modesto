@@ -23,7 +23,16 @@
       "Bash(git remote set-url:*)",
       "Bash(find:*)",
       "Bash(dir:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(rm:*)",
+      "WebSearch",
+      "Bash(cmd //c \"dir C:\\Users\\georg\\.claude\\skills\")",
+      "Bash(cmd //c \"mklink /J \"\"C:\\Users\\georg\\.claude\\skills\\modelt-warehouse-builder\"\" \"\"C:\\clients\\skills\\modelt-warehouse-builder-skill\"\"\")",
+      "Bash(ln:*)",
+      "WebFetch(domain:www.anthropic.com)",
+      "WebFetch(domain:claude.com)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

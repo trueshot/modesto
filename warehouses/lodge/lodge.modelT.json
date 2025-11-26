@@ -260,7 +260,7 @@
           "id": "abigail",
           "type": "partition",
           "start": {
-            "x": 171,
+            "x": 170,
             "y": 239
           },
           "segments": [
@@ -685,7 +685,7 @@
         {
           "id": "eisenhower",
           "wallId": "abigail",
-          "x": 194,
+          "x": 179,
           "y": 239,
           "width": 15,
           "type": "interior",
@@ -783,9 +783,10 @@
           "elevation": 12,
           "direction": 342,
           "tilt": 18.3,
-          "viewingAngle": 90,
+          "viewingAngle": 80,
           "range": 50,
-          "location": "Main Floor, West wall, 13ft from south"
+          "location": "Main Floor, West wall, 13ft from south",
+          "roll": -15
         },
         {
           "id": "bread",
