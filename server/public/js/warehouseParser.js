@@ -608,6 +608,9 @@ class ModelTBuilder {
 
         doorFrame.material = doorMaterial;
 
+        // Don't let door frame block clicks on labels
+        doorFrame.isPickable = false;
+
         doorFrame.metadata = {
             type: door.type,
             facing: door.facing,
@@ -617,6 +620,84 @@ class ModelTBuilder {
         };
 
         this.meshes.doors.push(doorFrame);
+
+        // Create floor label for door
+        this.createDoorLabel(door, slabTop, slabId);
+    }
+
+    /**
+     * Create a clickable floor label for a door
+     */
+    createDoorLabel(door, slabTop, slabId) {
+        const labelSize = 8; // Size of label plane
+        const labelHeight = slabTop + 0.1; // Just above slab
+
+        // Create dynamic texture for text
+        const texture = new BABYLON.DynamicTexture(
+            `doorLabelTex_${slabId}_${door.id}`,
+            { width: 256, height: 64 },
+            this.scene,
+            false
+        );
+        texture.hasAlpha = true;
+
+        const ctx = texture.getContext();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, 256, 64);
+        ctx.fillStyle = '#FFA500'; // Orange text
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(door.id.toUpperCase(), 128, 32);
+        texture.update();
+
+        // Create plane for label
+        const labelPlane = BABYLON.MeshBuilder.CreatePlane(
+            `doorLabel_${slabId}_${door.id}`,
+            { width: labelSize, height: labelSize / 4 },
+            this.scene
+        );
+
+        // Position on floor directly under the door
+        labelPlane.position = new BABYLON.Vector3(
+            door.x,
+            labelHeight,
+            -door.y
+        );
+        labelPlane.rotation.x = Math.PI / 2; // Lay flat on floor
+
+        // Material with texture
+        const labelMat = new BABYLON.StandardMaterial(`doorLabelMat_${slabId}_${door.id}`, this.scene);
+        labelMat.diffuseTexture = texture;
+        labelMat.emissiveTexture = texture;
+        labelMat.opacityTexture = texture;
+        labelMat.backFaceCulling = false;
+        labelPlane.material = labelMat;
+
+        // Store door data for click handler
+        labelPlane.metadata = {
+            isDoorLabel: true,
+            doorId: door.id,
+            doorData: { ...door, slabId: slabId }
+        };
+
+        // Make clickable
+        labelPlane.actionManager = new BABYLON.ActionManager(this.scene);
+        labelPlane.actionManager.registerAction(
+            new BABYLON.ExecuteCodeAction(
+                BABYLON.ActionManager.OnPickTrigger,
+                () => {
+                    console.log('Door label clicked:', labelPlane.metadata.doorId);
+                    if (window.showDoorPanel) {
+                        window.showDoorPanel(labelPlane.metadata.doorData);
+                    } else {
+                        console.error('showDoorPanel not found on window');
+                    }
+                }
+            )
+        );
+
+        this.meshes.doors.push(labelPlane);
     }
 
     /**

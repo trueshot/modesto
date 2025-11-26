@@ -165,6 +165,7 @@ class ModelTEditor {
       elevation: spec.elevation || 12,
       direction: spec.direction || 0,
       tilt: spec.tilt || 20,
+      roll: spec.roll || 0,
       viewingAngle: spec.viewingAngle || 90,
       range: spec.range || 50,
       location: spec.location || ''

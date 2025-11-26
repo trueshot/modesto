@@ -22,6 +22,9 @@ app.use(cors(config.corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve camera screenshots from the cameras folder
+app.use('/cameras', express.static(path.join(__dirname, '..', 'cameras')));
+
 // Serve warehouse3d.html as index
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -178,6 +181,84 @@ wss.on('connection', (ws) => {
             client.send(JSON.stringify(data));
           }
         });
+      }
+
+      // Handle save door from browser
+      else if (data.type === 'save-door') {
+        console.log(`💾 Saving door ${data.doorId} for ${data.warehouseId}:`, data.updates);
+
+        const { execSync } = require('child_process');
+        const cliPath = path.join(__dirname, '..', 'tools', 'modelt-cli.js');
+
+        try {
+          // Build CLI command with updates
+          let cmd = `node "${cliPath}" ${data.warehouseId} update-door ${data.doorId}`;
+          if (data.updates.x !== undefined) cmd += ` --x ${data.updates.x}`;
+          if (data.updates.y !== undefined) cmd += ` --y ${data.updates.y}`;
+          if (data.updates.type !== undefined) cmd += ` --type ${data.updates.type}`;
+          if (data.updates.orientation !== undefined) cmd += ` --orientation ${data.updates.orientation}`;
+          if (data.updates.facing !== undefined) cmd += ` --facing ${data.updates.facing}`;
+          if (data.updates.width !== undefined) cmd += ` --width ${data.updates.width}`;
+          if (data.updates.height !== undefined) cmd += ` --height ${data.updates.height}`;
+          if (data.updates.bayWidth !== undefined) cmd += ` --bayWidth ${data.updates.bayWidth}`;
+          if (data.updates.doorWidth !== undefined) cmd += ` --doorWidth ${data.updates.doorWidth}`;
+          if (data.updates.portal !== undefined) cmd += ` --portal ${data.updates.portal}`;
+
+          console.log(`   Running: ${cmd}`);
+          const result = execSync(cmd, { encoding: 'utf8' });
+          console.log(`   ✓ Door saved successfully`);
+
+          ws.send(JSON.stringify({
+            type: 'save-confirmed',
+            warehouseId: data.warehouseId,
+            doorId: data.doorId,
+            success: true
+          }));
+        } catch (error) {
+          console.error(`   ✗ Save failed:`, error.message);
+          ws.send(JSON.stringify({
+            type: 'save-error',
+            warehouseId: data.warehouseId,
+            doorId: data.doorId,
+            error: error.message
+          }));
+        }
+      }
+
+      // Handle save camera from browser
+      else if (data.type === 'save-camera') {
+        console.log(`💾 Saving camera ${data.cameraId} for ${data.warehouseId}:`, data.updates);
+
+        const { execSync } = require('child_process');
+        const cliPath = path.join(__dirname, '..', 'tools', 'modelt-cli.js');
+
+        try {
+          // Build CLI command with updates
+          let cmd = `node "${cliPath}" ${data.warehouseId} update-camera ${data.cameraId}`;
+          if (data.updates.direction !== undefined) cmd += ` --direction ${data.updates.direction}`;
+          if (data.updates.tilt !== undefined) cmd += ` --tilt ${data.updates.tilt}`;
+          if (data.updates.roll !== undefined) cmd += ` --roll ${data.updates.roll}`;
+          if (data.updates.viewingAngle !== undefined) cmd += ` --viewingAngle ${data.updates.viewingAngle}`;
+
+          console.log(`   Running: ${cmd}`);
+          const result = execSync(cmd, { encoding: 'utf8' });
+          console.log(`   ✓ Camera saved successfully`);
+
+          ws.send(JSON.stringify({
+            type: 'save-confirmed',
+            warehouseId: data.warehouseId,
+            cameraId: data.cameraId,
+            success: true
+          }));
+        } catch (error) {
+          console.error(`   ✗ Save failed:`, error.message);
+          ws.send(JSON.stringify({
+            type: 'save-error',
+            warehouseId: data.warehouseId,
+            cameraId: data.cameraId,
+            error: error.message
+          }));
+        }
       }
 
       // Handle marked position from browser

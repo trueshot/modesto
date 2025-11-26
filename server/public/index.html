@@ -88,6 +88,62 @@
             color: rgba(100, 200, 255, 1);
             font-weight: bold;
         }
+        #cameraInfo .value-input {
+            width: 70px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(100, 200, 255, 0.5);
+            color: rgba(100, 200, 255, 1);
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        #cameraInfo .value-input:focus {
+            outline: none;
+            border-color: rgba(100, 200, 255, 1);
+        }
+        #doorInfo {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 13px;
+            font-family: 'Courier New', monospace;
+            min-width: 220px;
+            border: 2px solid rgba(255, 150, 50, 0.8);
+        }
+        #doorInfo h3 {
+            margin: 0 0 10px 0;
+            color: rgba(255, 150, 50, 1);
+            font-size: 14px;
+        }
+        #doorInfo .param {
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+        }
+        #doorInfo .param .label {
+            color: rgba(200, 200, 200, 1);
+        }
+        #doorInfo .param .value {
+            color: rgba(255, 180, 100, 1);
+            font-weight: bold;
+        }
+        #doorInfo .value-input {
+            width: 70px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 180, 100, 0.5);
+            color: rgba(255, 180, 100, 1);
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
         #cameraControls {
             position: absolute;
             top: 50px;
@@ -202,6 +258,67 @@
             transform-origin: top left;
             transition: transform 0.1s;
         }
+        /* Camera Image Overlay */
+        #cameraImageOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+            display: none;
+        }
+        #cameraImageOverlay.active {
+            display: block;
+        }
+        #cameraImageOverlay img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            opacity: 0.5;
+        }
+        #overlayControls {
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            pointer-events: auto;
+            z-index: 60;
+            display: none;
+        }
+        #overlayControls.active {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        #overlayControls label {
+            color: white;
+            font-size: 12px;
+        }
+        #overlayControls input[type="range"] {
+            width: 150px;
+        }
+        .overlayBtn {
+            background: rgba(200, 100, 255, 0.8);
+            color: white;
+            border: 2px solid transparent;
+            padding: 8px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .overlayBtn:hover {
+            background: rgba(220, 150, 255, 1);
+        }
+        .overlayBtn.active {
+            background: rgba(150, 50, 200, 1);
+            border-color: rgba(255, 255, 255, 0.9);
+        }
     </style>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
@@ -235,10 +352,89 @@
     </div>
     <div id="cameraControls">
         <button class="cameraBtn overviewBtn" onclick="setCameraView('overview', this)">Overview</button>
+        <button id="overlayToggleBtn" class="overlayBtn" onclick="toggleOverlay()" style="margin-left: 15px;">Show Image</button>
     </div>
     <div id="debug">
         <strong>Debug Info:</strong><br>
         <div id="debugContent"></div>
+    </div>
+    <div id="doorInfo" style="display: none; max-height: 80vh; overflow-y: auto;">
+        <h3 id="doorName">Door</h3>
+        <div class="param">
+            <span class="label">Wall:</span>
+            <span class="value" id="doorWall">-</span>
+        </div>
+
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 11px; color: #888;">POSITION</div>
+        <div class="param">
+            <span class="label">Center X:</span>
+            <input type="number" class="value-input" id="doorX" step="0.5" onchange="updateDoorEdges()">
+        </div>
+        <div class="param">
+            <span class="label">Center Y:</span>
+            <input type="number" class="value-input" id="doorY" step="0.5" onchange="updateDoorEdges()">
+        </div>
+        <div class="param">
+            <span class="label">West Edge:</span>
+            <span class="value" id="doorWestEdge">-</span>
+        </div>
+        <div class="param">
+            <span class="label">East Edge:</span>
+            <span class="value" id="doorEastEdge">-</span>
+        </div>
+
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 11px; color: #888;">DIMENSIONS</div>
+        <div class="param">
+            <span class="label">Width (ft):</span>
+            <input type="number" class="value-input" id="doorWidth" step="0.5" onchange="updateDoorEdges()" placeholder="interior">
+        </div>
+        <div class="param">
+            <span class="label">Height (ft):</span>
+            <input type="number" class="value-input" id="doorHeight" step="0.5" placeholder="10">
+        </div>
+        <div class="param">
+            <span class="label">Bay Width (ft):</span>
+            <input type="number" class="value-input" id="doorBayWidth" step="0.5" onchange="updateDoorEdges()" placeholder="bay/rollup">
+        </div>
+        <div class="param">
+            <span class="label">Door Width (in):</span>
+            <input type="number" class="value-input" id="doorDoorWidth" step="1" placeholder="bay/rollup">
+        </div>
+
+        <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.2); font-size: 11px; color: #888;">PROPERTIES</div>
+        <div class="param">
+            <span class="label">Type:</span>
+            <select class="value-input" id="doorType" style="width: 95px;">
+                <option value="interior">interior</option>
+                <option value="bay">bay</option>
+                <option value="personnel">personnel</option>
+                <option value="rollup">rollup</option>
+                <option value="cooler">cooler</option>
+            </select>
+        </div>
+        <div class="param">
+            <span class="label">Orientation:</span>
+            <select class="value-input" id="doorOrientation" style="width: 95px;">
+                <option value="horizontal">horizontal</option>
+                <option value="vertical">vertical</option>
+            </select>
+        </div>
+        <div class="param">
+            <span class="label">Facing:</span>
+            <select class="value-input" id="doorFacing" style="width: 95px;">
+                <option value="north">north</option>
+                <option value="south">south</option>
+                <option value="east">east</option>
+                <option value="west">west</option>
+            </select>
+        </div>
+        <div class="param">
+            <span class="label">Portal:</span>
+            <input type="text" class="value-input" id="doorPortal" style="width: 90px;" placeholder="(slab id)">
+        </div>
+
+        <button id="saveDoorBtn" onclick="saveDoor()" style="margin-top: 10px; padding: 8px 16px; background: rgba(100, 200, 100, 0.8); color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">Save Door</button>
+        <button onclick="closeDoorPanel()" style="margin-top: 10px; margin-left: 5px; padding: 8px 12px; background: rgba(200, 100, 100, 0.8); color: white; border: none; border-radius: 3px; cursor: pointer;">Close</button>
     </div>
     <div id="cameraInfo" style="display: none;">
         <h3 id="cameraName">Camera View</h3>
@@ -252,20 +448,25 @@
         </div>
         <div class="param">
             <span class="label">Direction:</span>
-            <span class="value" id="camDirection">-</span>
+            <input type="number" class="value-input" id="camDirection" step="1" onchange="updateCameraFromInput()">
         </div>
         <div class="param">
             <span class="label">Tilt:</span>
-            <span class="value" id="camTilt">-</span>
+            <input type="number" class="value-input" id="camTilt" step="0.5" onchange="updateCameraFromInput()">
+        </div>
+        <div class="param">
+            <span class="label">Roll:</span>
+            <input type="number" class="value-input" id="camRoll" step="1" onchange="updateCameraFromInput()">
         </div>
         <div class="param">
             <span class="label">Viewing Angle:</span>
-            <span class="value" id="camViewAngle">-</span>
+            <input type="number" class="value-input" id="camViewAngle" step="5" onchange="updateCameraFromInput()">
         </div>
         <div class="param">
             <span class="label">Range:</span>
             <span class="value" id="camRange">-</span>
         </div>
+        <button id="saveCameraBtn" onclick="saveCamera()" style="margin-top: 10px; padding: 8px 16px; background: rgba(100, 200, 100, 0.8); color: white; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;">Save Changes</button>
         <hr style="border-color: rgba(255,255,255,0.3); margin: 8px 0;">
         <div class="param">
             <span class="label">Pointing At:</span>
@@ -279,6 +480,16 @@
             <span class="label">Distance:</span>
             <span class="value" id="targetDistance">-</span>
         </div>
+    </div>
+
+    <!-- Camera Image Overlay -->
+    <div id="cameraImageOverlay">
+        <img id="overlayImage" src="" alt="Camera Feed">
+    </div>
+    <div id="overlayControls">
+        <label>Opacity: <span id="opacityValue">50%</span></label>
+        <input type="range" id="opacitySlider" min="0" max="100" value="50" oninput="updateOverlayOpacity(this.value)">
+        <button class="overlayBtn" onclick="toggleOverlay()">Hide Overlay</button>
     </div>
 
     <script>
@@ -302,6 +513,81 @@
         let currentSvgData = null;
         let ws = null;
         let viewMarker = null;  // Floating marker box in front of camera
+        let overlayActive = false;
+
+        // Camera Image Overlay Functions
+        function toggleOverlay() {
+            const overlay = document.getElementById('cameraImageOverlay');
+            const controls = document.getElementById('overlayControls');
+            const btn = document.getElementById('overlayToggleBtn');
+
+            overlayActive = !overlayActive;
+
+            if (overlayActive) {
+                // Load the current camera's image
+                loadCameraImage();
+                overlay.classList.add('active');
+                controls.classList.add('active');
+                btn.classList.add('active');
+                btn.textContent = 'Hide Image';
+            } else {
+                overlay.classList.remove('active');
+                controls.classList.remove('active');
+                btn.classList.remove('active');
+                btn.textContent = 'Show Image';
+            }
+        }
+
+        // Mapping of camera IDs to their channel numbers in filenames
+        const cameraChannelMap = {
+            'bagel': '01', 'bacon': '02', 'beef': '04', 'biscuit': '07',
+            'bread': '06', 'brownie': '05', 'burger': '08', 'butter': '09',
+            'cake': '10', 'candy': '12', 'cheese': '13', 'chicken': '14',
+            'chili': '15', 'chocolate': '16'
+        };
+
+        function loadCameraImage() {
+            const img = document.getElementById('overlayImage');
+            if (currentCameraData && currentCameraData.id) {
+                const cameraId = currentCameraData.id;
+                const channelNum = cameraChannelMap[cameraId] || '01';
+
+                // Try common resolutions in order of likelihood
+                const resolutions = ['2592x1520', '3072x2048', '3840x2160', '4096x3072'];
+                const basePath = `/cameras/lodge_screenshots_20251124_114216/ch${channelNum}_${cameraId}`;
+
+                let resIndex = 0;
+
+                function tryNextResolution() {
+                    if (resIndex >= resolutions.length) {
+                        console.log('No camera image found for:', cameraId);
+                        img.src = '';
+                        return;
+                    }
+                    const res = resolutions[resIndex];
+                    img.src = `${basePath}_${res}.jpg`;
+                    console.log('Trying camera image:', img.src);
+                    resIndex++;
+                }
+
+                img.onerror = tryNextResolution;
+                img.onload = function() {
+                    console.log('Loaded camera image:', img.src);
+                };
+
+                tryNextResolution();
+            } else {
+                console.log('No camera selected, cannot load image');
+                img.src = '';
+            }
+        }
+
+        function updateOverlayOpacity(value) {
+            const img = document.getElementById('overlayImage');
+            const label = document.getElementById('opacityValue');
+            img.style.opacity = value / 100;
+            label.textContent = value + '%';
+        }
 
         // WebSocket setup
         function initWebSocket() {
@@ -618,6 +904,9 @@
                 // Create scene
                 const scene = createScene(warehouseData, isModelT);
 
+                // Setup door label click detection
+                setupDoorLabelClicking(scene);
+
                 // Populate camera buttons
                 populateCameraButtons(warehouseData, isModelT);
 
@@ -871,6 +1160,7 @@
             document.getElementById('cameraName').textContent = `${cam.name || cam.id} (#${cam.number || '?'})`;
 
             currentCameraData = {
+                id: cam.id,
                 name: cam.name || cam.id,
                 number: cam.number || '?',
                 initialX: cam.x,
@@ -880,6 +1170,11 @@
                 viewingAngle: cam.viewingAngle || 90,
                 range: cam.range || 50
             };
+
+            // Reload overlay image if overlay is active
+            if (overlayActive) {
+                loadCameraImage();
+            }
         }
 
         let lastHitMeshName = null;
@@ -948,15 +1243,92 @@
             while (directionDeg >= 360) directionDeg -= 360;
 
             let tiltDeg = universalCamera.rotation.x * 180 / Math.PI;
+            let rollDeg = universalCamera.rotation.z * 180 / Math.PI;
 
             document.getElementById('camPos').textContent = `(${svgX.toFixed(1)}, ${svgY.toFixed(1)})`;
             document.getElementById('camElevation').textContent = `${elevation.toFixed(1)}ft above slab`;
 
-            const compassName = getCompassName(directionDeg);
-            document.getElementById('camDirection').textContent = `${compassName} (${directionDeg.toFixed(0)}°)`;
-            document.getElementById('camTilt').textContent = `${tiltDeg.toFixed(1)}° down`;
-            document.getElementById('camViewAngle').textContent = `${currentCameraData.viewingAngle}°`;
+            // Only update inputs if they don't have focus (user isn't editing)
+            const dirInput = document.getElementById('camDirection');
+            const tiltInput = document.getElementById('camTilt');
+            const rollInput = document.getElementById('camRoll');
+            const fovInput = document.getElementById('camViewAngle');
+
+            if (document.activeElement !== dirInput) dirInput.value = directionDeg.toFixed(0);
+            if (document.activeElement !== tiltInput) tiltInput.value = tiltDeg.toFixed(1);
+            if (document.activeElement !== rollInput) rollInput.value = rollDeg.toFixed(1);
+            if (document.activeElement !== fovInput) fovInput.value = currentCameraData.viewingAngle;
             document.getElementById('camRange').textContent = `${currentCameraData.range}ft`;
+        }
+
+        // Update camera view in real-time when user types in inputs
+        function updateCameraFromInput() {
+            if (!universalCamera || !currentCameraData) return;
+
+            const direction = parseFloat(document.getElementById('camDirection').value) || 0;
+            const tilt = parseFloat(document.getElementById('camTilt').value) || 0;
+            const roll = parseFloat(document.getElementById('camRoll').value) || 0;
+            const viewingAngle = parseFloat(document.getElementById('camViewAngle').value) || 90;
+
+            // Apply direction
+            const directionRad = direction * Math.PI / 180;
+            universalCamera.rotation.y = -directionRad;
+
+            // Apply tilt
+            const tiltRad = tilt * Math.PI / 180;
+            universalCamera.rotation.x = tiltRad;
+
+            // Apply roll
+            const rollRad = roll * Math.PI / 180;
+            universalCamera.rotation.z = rollRad;
+
+            // Apply FOV
+            const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
+            const hFovRad = viewingAngle * Math.PI / 180;
+            const vFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) / aspectRatio);
+            universalCamera.fov = vFovRad;
+
+            // Update stored data for save
+            currentCameraData.direction = direction;
+            currentCameraData.tilt = tilt;
+            currentCameraData.roll = roll;
+            currentCameraData.viewingAngle = viewingAngle;
+        }
+
+        // Save camera changes to server via WebSocket
+        function saveCamera() {
+            if (!currentCameraData || !ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Cannot save: No camera selected or WebSocket not connected');
+                return;
+            }
+
+            const direction = parseFloat(document.getElementById('camDirection').value) || 0;
+            const tilt = parseFloat(document.getElementById('camTilt').value) || 0;
+            const roll = parseFloat(document.getElementById('camRoll').value) || 0;
+            const viewingAngle = parseFloat(document.getElementById('camViewAngle').value) || 90;
+
+            ws.send(JSON.stringify({
+                type: 'save-camera',
+                warehouseId: currentWarehouseId,
+                cameraId: currentCameraData.id,
+                updates: {
+                    direction: direction,
+                    tilt: tilt,
+                    roll: roll,
+                    viewingAngle: viewingAngle
+                }
+            }));
+
+            console.log(`Saving camera ${currentCameraData.id}:`, { direction, tilt, roll, viewingAngle });
+
+            // Visual feedback
+            const btn = document.getElementById('saveCameraBtn');
+            btn.textContent = 'Saved!';
+            btn.style.background = 'rgba(100, 255, 100, 0.8)';
+            setTimeout(() => {
+                btn.textContent = 'Save Changes';
+                btn.style.background = 'rgba(100, 200, 100, 0.8)';
+            }, 1500);
         }
 
         function getCompassName(deg) {
@@ -969,6 +1341,114 @@
             if (deg >= 247.5 && deg < 292.5) return 'West';
             if (deg >= 292.5 && deg < 337.5) return 'NW';
             return '';
+        }
+
+        // Door editing functions
+        let currentDoorData = null;
+
+        // Setup door label click detection via scene pointer
+        function setupDoorLabelClicking(scene) {
+            scene.onPointerDown = function(evt, pickResult) {
+                if (pickResult.hit && pickResult.pickedMesh) {
+                    const mesh = pickResult.pickedMesh;
+                    if (mesh.metadata && mesh.metadata.isDoorLabel) {
+                        console.log('Door label clicked:', mesh.metadata.doorId);
+                        window.showDoorPanel(mesh.metadata.doorData);
+                    }
+                }
+            };
+        }
+
+        // Make showDoorPanel global so warehouseParser.js can call it
+        window.showDoorPanel = function(door) {
+            currentDoorData = door;
+            document.getElementById('doorInfo').style.display = 'block';
+            document.getElementById('doorName').textContent = `Door: ${door.id}`;
+            document.getElementById('doorWall').textContent = door.wallId || '-';
+
+            // Position
+            document.getElementById('doorX').value = door.x;
+            document.getElementById('doorY').value = door.y;
+
+            // Dimensions - show actual values or defaults
+            document.getElementById('doorWidth').value = door.width || '';
+            document.getElementById('doorHeight').value = door.height || 10;  // default 10ft
+            document.getElementById('doorBayWidth').value = door.bayWidth || '';
+            document.getElementById('doorDoorWidth').value = door.doorWidth || '';
+
+            // Properties
+            document.getElementById('doorType').value = door.type || 'interior';
+            document.getElementById('doorOrientation').value = door.orientation || 'horizontal';
+            document.getElementById('doorFacing').value = door.facing || 'north';
+            document.getElementById('doorPortal').value = door.portal || '';
+
+            updateDoorEdges();
+        }
+
+        function updateDoorEdges() {
+            const x = parseFloat(document.getElementById('doorX').value) || 0;
+            // Use width, or bayWidth, or default to 10
+            const width = parseFloat(document.getElementById('doorWidth').value) ||
+                          parseFloat(document.getElementById('doorBayWidth').value) || 10;
+            const halfWidth = width / 2;
+            document.getElementById('doorWestEdge').textContent = `${(x - halfWidth).toFixed(1)} ft`;
+            document.getElementById('doorEastEdge').textContent = `${(x + halfWidth).toFixed(1)} ft`;
+        }
+
+        function closeDoorPanel() {
+            document.getElementById('doorInfo').style.display = 'none';
+            currentDoorData = null;
+        }
+
+        function updateDoorFromInput() {
+            // Real-time preview could go here if needed
+        }
+
+        function saveDoor() {
+            if (!currentDoorData || !ws || ws.readyState !== WebSocket.OPEN) {
+                alert('Cannot save: No door selected or WebSocket not connected');
+                return;
+            }
+
+            // Gather all values
+            const updates = {
+                x: parseFloat(document.getElementById('doorX').value),
+                y: parseFloat(document.getElementById('doorY').value),
+                type: document.getElementById('doorType').value,
+                orientation: document.getElementById('doorOrientation').value,
+                facing: document.getElementById('doorFacing').value
+            };
+
+            // Only include optional fields if they have values
+            const width = document.getElementById('doorWidth').value;
+            const height = document.getElementById('doorHeight').value;
+            const bayWidth = document.getElementById('doorBayWidth').value;
+            const doorWidth = document.getElementById('doorDoorWidth').value;
+            const portal = document.getElementById('doorPortal').value;
+
+            if (width) updates.width = parseFloat(width);
+            if (height) updates.height = parseFloat(height);
+            if (bayWidth) updates.bayWidth = parseFloat(bayWidth);
+            if (doorWidth) updates.doorWidth = parseFloat(doorWidth);
+            if (portal) updates.portal = portal;
+
+            ws.send(JSON.stringify({
+                type: 'save-door',
+                warehouseId: currentWarehouseId,
+                doorId: currentDoorData.id,
+                updates: updates
+            }));
+
+            console.log(`Saving door ${currentDoorData.id}:`, updates);
+
+            // Visual feedback
+            const btn = document.getElementById('saveDoorBtn');
+            btn.textContent = 'Saved!';
+            btn.style.background = 'rgba(100, 255, 100, 0.8)';
+            setTimeout(() => {
+                btn.textContent = 'Save Door';
+                btn.style.background = 'rgba(100, 200, 100, 0.8)';
+            }, 1500);
         }
 
         function setCameraView(cameraId, buttonElement) {
@@ -1048,6 +1528,10 @@
 
             const tiltRad = cam.tilt * Math.PI / 180;
             universalCamera.rotation.x = tiltRad;
+
+            const rollRad = (cam.roll || 0) * Math.PI / 180;
+            universalCamera.rotation.z = rollRad;
+            console.log(`Camera ${cam.id} roll: ${cam.roll || 0}° -> ${rollRad} rad`);
 
             // Create floating view marker sphere
             if (!viewMarker) {
