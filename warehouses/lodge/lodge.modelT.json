@@ -818,6 +818,18 @@
           "openingHeight": 7,
           "swingDirection": "inward",
           "hingePosition": "left"
+        },
+        {
+          "id": "reagan",
+          "wallId": "beatrice",
+          "x": 278.7,
+          "y": 307.5,
+          "type": "cooler",
+          "orientation": "horizontal",
+          "facing": "north",
+          "openingWidth": 8,
+          "openingHeight": 10,
+          "bayWidth": 8
         }
       ],
       "cameras": [
@@ -867,12 +879,12 @@
           "x": 180,
           "y": 275,
           "elevation": 12,
-          "direction": 354,
-          "tilt": 19.3,
+          "direction": 242,
+          "tilt": 3,
           "viewingAngle": 80,
           "range": 50,
           "location": "Main Floor, West wall, 13ft from south",
-          "roll": -2
+          "roll": 0
         },
         {
           "id": "bread",

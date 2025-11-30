@@ -1,0 +1,118 @@
+{
+  "nvr_ip": "192.168.0.165",
+  "channels_found": 14,
+  "channels": [
+    {
+      "path": "ch01/0",
+      "channel": 1,
+      "width": 3072,
+      "height": 2048,
+      "resolution": "3072x2048",
+      "url": "rtsp://admin:@192.168.0.165:554/ch01/0"
+    },
+    {
+      "path": "ch02/0",
+      "channel": 2,
+      "width": 3072,
+      "height": 2048,
+      "resolution": "3072x2048",
+      "url": "rtsp://admin:@192.168.0.165:554/ch02/0"
+    },
+    {
+      "path": "ch03/0",
+      "channel": 3,
+      "width": 3840,
+      "height": 2160,
+      "resolution": "3840x2160",
+      "url": "rtsp://admin:@192.168.0.165:554/ch03/0"
+    },
+    {
+      "path": "ch04/0",
+      "channel": 4,
+      "width": 3840,
+      "height": 2160,
+      "resolution": "3840x2160",
+      "url": "rtsp://admin:@192.168.0.165:554/ch04/0"
+    },
+    {
+      "path": "ch05/0",
+      "channel": 5,
+      "width": 3840,
+      "height": 2160,
+      "resolution": "3840x2160",
+      "url": "rtsp://admin:@192.168.0.165:554/ch05/0"
+    },
+    {
+      "path": "ch06/0",
+      "channel": 6,
+      "width": 3072,
+      "height": 2048,
+      "resolution": "3072x2048",
+      "url": "rtsp://admin:@192.168.0.165:554/ch06/0"
+    },
+    {
+      "path": "ch07/0",
+      "channel": 7,
+      "width": 4096,
+      "height": 3072,
+      "resolution": "4096x3072",
+      "url": "rtsp://admin:@192.168.0.165:554/ch07/0"
+    },
+    {
+      "path": "ch08/0",
+      "channel": 8,
+      "width": 2592,
+      "height": 1520,
+      "resolution": "2592x1520",
+      "url": "rtsp://admin:@192.168.0.165:554/ch08/0"
+    },
+    {
+      "path": "ch10/0",
+      "channel": 10,
+      "width": 4096,
+      "height": 3072,
+      "resolution": "4096x3072",
+      "url": "rtsp://admin:@192.168.0.165:554/ch10/0"
+    },
+    {
+      "path": "ch12/0",
+      "channel": 12,
+      "width": 2592,
+      "height": 1520,
+      "resolution": "2592x1520",
+      "url": "rtsp://admin:@192.168.0.165:554/ch12/0"
+    },
+    {
+      "path": "ch13/0",
+      "channel": 13,
+      "width": 2592,
+      "height": 1520,
+      "resolution": "2592x1520",
+      "url": "rtsp://admin:@192.168.0.165:554/ch13/0"
+    },
+    {
+      "path": "ch14/0",
+      "channel": 14,
+      "width": 2592,
+      "height": 1520,
+      "resolution": "2592x1520",
+      "url": "rtsp://admin:@192.168.0.165:554/ch14/0"
+    },
+    {
+      "path": "ch15/0",
+      "channel": 15,
+      "width": 2592,
+      "height": 1520,
+      "resolution": "2592x1520",
+      "url": "rtsp://admin:@192.168.0.165:554/ch15/0"
+    },
+    {
+      "path": "ch16/0",
+      "channel": 16,
+      "width": 2592,
+      "height": 1520,
+      "resolution": "2592x1520",
+      "url": "rtsp://admin:@192.168.0.165:554/ch16/0"
+    }
+  ]
+}

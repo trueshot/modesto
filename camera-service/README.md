@@ -50,6 +50,46 @@ Server will be available at:
 
 ## API Endpoints
 
+### Discovery
+
+**POST /api/scan**
+Scan NVR for available camera channels
+
+Modes:
+- `"quick": true` - Fast scan using common pattern (ch01/0, ch02/0, etc.)
+- `"quick": false` - Full scan testing all NVR patterns (Hikvision, Dahua, generic)
+
+```bash
+curl -X POST http://localhost:8001/api/scan \
+  -H "Content-Type: application/json" \
+  -d '{
+    "nvr_ip": "192.168.0.165",
+    "username": "admin",
+    "password": "",
+    "port": 554,
+    "max_channels": 16,
+    "quick": true
+  }'
+```
+
+Response:
+```json
+{
+  "nvr_ip": "192.168.0.165",
+  "channels_found": 14,
+  "channels": [
+    {
+      "path": "ch01/0",
+      "channel": 1,
+      "width": 3072,
+      "height": 2048,
+      "resolution": "3072x2048",
+      "url": "rtsp://admin:@192.168.0.165:554/ch01/0"
+    }
+  ]
+}
+```
+
 ### Health & Info
 
 **GET /api/health**

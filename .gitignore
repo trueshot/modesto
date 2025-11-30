@@ -2,5 +2,7 @@
 /node_modules
 .claude/*
 !.claude/commands/
-warehouses/lodge/.claude/settings.local.json
+**/settings.local.json
 /tools/node_modules
+__pycache__/
+*.pyc

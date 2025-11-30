@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from capture import CameraCapture
 from cache import ImageCache
+from scanner import NVRScanner
 
 # Configure logging
 logging.basicConfig(
@@ -79,6 +80,27 @@ class HealthStatus(BaseModel):
     service: str
     cache_stats: dict
     nvr_connectivity: Optional[dict] = None
+
+class ScanRequest(BaseModel):
+    nvr_ip: str
+    username: str = "admin"
+    password: str = ""
+    port: int = 554
+    max_channels: int = 16
+    quick: bool = True
+
+class ChannelInfo(BaseModel):
+    path: str
+    channel: Optional[int] = None
+    width: int
+    height: int
+    resolution: str
+    url: str
+
+class ScanResponse(BaseModel):
+    nvr_ip: str
+    channels_found: int
+    channels: List[ChannelInfo]
 
 # ============================================================================
 # ENDPOINTS
@@ -330,6 +352,44 @@ def capture_all_cameras(facility: str):
 
     except Exception as e:
         logger.error(f"Error capturing all cameras: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/scan", response_model=ScanResponse)
+def scan_nvr(request: ScanRequest):
+    """
+    Scan NVR for available camera channels
+
+    Args:
+        request: Scan request with NVR connection details
+
+    Returns:
+        List of discovered channels with resolutions and RTSP URLs
+    """
+    try:
+        scanner = NVRScanner(
+            nvr_ip=request.nvr_ip,
+            username=request.username,
+            password=request.password,
+            port=request.port
+        )
+
+        if request.quick:
+            # Quick scan using common pattern (ch01/0, ch02/0, etc.)
+            channels = scanner.quick_scan(
+                channels_to_test=list(range(1, request.max_channels + 1))
+            )
+        else:
+            # Full scan testing all patterns
+            channels = scanner.scan(max_channels=request.max_channels)
+
+        return {
+            "nvr_ip": request.nvr_ip,
+            "channels_found": len(channels),
+            "channels": channels
+        }
+
+    except Exception as e:
+        logger.error(f"Error scanning NVR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/cache/{facility}/{camera_id}")
