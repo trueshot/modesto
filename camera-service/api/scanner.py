@@ -28,7 +28,7 @@ class NVRScanner:
         self.password = password
         self.port = port
 
-    def _generate_channel_patterns(self, max_channels: int = 16) -> List[str]:
+    def _generate_channel_patterns(self, max_channels: int = 32) -> List[str]:
         """
         Generate common NVR channel path patterns
 
@@ -89,7 +89,7 @@ class NVRScanner:
 
         return False, 0, 0
 
-    def scan(self, max_channels: int = 16, progress_callback=None) -> List[Dict[str, Any]]:
+    def scan(self, max_channels: int = 32, progress_callback=None) -> List[Dict[str, Any]]:
         """
         Scan NVR for available channels
 
@@ -133,13 +133,13 @@ class NVRScanner:
         Quick scan using only the most common pattern (ch01/0, ch02/0, etc.)
 
         Args:
-            channels_to_test: List of channel numbers to test (default: 1-16)
+            channels_to_test: List of channel numbers to test (default: 1-32)
 
         Returns:
             List of found channel dicts
         """
         if channels_to_test is None:
-            channels_to_test = list(range(1, 17))
+            channels_to_test = list(range(1, 33))
 
         logger.info(f"Quick scanning NVR {self.nvr_ip}...")
 

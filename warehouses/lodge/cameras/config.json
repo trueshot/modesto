@@ -31,6 +31,16 @@
       "location": "Packing Line 2, East wall, 50ft from south, looking NW"
     },
     {
+      "channel": 3,
+      "nvrPath": "ch03/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch03/0",
+      "resolution": "3840x2160",
+      "modelTCameraId": "camera_3",
+      "modelTCameraName": "Camera 3",
+      "modelTCameraNumber": 3,
+      "location": "Unknown - needs configuration"
+    },
+    {
       "channel": 4,
       "nvrPath": "ch04/0",
       "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch04/0",
@@ -45,9 +55,9 @@
       "nvrPath": "ch05/0",
       "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch05/0",
       "resolution": "3840x2160",
-      "modelTCameraId": "biscuit",
-      "modelTCameraName": "Biscuit",
-      "modelTCameraNumber": 4,
+      "modelTCameraId": "brownie",
+      "modelTCameraName": "Brownie",
+      "modelTCameraNumber": 6,
       "location": "Main Floor, West wall, 13ft from south"
     },
     {
@@ -65,9 +75,9 @@
       "nvrPath": "ch07/0",
       "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch07/0",
       "resolution": "4096x3072",
-      "modelTCameraId": "brownie",
-      "modelTCameraName": "Brownie",
-      "modelTCameraNumber": 6,
+      "modelTCameraId": "biscuit",
+      "modelTCameraName": "Biscuit",
+      "modelTCameraNumber": 4,
       "location": "Main Floor, East wall, 14ft from south"
     },
     {
@@ -149,6 +159,156 @@
       "modelTCameraName": "Chocolate",
       "modelTCameraNumber": 14,
       "location": "Packing Line 1, on Beam #4 (Birch), facing south"
+    },
+    {
+      "channel": 17,
+      "nvrPath": "ch17/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch17/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_17",
+      "modelTCameraName": "Camera 17",
+      "modelTCameraNumber": 17,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 18,
+      "nvrPath": "ch18/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch18/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_18",
+      "modelTCameraName": "Camera 18",
+      "modelTCameraNumber": 18,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 19,
+      "nvrPath": "ch19/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch19/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_19",
+      "modelTCameraName": "Camera 19",
+      "modelTCameraNumber": 19,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 20,
+      "nvrPath": "ch20/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch20/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_20",
+      "modelTCameraName": "Camera 20",
+      "modelTCameraNumber": 20,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 21,
+      "nvrPath": "ch21/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch21/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_21",
+      "modelTCameraName": "Camera 21",
+      "modelTCameraNumber": 21,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 22,
+      "nvrPath": "ch22/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch22/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_22",
+      "modelTCameraName": "Camera 22",
+      "modelTCameraNumber": 22,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 24,
+      "nvrPath": "ch24/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch24/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_24",
+      "modelTCameraName": "Camera 24",
+      "modelTCameraNumber": 24,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 25,
+      "nvrPath": "ch25/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch25/0",
+      "resolution": "2592x1520",
+      "modelTCameraId": "camera_25",
+      "modelTCameraName": "Camera 25",
+      "modelTCameraNumber": 25,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 26,
+      "nvrPath": "ch26/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch26/0",
+      "resolution": "2592x1944",
+      "modelTCameraId": "camera_26",
+      "modelTCameraName": "Camera 26",
+      "modelTCameraNumber": 26,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 27,
+      "nvrPath": "ch27/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch27/0",
+      "resolution": "3840x2160",
+      "modelTCameraId": "camera_27",
+      "modelTCameraName": "Camera 27",
+      "modelTCameraNumber": 27,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 28,
+      "nvrPath": "ch28/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch28/0",
+      "resolution": "3840x2160",
+      "modelTCameraId": "camera_28",
+      "modelTCameraName": "Camera 28",
+      "modelTCameraNumber": 28,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 29,
+      "nvrPath": "ch29/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch29/0",
+      "resolution": "3840x2160",
+      "modelTCameraId": "camera_29",
+      "modelTCameraName": "Camera 29",
+      "modelTCameraNumber": 29,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 30,
+      "nvrPath": "ch30/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch30/0",
+      "resolution": "3072x2048",
+      "modelTCameraId": "camera_30",
+      "modelTCameraName": "Camera 30",
+      "modelTCameraNumber": 30,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 31,
+      "nvrPath": "ch31/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch31/0",
+      "resolution": "4096x3072",
+      "modelTCameraId": "camera_31",
+      "modelTCameraName": "Camera 31",
+      "modelTCameraNumber": 31,
+      "location": "Unknown - needs configuration"
+    },
+    {
+      "channel": 32,
+      "nvrPath": "ch32/0",
+      "rtspUrl": "rtsp://admin:@192.168.0.165:554/ch32/0",
+      "resolution": "2880x1624",
+      "modelTCameraId": "camera_32",
+      "modelTCameraName": "Camera 32",
+      "modelTCameraNumber": 32,
+      "location": "Unknown - needs configuration"
     }
   ],
   "notes": "NVR channels mapped to ModelT camera definitions. Note: NVR has channels 1,2,4-10,12-16 (no channel 3 or 11)."

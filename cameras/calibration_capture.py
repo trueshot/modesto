@@ -19,14 +19,18 @@ import json
 import os
 import sys
 import numpy as np
+import requests
 from datetime import datetime
 from pathlib import Path
 
+# Camera service API
+CAMERA_SERVICE_URL = "http://localhost:8001"
+
 # Checkerboard configuration
 # Standard checkerboard: count INNER corners (not squares)
-# A 9x6 checkerboard has 8x5 inner corners
-CHECKERBOARD_SIZE = (8, 5)  # (columns, rows) of inner corners
-SQUARE_SIZE_MM = 25.0  # Size of each square in millimeters
+# Lodge facility: 3'x4' checkerboard (6 squares × 8 squares) = 5x7 inner corners
+CHECKERBOARD_SIZE = (5, 7)  # (columns, rows) of inner corners
+SQUARE_SIZE_MM = 152.4  # Size of each square in millimeters (6 inches)
 
 # Minimum images needed for good calibration
 MIN_IMAGES = 15
@@ -73,7 +77,7 @@ def draw_status(frame, detected, corners, image_count):
     cv2.rectangle(frame, (0, 0), (w, 80), (40, 40, 40), -1)
 
     # Detection status
-    if detected:
+    if detected and corners is not None:
         status_text = "CHECKERBOARD DETECTED - Press SPACE to capture"
         status_color = (0, 255, 0)
         # Draw detected corners
@@ -98,21 +102,35 @@ def draw_status(frame, detected, corners, image_count):
     return frame
 
 
-def capture_calibration_images(rtsp_url, camera_id, camera_name, cal_dir):
+def capture_frame_from_api(facility, camera_id):
+    """Capture frame via camera service API (more reliable than direct RTSP)"""
+    try:
+        response = requests.get(
+            f"{CAMERA_SERVICE_URL}/api/cameras/{facility}/{camera_id}/capture",
+            params={"format": "image", "refresh_cache": False},
+            timeout=5
+        )
+        if response.status_code == 200:
+            # Decode JPEG to numpy array
+            img_array = np.frombuffer(response.content, dtype=np.uint8)
+            frame = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+            return frame
+        else:
+            return None
+    except Exception as e:
+        print(f"Error fetching frame: {e}")
+        return None
+
+
+def capture_calibration_images(facility, camera_id, camera_name, cal_dir):
     """Main capture loop with live preview"""
 
-    print(f"\nConnecting to {camera_name} ({camera_id})...")
-    cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+    print(f"\nConnecting to {camera_name} ({camera_id}) via camera service API...")
 
-    if not cap.isOpened():
-        print("ERROR: Could not connect to camera")
-        return False
-
-    # Get resolution
-    ret, frame = cap.read()
-    if not ret:
-        print("ERROR: Could not read frame")
-        cap.release()
+    # Get initial frame to determine resolution
+    frame = capture_frame_from_api(facility, camera_id)
+    if frame is None:
+        print("ERROR: Could not capture initial frame from camera service")
         return False
 
     h, w = frame.shape[:2]
@@ -149,16 +167,33 @@ def capture_calibration_images(rtsp_url, camera_id, camera_name, cal_dir):
     # Criteria for corner refinement
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
 
+    # Calculate processing resolution (much smaller for speed)
+    process_scale = 0.25  # Process at 25% resolution for speed
+    process_w = int(w * process_scale)
+    process_h = int(h * process_scale)
+    print(f"Processing resolution: {process_w}x{process_h} (for speed)")
+    print(f"Display resolution: {display_w}x{display_h}")
+    print(f"Capture resolution: {w}x{h} (full quality)\n")
+
+    frame_count = 0
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Lost connection to camera")
+        frame_count += 1
+        if frame_count % 30 == 0:  # Print every 30 frames
+            print(f"Fetching frame {frame_count}...")
+
+        # Capture frame from API
+        frame = capture_frame_from_api(facility, camera_id)
+        if frame is None:
+            print("ERROR: Failed to fetch frame from camera service")
             break
 
-        # Convert to grayscale for detection
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Resize for processing (MUCH faster)
+        process_frame = cv2.resize(frame, (process_w, process_h))
 
-        # Find checkerboard corners
+        # Convert to grayscale for detection
+        gray = cv2.cvtColor(process_frame, cv2.COLOR_BGR2GRAY)
+
+        # Find checkerboard corners on smaller image
         detected, corners = cv2.findChessboardCorners(
             gray, CHECKERBOARD_SIZE,
             cv2.CALIB_CB_ADAPTIVE_THRESH + cv2.CALIB_CB_NORMALIZE_IMAGE + cv2.CALIB_CB_FAST_CHECK
@@ -168,9 +203,20 @@ def capture_calibration_images(rtsp_url, camera_id, camera_name, cal_dir):
         if detected:
             corners = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
 
-        # Draw status overlay
-        display_frame = frame.copy()
-        display_frame = draw_status(display_frame, detected, corners, image_count)
+            # Scale corners back to display resolution for overlay
+            scale_x = display_w / process_w
+            scale_y = display_h / process_h
+            corners_scaled = corners.copy()
+            corners_scaled[:, 0, 0] *= scale_x
+            corners_scaled[:, 0, 1] *= scale_y
+        else:
+            corners_scaled = None
+
+        # Resize for display first
+        display_frame = cv2.resize(process_frame, (display_w, display_h))
+
+        # Draw status overlay on display-sized frame (proper font size!)
+        display_frame = draw_status(display_frame, detected, corners_scaled, image_count)
 
         cv2.imshow(window_name, display_frame)
 
@@ -188,13 +234,13 @@ def capture_calibration_images(rtsp_url, camera_id, camera_name, cal_dir):
             filename = f"calib_{image_count:03d}_{timestamp}.jpg"
             filepath = cal_dir / filename
 
-            # Save the original frame (not the one with overlay)
+            # Save the FULL RESOLUTION original frame (not the processed one!)
             cv2.imwrite(str(filepath), frame, [cv2.IMWRITE_JPEG_QUALITY, 100])
-            print(f"Captured: {filename} ({image_count}/{RECOMMENDED_IMAGES})")
+            print(f"Captured: {filename} ({image_count}/{RECOMMENDED_IMAGES}) - Full resolution: {w}x{h}")
 
-            # Flash feedback
-            flash = frame.copy()
-            cv2.rectangle(flash, (0, 0), (w, h), (0, 255, 0), 20)
+            # Flash feedback (on display)
+            flash = display_frame.copy()
+            cv2.rectangle(flash, (0, 0), (display_w, display_h), (0, 255, 0), 20)
             cv2.imshow(window_name, flash)
             cv2.waitKey(100)
 
@@ -209,7 +255,6 @@ def capture_calibration_images(rtsp_url, camera_id, camera_name, cal_dir):
             else:
                 print("Reset cancelled.")
 
-    cap.release()
     cv2.destroyAllWindows()
 
     return image_count >= MIN_IMAGES
@@ -242,7 +287,7 @@ def main():
 
     # Run capture
     success = capture_calibration_images(
-        camera_info['rtspUrl'],
+        facility_name,
         camera_id,
         camera_info['modelTCameraName'],
         cal_dir

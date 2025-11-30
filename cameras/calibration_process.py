@@ -17,8 +17,9 @@ from pathlib import Path
 from datetime import datetime
 
 # Checkerboard configuration (must match capture script)
-CHECKERBOARD_SIZE = (8, 5)  # (columns, rows) of inner corners
-SQUARE_SIZE_MM = 25.0  # Size of each square in millimeters
+# Lodge facility: 3'x4' checkerboard (6 squares × 8 squares) = 5x7 inner corners
+CHECKERBOARD_SIZE = (5, 7)  # (columns, rows) of inner corners
+SQUARE_SIZE_MM = 152.4  # Size of each square in millimeters (6 inches)
 
 
 def load_config(facility_name):

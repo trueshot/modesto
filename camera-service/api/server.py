@@ -86,7 +86,7 @@ class ScanRequest(BaseModel):
     username: str = "admin"
     password: str = ""
     port: int = 554
-    max_channels: int = 16
+    max_channels: int = 32
     quick: bool = True
 
 class ChannelInfo(BaseModel):
@@ -390,6 +390,73 @@ def scan_nvr(request: ScanRequest):
 
     except Exception as e:
         logger.error(f"Error scanning NVR: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/cameras/{facility}/scan-and-update")
+def scan_and_update_facility(
+    facility: str,
+    quick: bool = Query(True, description="Use quick scan (common patterns only)"),
+    max_channels: int = Query(32, description="Maximum channels to test"),
+    preserve_modelt_info: bool = Query(True, description="Keep existing camera names/locations")
+):
+    """
+    Scan facility NVR and update config.json with discovered channels
+
+    Args:
+        facility: Facility name (e.g., "lodge")
+        quick: Use quick scan (faster, common patterns only)
+        max_channels: Maximum number of channels to test
+        preserve_modelt_info: Preserve existing ModelT camera IDs and locations
+
+    Returns:
+        Updated config with scan results
+    """
+    try:
+        # Load facility config to get NVR details
+        config = camera_capture.load_config(facility)
+        nvr_info = config['nvr']
+
+        # Scan NVR
+        scanner = NVRScanner(
+            nvr_ip=nvr_info['ip'],
+            username=nvr_info.get('username', 'admin'),
+            password=nvr_info.get('password', ''),
+            port=nvr_info.get('port', 554)
+        )
+
+        if quick:
+            channels = scanner.quick_scan(
+                channels_to_test=list(range(1, max_channels + 1))
+            )
+        else:
+            channels = scanner.scan(max_channels=max_channels)
+
+        if not channels:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No cameras found on NVR {nvr_info['ip']}"
+            )
+
+        # Update config with scanned channels
+        updated_config = camera_capture.update_channels_from_scan(
+            facility=facility,
+            scanned_channels=channels,
+            preserve_modelt_info=preserve_modelt_info
+        )
+
+        return {
+            "facility": facility,
+            "nvr_ip": nvr_info['ip'],
+            "channels_found": len(channels),
+            "channels_updated": len(updated_config['channels']),
+            "preserved_modelt_info": preserve_modelt_info,
+            "message": f"Updated {facility} config with {len(channels)} discovered cameras"
+        }
+
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error scanning and updating: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/cache/{facility}/{camera_id}")

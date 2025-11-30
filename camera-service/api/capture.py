@@ -214,3 +214,76 @@ class CameraCapture:
             'reachable': reachable,
             'total_cameras': len(config['channels'])
         }
+
+    def update_channels_from_scan(
+        self,
+        facility: str,
+        scanned_channels: List[Dict[str, Any]],
+        preserve_modelt_info: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Update facility config with scanned channels
+
+        Args:
+            facility: Facility name
+            scanned_channels: List of channel dicts from scanner
+            preserve_modelt_info: Keep existing ModelT camera names/IDs if available
+
+        Returns:
+            Updated config dictionary
+        """
+        config = self.load_config(facility)
+        config_path = self.warehouses_path / facility / "cameras" / "config.json"
+
+        # Create a map of existing channels by channel number
+        existing_channels = {}
+        for channel in config.get('channels', []):
+            existing_channels[channel['channel']] = channel
+
+        # Update channels list
+        updated_channels = []
+
+        for scanned in scanned_channels:
+            channel_num = scanned.get('channel')
+
+            # Start with scanned data
+            channel_info = {
+                'channel': channel_num,
+                'nvrPath': scanned['path'],
+                'rtspUrl': scanned['url'],
+                'resolution': scanned['resolution']
+            }
+
+            # Preserve ModelT info if it exists
+            if preserve_modelt_info and channel_num in existing_channels:
+                existing = existing_channels[channel_num]
+                channel_info.update({
+                    'modelTCameraId': existing.get('modelTCameraId', f'camera_{channel_num}'),
+                    'modelTCameraName': existing.get('modelTCameraName', f'Camera {channel_num}'),
+                    'modelTCameraNumber': existing.get('modelTCameraNumber', channel_num),
+                    'location': existing.get('location', 'Unknown')
+                })
+            else:
+                # New channel - create default ModelT info
+                channel_info.update({
+                    'modelTCameraId': f'camera_{channel_num}',
+                    'modelTCameraName': f'Camera {channel_num}',
+                    'modelTCameraNumber': channel_num,
+                    'location': 'Unknown - needs configuration'
+                })
+
+            updated_channels.append(channel_info)
+
+        # Update config
+        config['channels'] = updated_channels
+
+        # Save to file
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        # Update cache
+        self._configs[facility] = config
+
+        logger.info(f"Updated {facility} config: {len(updated_channels)} channels")
+
+        return config
