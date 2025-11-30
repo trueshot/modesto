@@ -337,6 +337,34 @@
               "length": 143
             }
           ]
+        },
+        {
+          "id": "agnes",
+          "type": "partition",
+          "start": {
+            "x": 224.8,
+            "y": 308
+          },
+          "segments": [
+            {
+              "direction": "south",
+              "length": 92
+            }
+          ]
+        },
+        {
+          "id": "catherine",
+          "type": "partition",
+          "start": {
+            "x": 287.25,
+            "y": 308
+          },
+          "segments": [
+            {
+              "direction": "south",
+              "length": 92
+            }
+          ]
         }
       ],
       "columns": [
@@ -686,21 +714,23 @@
           "id": "eisenhower",
           "wallId": "abigail",
           "x": 179,
-          "y": 239,
+          "y": 243,
           "width": 15,
           "type": "interior",
           "orientation": "horizontal",
-          "facing": "north"
+          "facing": "north",
+          "height": 10
         },
         {
           "id": "kennedy",
           "wallId": "abigail",
-          "x": 224,
+          "x": 200,
           "y": 239,
           "width": 15,
           "type": "interior",
           "orientation": "horizontal",
-          "facing": "north"
+          "facing": "north",
+          "height": 10
         },
         {
           "id": "johnson",
@@ -736,6 +766,58 @@
           "openingHeight": 8,
           "insulation": 4,
           "slideDirection": "left"
+        },
+        {
+          "id": "fillmore",
+          "wallId": "beatrice",
+          "x": 251.5,
+          "y": 308,
+          "type": "cooler",
+          "orientation": "horizontal",
+          "facing": "north",
+          "openingWidth": 8,
+          "openingHeight": 8,
+          "bayWidth": 8,
+          "insulation": 4,
+          "slideDirection": "left"
+        },
+        {
+          "id": "pierce",
+          "wallId": "beatrice",
+          "x": 251.5,
+          "y": 308,
+          "type": "cooler",
+          "orientation": "horizontal",
+          "facing": "north",
+          "openingWidth": 9,
+          "openingHeight": 9,
+          "bayWidth": 8,
+          "insulation": 4,
+          "slideDirection": "left"
+        },
+        {
+          "id": "buchanan",
+          "wallId": "anne",
+          "x": 180,
+          "y": 286,
+          "type": "rollup",
+          "orientation": "vertical",
+          "facing": "east",
+          "openingWidth": 10,
+          "openingHeight": 10
+        },
+        {
+          "id": "ford",
+          "wallId": "anne",
+          "x": 180,
+          "y": 300,
+          "type": "personnel",
+          "orientation": "vertical",
+          "facing": "east",
+          "openingWidth": 3,
+          "openingHeight": 7,
+          "swingDirection": "inward",
+          "hingePosition": "left"
         }
       ],
       "cameras": [
@@ -785,12 +867,12 @@
           "x": 180,
           "y": 275,
           "elevation": 12,
-          "direction": 193,
-          "tilt": -4.3,
+          "direction": 354,
+          "tilt": 19.3,
           "viewingAngle": 80,
           "range": 50,
           "location": "Main Floor, West wall, 13ft from south",
-          "roll": 0
+          "roll": -2
         },
         {
           "id": "bread",
@@ -921,6 +1003,34 @@
           "viewingAngle": 90,
           "range": 50,
           "location": "Packing Line 1, on Beam #4 (Birch), facing south"
+        },
+        {
+          "id": "cinnamonroll",
+          "name": "Cinnamonroll",
+          "number": 15,
+          "x": 208.1,
+          "y": 309,
+          "elevation": 10,
+          "direction": 151,
+          "tilt": 8.7,
+          "roll": 0,
+          "viewingAngle": 90,
+          "range": 100,
+          "location": ""
+        },
+        {
+          "id": "coffee",
+          "name": "Coffee",
+          "number": 16,
+          "x": 208.1,
+          "y": 384,
+          "elevation": 10,
+          "direction": 8,
+          "tilt": 8.2,
+          "roll": 0,
+          "viewingAngle": 90,
+          "range": 100,
+          "location": ""
         }
       ],
       "corners": [

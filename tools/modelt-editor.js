@@ -470,7 +470,7 @@ class ModelTEditor {
    * Regenerate SVG from JSON using the skill's generate-svg script
    */
   regenerateSVG() {
-    const scriptPath = 'C:\\Users\\georg\\.claude\\skills\\modelt-warehouse-builder\\scripts\\generate-svg.js';
+    const scriptPath = 'C:\\Users\\wpssh\\.claude\\skills\\modelt-warehouse-builder\\scripts\\generate-svg.js';
     const jsonFilename = path.basename(this.jsonPath);
     const svgFilename = path.basename(this.svgPath);
     const workingDir = path.dirname(this.jsonPath);

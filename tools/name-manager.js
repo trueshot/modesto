@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 
 class NameManager {
-  constructor(skillPath = 'C:\\Users\\georg\\.claude\\skills\\modelt-warehouse-builder') {
+  constructor(skillPath = 'C:\\Users\\wpssh\\.claude\\skills\\modelt-warehouse-builder') {
     this.skillPath = skillPath;
     this.cameraNames = this.loadList('CAMERA_NAMES.txt');
     this.doorNames = this.loadList('DOOR_NAMES.txt');
