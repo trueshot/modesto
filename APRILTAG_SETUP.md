@@ -57,28 +57,30 @@ node generate-tag.js tagStandard41h12 999
 
 ## Printing to ZT421
 
-### Option 1: Network (Recommended)
+### Option 1: USB (Windows) - WORKING METHOD
+
+Use the `print-zpl.ps1` script to send raw ZPL to the Zebra printer via USB:
+
+```powershell
+.\print-zpl.ps1 zpl_output\apriltag_tagStandard41h12_00650.zpl
+```
+
+Or run inline:
+```powershell
+powershell -ExecutionPolicy Bypass -File print-zpl.ps1 "zpl_output\apriltag_tagStandard41h12_00650.zpl"
+```
+
+**How it works:** Uses Windows API (winspool.drv) to send raw bytes directly to the printer, bypassing driver formatting.
+
+### Option 2: Network
 
 ```bash
 # Linux/Mac
-cat zpl_output/apriltag_*.zpl | nc -w1 192.168.1.100 9100
+cat zpl_output/apriltag_*.zpl | nc -w1 <PRINTER_IP> 9100
 
 # Windows (using netcat)
-gc zpl_output/apriltag_*.zpl | nc.exe -w1 192.168.1.100 9100
+gc zpl_output/apriltag_*.zpl | nc.exe -w1 <PRINTER_IP> 9100
 ```
-
-### Option 2: USB via lpr (Windows)
-
-```bash
-# Print to default printer
-copy zpl_output\apriltag_tagStandard52h13_00000.zpl LPT1:
-```
-
-### Option 3: Manual
-
-1. Copy ZPL file content
-2. Use Zebra's ZPL viewer or utility
-3. Send to printer via your preferred method
 
 ## Notes
 

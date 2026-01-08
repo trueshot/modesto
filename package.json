@@ -7,7 +7,6 @@
     "generate": "node generate-zpl.js"
   },
   "dependencies": {
-    "jimp": "^1.6.0",
-    "svg2img": "^0.1.12"
+    "jimp": "^1.6.0"
   }
 }
