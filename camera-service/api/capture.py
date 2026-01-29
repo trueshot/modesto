@@ -77,47 +77,78 @@ class CameraCapture:
 
     def capture_frame(self, rtsp_url: str, timeout: int = 5) -> Optional[bytes]:
         """
-        Capture single frame from RTSP stream
+        Capture single frame from RTSP stream with hard timeout
 
         Args:
             rtsp_url: RTSP URL
-            timeout: Timeout in seconds
+            timeout: Timeout in seconds (enforced via threading)
 
         Returns:
             JPEG bytes or None on failure
         """
-        cap = None
-        try:
-            cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        import threading
+        import queue
 
-            if not cap.isOpened():
-                logger.error(f"Failed to open RTSP stream: {rtsp_url}")
-                return None
+        result_queue = queue.Queue()
 
-            ret, frame = cap.read()
+        def _capture():
+            cap = None
+            try:
+                cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-            if not ret or frame is None:
-                logger.error(f"Failed to read frame from: {rtsp_url}")
-                return None
+                if not cap.isOpened():
+                    result_queue.put(None)
+                    return
 
-            # Encode as JPEG
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
-            ret, buffer = cv2.imencode('.jpg', frame, encode_param)
+                # Read up to 3 frames - first frame from HEVC streams is often grey
+                frame = None
+                for _ in range(3):
+                    ret, f = cap.read()
+                    if not ret or f is None:
+                        continue
+                    # Check if frame has content (std > 10 means not grey)
+                    if f.std() > 10:
+                        frame = f
+                        break
+                    frame = f  # Keep last frame even if grey
 
-            if not ret:
-                logger.error("Failed to encode frame as JPEG")
-                return None
+                if frame is None:
+                    result_queue.put(None)
+                    return
 
-            return buffer.tobytes()
+                # Encode as JPEG
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+                ret, buffer = cv2.imencode('.jpg', frame, encode_param)
 
-        except Exception as e:
-            logger.error(f"Error capturing frame: {e}")
+                if not ret:
+                    result_queue.put(None)
+                    return
+
+                result_queue.put(buffer.tobytes())
+
+            except Exception as e:
+                logger.error(f"Error capturing frame: {e}")
+                result_queue.put(None)
+
+            finally:
+                if cap is not None:
+                    cap.release()
+
+        # Run capture in thread with timeout
+        thread = threading.Thread(target=_capture, daemon=True)
+        thread.start()
+        thread.join(timeout=timeout)
+
+        if thread.is_alive():
+            # Timeout - thread still running, return None
+            logger.warning(f"Timeout ({timeout}s) capturing from: {rtsp_url}")
             return None
 
-        finally:
-            if cap is not None:
-                cap.release()
+        try:
+            return result_queue.get_nowait()
+        except queue.Empty:
+            return None
 
     def capture_camera(self, facility: str, camera_id: str) -> Optional[bytes]:
         """
@@ -287,3 +318,66 @@ class CameraCapture:
         logger.info(f"Updated {facility} config: {len(updated_channels)} channels")
 
         return config
+
+    def update_camera_config(
+        self,
+        facility: str,
+        channel: int,
+        name: Optional[str] = None,
+        location: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Update camera configuration for a specific channel.
+        Updates modelTCameraId, modelTCameraName, and/or location.
+
+        Args:
+            facility: Facility name
+            channel: NVR channel number
+            name: New camera name (e.g., "Donut") - will generate ID as lowercase
+            location: New location description
+
+        Returns:
+            Updated channel info dict, or None if channel not found
+        """
+        # Force reload config from disk to get latest
+        if facility in self._configs:
+            del self._configs[facility]
+
+        config = self.load_config(facility)
+        config_path = self.warehouses_path / facility / "cameras" / "config.json"
+
+        # Find the channel
+        channel_info = None
+        channel_idx = None
+        for idx, ch in enumerate(config['channels']):
+            if ch['channel'] == channel:
+                channel_info = ch
+                channel_idx = idx
+                break
+
+        if channel_info is None:
+            return None
+
+        # Update fields
+        if name:
+            # Generate ID from name (lowercase, no spaces)
+            camera_id = name.lower().replace(' ', '_')
+            channel_info['modelTCameraId'] = camera_id
+            channel_info['modelTCameraName'] = name
+
+        if location:
+            channel_info['location'] = location
+
+        # Update config
+        config['channels'][channel_idx] = channel_info
+
+        # Save to file
+        with open(config_path, 'w') as f:
+            json.dump(config, f, indent=2)
+
+        # Update cache
+        self._configs[facility] = config
+
+        logger.info(f"Updated camera config for {facility} channel {channel}: name={name}, location={location}")
+
+        return channel_info
