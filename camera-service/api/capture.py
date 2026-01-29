@@ -234,6 +234,27 @@ class CameraCapture:
 
         return cameras
 
+    def list_nvrs(self, facility: str) -> List[Dict[str, Any]]:
+        """
+        List all NVRs for a facility
+
+        Args:
+            facility: Facility name
+
+        Returns:
+            List of NVR info dicts with id, ip, brand, etc.
+        """
+        db = self._get_db(facility)
+        cursor = db.cursor()
+
+        cursor.execute("SELECT * FROM nvrs ORDER BY id")
+
+        nvrs = []
+        for row in cursor.fetchall():
+            nvrs.append(dict(row))
+
+        return nvrs
+
     def check_nvr_connectivity(self, facility: str) -> Dict[str, Any]:
         """
         Check NVR connectivity
@@ -350,40 +371,3 @@ class CameraCapture:
 
         # Return updated info
         return self.get_camera_info(facility, name.lower().replace(' ', '_') if name else old_mount_id)
-
-    # Deprecated methods - these wrote to config.json
-    def load_config(self, facility: str) -> Dict[str, Any]:
-        """
-        DEPRECATED: Use list_cameras() or get_camera_info() instead.
-        This method exists for backwards compatibility with server.py endpoints
-        that haven't been migrated yet.
-        """
-        logger.warning("load_config() is deprecated - migrate to list_cameras()")
-
-        cameras = self.list_cameras(facility)
-        db = self._get_db(facility)
-        cursor = db.cursor()
-
-        # Get NVR info for backwards compat
-        cursor.execute("SELECT * FROM nvrs")
-        nvrs = [dict(row) for row in cursor.fetchall()]
-
-        # Build config.json-like structure
-        channels = []
-        for cam in cameras:
-            channels.append({
-                'modelTCameraId': cam['id'],
-                'modelTCameraName': cam['name'],
-                'modelTCameraNumber': cam['channel'],
-                'location': cam['location'],
-                'resolution': cam['resolution'],
-                'channel': cam['channel'],
-                'rtspUrl': cam['rtsp_url'],
-                'nvrId': cam['nvr_id']
-            })
-
-        return {
-            'nvrs': nvrs,
-            'nvr': nvrs[0] if nvrs else {},
-            'channels': channels
-        }

@@ -312,34 +312,24 @@ def get_warehouse_camera_thumbnails(
         {nvrs: [{id, name, channels}], cameras: [{nvrId, channel, thumbnailUrl, label, image}]}
     """
     try:
-        config = camera_capture.load_config(warehouse_id)
+        nvrs = camera_capture.list_nvrs(warehouse_id)
+        cameras = camera_capture.list_cameras(warehouse_id)
 
-        # Build NVR list
+        # Build NVR list with their channels
         nvrs_list = []
-        if 'nvrs' in config:
-            for nvr in config['nvrs']:
-                nvr_channels = [c['channel'] for c in config['channels'] if c.get('nvrId') == nvr['id']]
-                # Also include channels without nvrId as nvr1
-                if nvr['id'] == 'nvr1':
-                    nvr_channels.extend([c['channel'] for c in config['channels'] if 'nvrId' not in c])
-                nvrs_list.append({
-                    'id': nvr['id'],
-                    'name': f"{nvr['ip']}",
-                    'channels': sorted(set(nvr_channels))
-                })
-        else:
-            # Legacy single NVR
+        for nvr in nvrs:
+            nvr_channels = [c['channel'] for c in cameras if c.get('nvr_id') == nvr['id']]
             nvrs_list.append({
-                'id': 'nvr1',
-                'name': config['nvr']['ip'],
-                'channels': [c['channel'] for c in config['channels']]
+                'id': nvr['id'],
+                'name': nvr['ip'],
+                'channels': sorted(set(nvr_channels))
             })
 
         # Build camera list with thumbnails
         cameras_list = []
-        for channel in config['channels']:
-            camera_id = channel['modelTCameraId']
-            nvr_id = channel.get('nvrId', 'nvr1')
+        for cam in cameras:
+            camera_id = cam['id']
+            nvr_id = cam.get('nvr_id', 'nvr1')
             cache_key = f"{warehouse_id}/{camera_id}"
 
             # Try to get/capture image
@@ -364,11 +354,11 @@ def get_warehouse_camera_thumbnails(
 
             cameras_list.append({
                 'nvrId': nvr_id,
-                'channel': channel['channel'],
+                'channel': cam['channel'],
                 'cameraId': camera_id,
                 'thumbnailUrl': f"/api/cameras/{warehouse_id}/{camera_id}/capture",
-                'label': channel['modelTCameraName'],
-                'location': channel.get('location', ''),
+                'label': cam['name'],
+                'location': cam.get('location', ''),
                 'image': thumbnail_b64
             })
 
@@ -665,73 +655,6 @@ def scan_nvr(request: ScanRequest):
         logger.error(f"Error scanning NVR: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/api/cameras/{facility}/scan-and-update")
-def scan_and_update_facility(
-    facility: str,
-    quick: bool = Query(True, description="Use quick scan (common patterns only)"),
-    max_channels: int = Query(32, description="Maximum channels to test"),
-    preserve_modelt_info: bool = Query(True, description="Keep existing camera names/locations")
-):
-    """
-    Scan facility NVR and update config.json with discovered channels
-
-    Args:
-        facility: Facility name (e.g., "lodge")
-        quick: Use quick scan (faster, common patterns only)
-        max_channels: Maximum number of channels to test
-        preserve_modelt_info: Preserve existing ModelT camera IDs and locations
-
-    Returns:
-        Updated config with scan results
-    """
-    try:
-        # Load facility config to get NVR details
-        config = camera_capture.load_config(facility)
-        nvr_info = config['nvr']
-
-        # Scan NVR
-        scanner = NVRScanner(
-            nvr_ip=nvr_info['ip'],
-            username=nvr_info.get('username', 'admin'),
-            password=nvr_info.get('password', ''),
-            port=nvr_info.get('port', 554)
-        )
-
-        if quick:
-            channels = scanner.quick_scan(
-                channels_to_test=list(range(1, max_channels + 1))
-            )
-        else:
-            channels = scanner.scan(max_channels=max_channels)
-
-        if not channels:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No cameras found on NVR {nvr_info['ip']}"
-            )
-
-        # Update config with scanned channels
-        updated_config = camera_capture.update_channels_from_scan(
-            facility=facility,
-            scanned_channels=channels,
-            preserve_modelt_info=preserve_modelt_info
-        )
-
-        return {
-            "facility": facility,
-            "nvr_ip": nvr_info['ip'],
-            "channels_found": len(channels),
-            "channels_updated": len(updated_config['channels']),
-            "preserved_modelt_info": preserve_modelt_info,
-            "message": f"Updated {facility} config with {len(channels)} discovered cameras"
-        }
-
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error scanning and updating: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.delete("/api/cache/{facility}/{camera_id}")
 def invalidate_cache(facility: str, camera_id: str):
     """
@@ -770,17 +693,17 @@ def generate_thumbnails(
     Saves to warehouses/{facility}/cameras/thumbnails/
     """
     try:
-        config = camera_capture.load_config(facility)
+        cameras = camera_capture.list_cameras(facility)
         thumbnails_dir = camera_capture.warehouses_path / facility / "cameras" / "thumbnails"
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
 
         results = {"success": [], "failed": []}
 
-        for ch in config['channels']:
-            cid = ch['modelTCameraId']
+        for cam in cameras:
+            cid = cam['id']
             logger.info(f"Generating thumbnail for {cid}...")
 
-            image_data = camera_capture.capture_frame(ch['rtspUrl'], timeout=5)
+            image_data = camera_capture.capture_frame(cam['rtsp_url'], timeout=5)
             if image_data:
                 # Resize to thumbnail
                 nparr = np.frombuffer(image_data, np.uint8)
@@ -827,14 +750,13 @@ def get_camera_status(
     import time
 
     try:
-        config = camera_capture.load_config(facility)
-        channels = config['channels']
+        cameras = camera_capture.list_cameras(facility)
 
-        def probe_camera(ch):
+        def probe_camera(cam):
             """Probe a single camera, return (camera_id, success, elapsed_ms)"""
-            cid = ch['modelTCameraId']
+            cid = cam['id']
             start = time.time()
-            result = camera_capture.capture_frame(ch['rtspUrl'], timeout=timeout)
+            result = camera_capture.capture_frame(cam['rtsp_url'], timeout=timeout)
             elapsed = int((time.time() - start) * 1000)
             return (cid, result is not None, elapsed)
 
@@ -846,7 +768,7 @@ def get_camera_status(
 
         # Probe cameras with limited concurrency to avoid overwhelming NVR
         with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = {executor.submit(probe_camera, ch): ch for ch in channels}
+            futures = {executor.submit(probe_camera, cam): cam for cam in cameras}
 
             for future in as_completed(futures):
                 cid, success, elapsed = future.result()
@@ -866,7 +788,7 @@ def get_camera_status(
             "failed": sorted(failed),
             "working_count": len(working),
             "failed_count": len(failed),
-            "total": len(channels),
+            "total": len(cameras),
             "elapsed_ms": total_elapsed,
             "concurrency": concurrency,
             "timings": timings
@@ -896,12 +818,11 @@ def restart_service():
 @app.post("/api/admin/reload-config")
 def reload_config():
     """
-    Reload camera configuration from disk without full restart.
-    Clears config cache so next request loads fresh config.
+    Clear caches without full restart.
+    Database queries always read fresh data (no config caching).
     """
-    camera_capture._configs.clear()
     image_cache.clear()
-    return {"message": "Config cache cleared - next request will load fresh config"}
+    return {"message": "Image cache cleared"}
 
 # ============================================================================
 # NVR DIRECT ACCESS (queries lodge.db)
