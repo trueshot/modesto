@@ -1,10 +1,12 @@
 """
 Camera capture logic
 Handles NVR connections and frame capture using OpenCV
+
+Migrated from config.json to lodge.db (gen-6)
 """
 
 import cv2
-import json
+import sqlite3
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any, List
@@ -23,56 +25,52 @@ class CameraCapture:
             warehouses_path: Path to warehouses directory
         """
         self.warehouses_path = Path(warehouses_path)
-        self._configs = {}  # Cache configs in memory
+        self._db_connections = {}  # Cache db connections
 
-    def load_config(self, facility: str) -> Dict[str, Any]:
-        """
-        Load camera configuration for a facility
-
-        Args:
-            facility: Facility name (e.g., "lodge")
-
-        Returns:
-            Camera configuration dictionary
-
-        Raises:
-            FileNotFoundError: If config doesn't exist
-        """
-        # Check cache first
-        if facility in self._configs:
-            return self._configs[facility]
-
-        config_path = self.warehouses_path / facility / "cameras" / "config.json"
-
-        if not config_path.exists():
-            raise FileNotFoundError(f"Camera config not found: {config_path}")
-
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-
-        # Cache it
-        self._configs[facility] = config
-        logger.info(f"Loaded config for {facility}: {len(config['channels'])} cameras")
-
-        return config
+    def _get_db(self, facility: str) -> sqlite3.Connection:
+        """Get database connection for facility"""
+        if facility not in self._db_connections:
+            db_path = self.warehouses_path / facility / f"{facility}.db"
+            if not db_path.exists():
+                raise FileNotFoundError(f"Database not found: {db_path}")
+            conn = sqlite3.connect(str(db_path), check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            self._db_connections[facility] = conn
+            logger.info(f"Connected to {facility} database: {db_path}")
+        return self._db_connections[facility]
 
     def get_camera_info(self, facility: str, camera_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get camera information by ModelT camera ID
+        Get camera information by mount ID (food name)
 
         Args:
-            facility: Facility name
-            camera_id: ModelT camera ID (e.g., "bagel")
+            facility: Facility name (e.g., "lodge")
+            camera_id: Mount ID / food name (e.g., "bagel")
 
         Returns:
             Camera info dict or None if not found
         """
-        config = self.load_config(facility)
+        db = self._get_db(facility)
+        cursor = db.cursor()
 
-        for channel in config['channels']:
-            if channel['modelTCameraId'] == camera_id:
-                return channel
+        cursor.execute("""
+            SELECT
+                m.id as modelTCameraId,
+                m.id as modelTCameraName,
+                m.description as location,
+                c.rtsp_path as rtspUrl,
+                c.nvr_id as nvrId,
+                c.channel_number as channel,
+                c.resolution
+            FROM mounts m
+            JOIN linkages l ON l.mount_id = m.id
+            JOIN channels c ON l.channel_id = c.id
+            WHERE m.id = ?
+        """, (camera_id,))
 
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
         return None
 
     def capture_frame(self, rtsp_url: str, timeout: int = 5) -> Optional[bytes]:
@@ -156,7 +154,7 @@ class CameraCapture:
 
         Args:
             facility: Facility name
-            camera_id: ModelT camera ID
+            camera_id: Mount ID / food name (e.g., "bagel")
 
         Returns:
             JPEG bytes or None on failure
@@ -168,7 +166,7 @@ class CameraCapture:
             return None
 
         rtsp_url = camera_info['rtspUrl']
-        logger.info(f"Capturing from {camera_id} ({camera_info['modelTCameraName']})")
+        logger.info(f"Capturing from {camera_id}")
 
         return self.capture_frame(rtsp_url)
 
@@ -182,14 +180,13 @@ class CameraCapture:
         Returns:
             Dictionary mapping camera_id to image bytes
         """
-        config = self.load_config(facility)
+        cameras = self.list_cameras(facility)
         results = {}
 
-        for channel in config['channels']:
-            camera_id = channel['modelTCameraId']
+        for cam in cameras:
+            camera_id = cam['id']
             logger.info(f"Capturing {camera_id}...")
-
-            frame = self.capture_frame(channel['rtspUrl'])
+            frame = self.capture_frame(cam['rtsp_url'])
             results[camera_id] = frame
 
         return results
@@ -204,17 +201,35 @@ class CameraCapture:
         Returns:
             List of camera info dicts
         """
-        config = self.load_config(facility)
+        db = self._get_db(facility)
+        cursor = db.cursor()
+
+        cursor.execute("""
+            SELECT
+                m.id,
+                m.id as name,
+                m.description as location,
+                c.channel_number as channel,
+                c.resolution,
+                c.rtsp_path as rtsp_url,
+                c.nvr_id
+            FROM mounts m
+            JOIN linkages l ON l.mount_id = m.id
+            JOIN channels c ON l.channel_id = c.id
+            ORDER BY c.nvr_id, c.channel_number
+        """)
 
         cameras = []
-        for channel in config['channels']:
+        for row in cursor.fetchall():
             cameras.append({
-                'id': channel['modelTCameraId'],
-                'name': channel['modelTCameraName'],
-                'number': channel['modelTCameraNumber'],
-                'location': channel['location'],
-                'resolution': channel['resolution'],
-                'channel': channel['channel']
+                'id': row['id'],
+                'name': row['name'],
+                'number': row['channel'],
+                'location': row['location'] or 'Unknown',
+                'resolution': row['resolution'] or 'Unknown',
+                'channel': row['channel'],
+                'rtsp_url': row['rtsp_url'],
+                'nvr_id': row['nvr_id']
             })
 
         return cameras
@@ -229,155 +244,146 @@ class CameraCapture:
         Returns:
             Connectivity status dict
         """
-        config = self.load_config(facility)
-        nvr_info = config['nvr']
+        db = self._get_db(facility)
+        cursor = db.cursor()
+
+        # Get NVR info
+        cursor.execute("SELECT id, ip FROM nvrs LIMIT 1")
+        nvr_row = cursor.fetchone()
+
+        if not nvr_row:
+            return {'error': 'No NVRs configured', 'reachable': False}
+
+        # Get total camera count
+        cursor.execute("""
+            SELECT COUNT(*) as count FROM mounts m
+            JOIN linkages l ON l.mount_id = m.id
+        """)
+        count_row = cursor.fetchone()
+        total_cameras = count_row['count'] if count_row else 0
 
         # Try to capture from first camera as connectivity test
-        if config['channels']:
-            first_channel = config['channels'][0]
-            frame = self.capture_frame(first_channel['rtspUrl'])
+        cameras = self.list_cameras(facility)
+        if cameras:
+            frame = self.capture_frame(cameras[0]['rtsp_url'])
             reachable = frame is not None
         else:
             reachable = False
 
         return {
-            'nvr_ip': nvr_info['ip'],
+            'nvr_ip': nvr_row['ip'],
             'reachable': reachable,
-            'total_cameras': len(config['channels'])
+            'total_cameras': total_cameras
         }
-
-    def update_channels_from_scan(
-        self,
-        facility: str,
-        scanned_channels: List[Dict[str, Any]],
-        preserve_modelt_info: bool = True
-    ) -> Dict[str, Any]:
-        """
-        Update facility config with scanned channels
-
-        Args:
-            facility: Facility name
-            scanned_channels: List of channel dicts from scanner
-            preserve_modelt_info: Keep existing ModelT camera names/IDs if available
-
-        Returns:
-            Updated config dictionary
-        """
-        config = self.load_config(facility)
-        config_path = self.warehouses_path / facility / "cameras" / "config.json"
-
-        # Create a map of existing channels by channel number
-        existing_channels = {}
-        for channel in config.get('channels', []):
-            existing_channels[channel['channel']] = channel
-
-        # Update channels list
-        updated_channels = []
-
-        for scanned in scanned_channels:
-            channel_num = scanned.get('channel')
-
-            # Start with scanned data
-            channel_info = {
-                'channel': channel_num,
-                'nvrPath': scanned['path'],
-                'rtspUrl': scanned['url'],
-                'resolution': scanned['resolution']
-            }
-
-            # Preserve ModelT info if it exists
-            if preserve_modelt_info and channel_num in existing_channels:
-                existing = existing_channels[channel_num]
-                channel_info.update({
-                    'modelTCameraId': existing.get('modelTCameraId', f'camera_{channel_num}'),
-                    'modelTCameraName': existing.get('modelTCameraName', f'Camera {channel_num}'),
-                    'modelTCameraNumber': existing.get('modelTCameraNumber', channel_num),
-                    'location': existing.get('location', 'Unknown')
-                })
-            else:
-                # New channel - create default ModelT info
-                channel_info.update({
-                    'modelTCameraId': f'camera_{channel_num}',
-                    'modelTCameraName': f'Camera {channel_num}',
-                    'modelTCameraNumber': channel_num,
-                    'location': 'Unknown - needs configuration'
-                })
-
-            updated_channels.append(channel_info)
-
-        # Update config
-        config['channels'] = updated_channels
-
-        # Save to file
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
-
-        # Update cache
-        self._configs[facility] = config
-
-        logger.info(f"Updated {facility} config: {len(updated_channels)} channels")
-
-        return config
 
     def update_camera_config(
         self,
         facility: str,
         channel: int,
         name: Optional[str] = None,
-        location: Optional[str] = None
+        location: Optional[str] = None,
+        nvr_id: str = "nvr1"
     ) -> Optional[Dict[str, Any]]:
         """
         Update camera configuration for a specific channel.
-        Updates modelTCameraId, modelTCameraName, and/or location.
+        Updates mount ID and description in lodge.db.
 
         Args:
             facility: Facility name
             channel: NVR channel number
-            name: New camera name (e.g., "Donut") - will generate ID as lowercase
+            name: New camera name (e.g., "Donut") - becomes mount ID (lowercase)
             location: New location description
+            nvr_id: NVR ID (default "nvr1")
 
         Returns:
-            Updated channel info dict, or None if channel not found
+            Updated camera info dict, or None if channel not found
         """
-        # Force reload config from disk to get latest
-        if facility in self._configs:
-            del self._configs[facility]
-
-        config = self.load_config(facility)
-        config_path = self.warehouses_path / facility / "cameras" / "config.json"
+        db = self._get_db(facility)
+        cursor = db.cursor()
 
         # Find the channel
-        channel_info = None
-        channel_idx = None
-        for idx, ch in enumerate(config['channels']):
-            if ch['channel'] == channel:
-                channel_info = ch
-                channel_idx = idx
-                break
-
-        if channel_info is None:
+        channel_id = f"{nvr_id}_ch{channel:02d}"
+        cursor.execute("SELECT id FROM channels WHERE id = ?", (channel_id,))
+        if not cursor.fetchone():
             return None
 
-        # Update fields
+        # Find current linkage
+        cursor.execute("""
+            SELECT l.mount_id, m.description
+            FROM linkages l
+            JOIN mounts m ON m.id = l.mount_id
+            WHERE l.channel_id = ?
+        """, (channel_id,))
+        linkage = cursor.fetchone()
+
+        old_mount_id = linkage['mount_id'] if linkage else None
+
         if name:
-            # Generate ID from name (lowercase, no spaces)
-            camera_id = name.lower().replace(' ', '_')
-            channel_info['modelTCameraId'] = camera_id
-            channel_info['modelTCameraName'] = name
+            new_mount_id = name.lower().replace(' ', '_')
 
-        if location:
-            channel_info['location'] = location
+            # Create new mount if it doesn't exist
+            cursor.execute("SELECT id FROM mounts WHERE id = ?", (new_mount_id,))
+            if not cursor.fetchone():
+                cursor.execute("""
+                    INSERT INTO mounts (id, description, zone_id)
+                    VALUES (?, ?, 'unknown')
+                """, (new_mount_id, location or 'Unknown - needs configuration'))
 
-        # Update config
-        config['channels'][channel_idx] = channel_info
+            # Update or create linkage
+            if old_mount_id:
+                cursor.execute("""
+                    UPDATE linkages SET mount_id = ? WHERE channel_id = ?
+                """, (new_mount_id, channel_id))
+            else:
+                cursor.execute("""
+                    INSERT INTO linkages (mount_id, channel_id)
+                    VALUES (?, ?)
+                """, (new_mount_id, channel_id))
 
-        # Save to file
-        with open(config_path, 'w') as f:
-            json.dump(config, f, indent=2)
+        if location and old_mount_id:
+            mount_id = name.lower().replace(' ', '_') if name else old_mount_id
+            cursor.execute("""
+                UPDATE mounts SET description = ? WHERE id = ?
+            """, (location, mount_id))
 
-        # Update cache
-        self._configs[facility] = config
+        db.commit()
 
-        logger.info(f"Updated camera config for {facility} channel {channel}: name={name}, location={location}")
+        # Return updated info
+        return self.get_camera_info(facility, name.lower().replace(' ', '_') if name else old_mount_id)
 
-        return channel_info
+    # Deprecated methods - these wrote to config.json
+    def load_config(self, facility: str) -> Dict[str, Any]:
+        """
+        DEPRECATED: Use list_cameras() or get_camera_info() instead.
+        This method exists for backwards compatibility with server.py endpoints
+        that haven't been migrated yet.
+        """
+        logger.warning("load_config() is deprecated - migrate to list_cameras()")
+
+        cameras = self.list_cameras(facility)
+        db = self._get_db(facility)
+        cursor = db.cursor()
+
+        # Get NVR info for backwards compat
+        cursor.execute("SELECT * FROM nvrs")
+        nvrs = [dict(row) for row in cursor.fetchall()]
+
+        # Build config.json-like structure
+        channels = []
+        for cam in cameras:
+            channels.append({
+                'modelTCameraId': cam['id'],
+                'modelTCameraName': cam['name'],
+                'modelTCameraNumber': cam['channel'],
+                'location': cam['location'],
+                'resolution': cam['resolution'],
+                'channel': cam['channel'],
+                'rtspUrl': cam['rtsp_url'],
+                'nvrId': cam['nvr_id']
+            })
+
+        return {
+            'nvrs': nvrs,
+            'nvr': nvrs[0] if nvrs else {},
+            'channels': channels
+        }
