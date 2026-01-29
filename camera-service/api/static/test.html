@@ -282,10 +282,11 @@
             const startTime = Date.now();
             const httpUrl = `${window.location.origin}/api/nvr/${nvrId}/channel/${channel}/frame?source=${currentSource}&timeout=10`;
 
+            let captureInfo = null;
             try {
                 // Fetch capture info
                 const infoRes = await fetch(`${BASE}/api/nvr/${nvrId}/channel/${channel}/info?source=${currentSource}`);
-                const captureInfo = infoRes.ok ? await infoRes.json() : null;
+                captureInfo = infoRes.ok ? await infoRes.json() : null;
 
                 // Fetch the actual frame
                 const res = await fetch(httpUrl);
@@ -328,11 +329,17 @@
                 status.className = 'status error';
                 info.textContent = '';
 
-                // Still show the attempted URL on error
+                // Show the attempted URL and error details
                 document.getElementById('httpUrl').textContent = httpUrl;
-                document.getElementById('captureUrlLabel').textContent = 'Capture URL:';
-                document.getElementById('captureUrl').textContent = '(capture failed)';
-                document.getElementById('captureMethod').textContent = '';
+                document.getElementById('captureUrlLabel').textContent =
+                    currentSource === 'snapshot' ? 'Snapshot URL (internal):' : 'RTSP URL (internal):';
+                if (captureInfo) {
+                    document.getElementById('captureUrl').textContent = captureInfo.capture_url || '(not available)';
+                    document.getElementById('captureMethod').textContent = `Error: ${e.message}`;
+                } else {
+                    document.getElementById('captureUrl').textContent = '(info unavailable)';
+                    document.getElementById('captureMethod').textContent = `Error: ${e.message}`;
+                }
                 urlInfo.style.display = 'block';
             } finally {
                 captureBtn.disabled = false;
