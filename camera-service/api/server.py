@@ -159,6 +159,87 @@ def health_check(facility: str = Query("lodge", description="Facility to check")
         "nvr_connectivity": nvr_status
     }
 
+@app.get("/api/monitor")
+def get_monitor_status():
+    """
+    Get worker thread status for monitoring.
+    Shows active requests, completed counts, and current activity.
+    """
+    import time
+    now = time.time()
+
+    with worker_state_lock:
+        state = {
+            "timestamp": now,
+            "zmq_rep": {
+                **worker_state["zmq_rep"],
+                "current": None
+            },
+            "zmq_router": {
+                "status": worker_state["zmq_router"]["status"],
+                "pending_count": len(worker_state["zmq_router"]["pending_requests"]),
+                "active_count": len(worker_state["zmq_router"]["active_requests"]),
+                "pending_requests": [],
+                "active_requests": [],
+                "completed": worker_state["zmq_router"]["completed"],
+                "errors": worker_state["zmq_router"]["errors"],
+                "total_bytes_mb": round(worker_state["zmq_router"]["total_bytes"] / (1024*1024), 2)
+            }
+        }
+
+        # Add elapsed time to current REP request
+        if worker_state["zmq_rep"]["current"]:
+            current = worker_state["zmq_rep"]["current"].copy()
+            current["elapsed_sec"] = round(now - current["started_at"], 1)
+            del current["started_at"]
+            state["zmq_rep"]["current"] = current
+
+        # Add pending ROUTER requests (waiting for worker)
+        for req_id, req in worker_state["zmq_router"]["pending_requests"].items():
+            state["zmq_router"]["pending_requests"].append({
+                "id": req_id,
+                "nvr": req["nvr"],
+                "channel": req["channel"],
+                "source": req["source"],
+                "waiting_sec": round(now - req["queued_at"], 1)
+            })
+
+        # Add active ROUTER requests (being processed)
+        for req_id, req in worker_state["zmq_router"]["active_requests"].items():
+            state["zmq_router"]["active_requests"].append({
+                "id": req_id,
+                "nvr": req["nvr"],
+                "channel": req["channel"],
+                "source": req["source"],
+                "elapsed_sec": round(now - req.get("processing_started_at", req["queued_at"]), 1)
+            })
+
+        # Add per-NVR connection counts
+        nvr_connections = {}
+        for req in list(worker_state["zmq_router"]["active_requests"].values()):
+            nvr_id = req["nvr"]
+            nvr_connections[nvr_id] = nvr_connections.get(nvr_id, 0) + 1
+        state["zmq_router"]["nvr_connections"] = nvr_connections
+        state["zmq_router"]["nvr_max_concurrent"] = NVR_MAX_CONCURRENT
+
+        # Include event log (last N events)
+        state["zmq_router"]["event_log"] = list(worker_state["zmq_router"]["event_log"])
+
+    return state
+
+@app.post("/api/monitor/reset")
+def reset_monitor_stats(clear_log: bool = Query(False, description="Also clear event log")):
+    """Reset monitor statistics (completed counts, errors, bytes). Does not clear in-flight requests."""
+    with worker_state_lock:
+        worker_state["zmq_rep"]["completed"] = 0
+        worker_state["zmq_rep"]["errors"] = 0
+        worker_state["zmq_router"]["completed"] = 0
+        worker_state["zmq_router"]["errors"] = 0
+        worker_state["zmq_router"]["total_bytes"] = 0
+        if clear_log:
+            worker_state["zmq_router"]["event_log"] = []
+    return {"message": "Stats reset" + (" (log cleared)" if clear_log else "")}
+
 @app.get("/api/cameras/{facility}")
 def list_cameras(facility: str):
     """
@@ -1015,9 +1096,62 @@ def list_nvr_channels(nvr_id: str):
 # ============================================================================
 
 ZMQ_ENDPOINT = "ipc:///tmp/camera_frames"
+ZMQ_ASYNC_ENDPOINT = "ipc:///tmp/camera_frames_async"
 # Windows doesn't support ipc://, use tcp instead
 if sys.platform == "win32":
     ZMQ_ENDPOINT = "tcp://127.0.0.1:5555"
+    ZMQ_ASYNC_ENDPOINT = "tcp://127.0.0.1:5556"
+
+# Worker thread tracking for monitor
+import time as _time
+worker_state = {
+    "zmq_rep": {"status": "idle", "current": None, "completed": 0, "errors": 0},
+    "zmq_router": {
+        "status": "idle",
+        "pending_requests": {},  # request_id -> {nvr, channel, source, queued_at} - waiting for worker
+        "active_requests": {},   # request_id -> {nvr, channel, source, queued_at, processing_started_at} - being processed
+        "completed": 0,
+        "errors": 0,
+        "total_bytes": 0,
+        "event_log": []  # Circular buffer of recent events for debugging
+    }
+}
+worker_state_lock = threading.Lock()
+EVENT_LOG_MAX = 200  # Keep last 200 events
+event_seq = 0  # Global sequence number for event ordering
+
+def log_event(event_type: str, request_id: str, nvr: str, channel: int, source: str, extra: dict = None):
+    """Add event to the circular event log"""
+    global event_seq
+    event_seq += 1
+    event = {
+        "seq": event_seq,
+        "t": _time.time(),
+        "type": event_type,
+        "id": request_id,
+        "nvr": nvr,
+        "ch": channel,
+        "src": source
+    }
+    if extra:
+        event.update(extra)
+    with worker_state_lock:
+        log = worker_state["zmq_router"]["event_log"]
+        log.append(event)
+        if len(log) > EVENT_LOG_MAX:
+            worker_state["zmq_router"]["event_log"] = log[-EVENT_LOG_MAX:]
+
+# Per-NVR connection throttling (NVRs typically handle max 2 concurrent RTSP)
+NVR_MAX_CONCURRENT = 2
+nvr_semaphores = {}  # nvr_ip -> threading.Semaphore
+nvr_semaphores_lock = threading.Lock()
+
+def get_nvr_semaphore(nvr_ip: str) -> threading.Semaphore:
+    """Get or create semaphore for an NVR IP"""
+    with nvr_semaphores_lock:
+        if nvr_ip not in nvr_semaphores:
+            nvr_semaphores[nvr_ip] = threading.Semaphore(NVR_MAX_CONCURRENT)
+        return nvr_semaphores[nvr_ip]
 
 def capture_snapshot(nvr: dict, channel: int) -> Optional[bytes]:
     """Capture frame via NVR's HTTP snapshot endpoint (UNIVIEW only)"""
@@ -1046,6 +1180,11 @@ def zmq_frame_handler():
 
     while True:
         try:
+            # Update state to idle while waiting
+            with worker_state_lock:
+                worker_state["zmq_rep"]["status"] = "waiting"
+                worker_state["zmq_rep"]["current"] = None
+
             # Receive request
             msg = socket.recv_string()
             req = json.loads(msg)
@@ -1054,11 +1193,21 @@ def zmq_frame_handler():
             channel = req.get("channel", 1)
             source = req.get("source", "rtsp")  # "rtsp" or "snapshot"
 
+            # Update state to processing
+            with worker_state_lock:
+                worker_state["zmq_rep"]["status"] = "capturing"
+                worker_state["zmq_rep"]["current"] = {
+                    "nvr": nvr_id, "channel": channel, "source": source,
+                    "started_at": _time.time()
+                }
+
             logger.info(f"ZMQ request: {nvr_id} ch{channel} via {source}")
 
             # Get NVR info
             nvr = get_nvr_info(nvr_id)
             if not nvr:
+                with worker_state_lock:
+                    worker_state["zmq_rep"]["errors"] += 1
                 socket.send(b"")  # Empty response for error
                 continue
 
@@ -1070,22 +1219,261 @@ def zmq_frame_handler():
                 image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
 
             if image_data:
+                with worker_state_lock:
+                    worker_state["zmq_rep"]["completed"] += 1
                 socket.send(image_data)
             else:
+                with worker_state_lock:
+                    worker_state["zmq_rep"]["errors"] += 1
                 socket.send(b"")  # Empty response for error
 
         except Exception as e:
             logger.error(f"ZMQ handler error: {e}")
+            with worker_state_lock:
+                worker_state["zmq_rep"]["errors"] += 1
             try:
                 socket.send(b"")
             except:
                 pass
 
+def zmq_async_handler():
+    """
+    ZMQ ROUTER server for async frame requests.
+    Allows multiple in-flight requests with out-of-order responses.
+
+    Smart scheduling: only submits work when NVR has capacity,
+    so workers never block and requests to different NVRs don't wait behind each other.
+
+    Protocol:
+      Request: JSON with {id, nvr, channel, source}
+      Response: [request_id bytes, frame_data bytes]
+
+    Client should use DEALER socket.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from collections import defaultdict
+
+    context = zmq.Context()
+    socket = context.socket(zmq.ROUTER)
+    socket.bind(ZMQ_ASYNC_ENDPOINT)
+    logger.info(f"ZMQ async (ROUTER) server listening on {ZMQ_ASYNC_ENDPOINT}")
+
+    # Thread pool for parallel captures
+    executor = ThreadPoolExecutor(max_workers=8)  # More workers since they don't block
+
+    # Pending queue: requests waiting for NVR capacity
+    # {request_id -> {identity, nvr, channel, source, queued_at}}
+    pending_queue = {}
+
+    # Track active connections per NVR IP
+    nvr_active_count = defaultdict(int)  # nvr_ip -> count
+    nvr_active_lock = threading.Lock()
+
+    # Map nvr_id -> nvr_ip for tracking
+    nvr_ip_cache = {}
+
+    def get_nvr_ip(nvr_id: str) -> Optional[str]:
+        """Get NVR IP, with caching"""
+        if nvr_id not in nvr_ip_cache:
+            nvr = get_nvr_info(nvr_id)
+            if nvr:
+                nvr_ip_cache[nvr_id] = nvr['ip']
+        return nvr_ip_cache.get(nvr_id)
+
+    def process_request(identity: bytes, request_id: str, nvr_id: str, channel: int, source: str, nvr_ip: str):
+        """Process single frame request, return result tuple"""
+        try:
+            # Mark as actively processing
+            with worker_state_lock:
+                if request_id in worker_state["zmq_router"]["pending_requests"]:
+                    req_info = worker_state["zmq_router"]["pending_requests"].pop(request_id)
+                    req_info["processing_started_at"] = _time.time()
+                    worker_state["zmq_router"]["active_requests"][request_id] = req_info
+
+            nvr = get_nvr_info(nvr_id)
+            if not nvr:
+                return (identity, request_id, b"", True, nvr_ip)
+
+            if source == "snapshot":
+                image_data = capture_snapshot(nvr, channel)
+            else:
+                rtsp_url = build_rtsp_url(nvr, channel)
+                image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
+
+            return (identity, request_id, image_data or b"", not image_data, nvr_ip)
+        except Exception as e:
+            logger.error(f"Async capture error: {e}")
+            return (identity, request_id, b"", True, nvr_ip)
+
+    in_flight = {}  # request_id -> future
+
+    while True:
+        try:
+            # Update status
+            with worker_state_lock:
+                has_work = bool(in_flight) or bool(pending_queue)
+                worker_state["zmq_router"]["status"] = "running" if has_work else "idle"
+
+            # Non-blocking receive to check for new requests
+            try:
+                frames = socket.recv_multipart(zmq.NOBLOCK)
+                identity = frames[0]
+                msg = frames[-1].decode('utf-8')
+                req = json.loads(msg)
+
+                request_id = req.get("id", "unknown")
+                nvr_id = req.get("nvr", "nvr1")
+                channel = req.get("channel", 1)
+                source = req.get("source", "rtsp")
+
+                logger.info(f"ZMQ async request {request_id}: {nvr_id} ch{channel} via {source}")
+
+                # Log event: received
+                recv_at = _time.time()
+                log_event("RECV", request_id, nvr_id, channel, source)
+
+                # Add to pending queue
+                pending_queue[request_id] = {
+                    "identity": identity,
+                    "nvr": nvr_id,
+                    "channel": channel,
+                    "source": source,
+                    "recv_at": recv_at,
+                    "queued_at": recv_at  # Alias for backward compat
+                }
+
+                # Track in state
+                with worker_state_lock:
+                    worker_state["zmq_router"]["pending_requests"][request_id] = {
+                        "nvr": nvr_id,
+                        "channel": channel,
+                        "source": source,
+                        "recv_at": recv_at,
+                        "queued_at": recv_at
+                    }
+
+            except zmq.Again:
+                pass
+
+            # Schedule: find requests for NVRs with available capacity
+            to_submit = []
+            for req_id, req in list(pending_queue.items()):
+                nvr_id = req["nvr"]
+                nvr_ip = get_nvr_ip(nvr_id)
+                if not nvr_ip:
+                    # Invalid NVR, submit anyway to return error
+                    to_submit.append((req_id, req, None))
+                    continue
+
+                with nvr_active_lock:
+                    if nvr_active_count[nvr_ip] < NVR_MAX_CONCURRENT:
+                        nvr_active_count[nvr_ip] += 1
+                        to_submit.append((req_id, req, nvr_ip))
+
+            # Submit scheduled requests
+            for req_id, req, nvr_ip in to_submit:
+                del pending_queue[req_id]
+                started_at = _time.time()
+                queue_time = round(started_at - req.get("recv_at", started_at), 3)
+                logger.info(f"ZMQ async STARTED {req_id}: {req['nvr']} ch{req['channel']} (nvr_ip={nvr_ip}, queued={queue_time}s)")
+                log_event("START", req_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip, "queue_sec": queue_time})
+
+                # Store started_at in state for capture_time calculation
+                with worker_state_lock:
+                    if req_id in worker_state["zmq_router"]["pending_requests"]:
+                        worker_state["zmq_router"]["pending_requests"][req_id]["started_at"] = started_at
+                future = executor.submit(
+                    process_request,
+                    req["identity"], req_id, req["nvr"], req["channel"], req["source"],
+                    nvr_ip or ""
+                )
+                in_flight[req_id] = future
+
+            # Check for completed futures
+            completed = []
+            for req_id, future in in_flight.items():
+                if future.done():
+                    identity, request_id, image_data, is_error, nvr_ip = future.result()
+                    done_at = _time.time()
+
+                    # Get timing info from active_requests (moved there by process_request)
+                    with worker_state_lock:
+                        req_info = worker_state["zmq_router"]["active_requests"].get(req_id, {})
+                        if not req_info:
+                            req_info = worker_state["zmq_router"]["pending_requests"].get(req_id, {})
+                        nvr_id = req_info.get("nvr", "?")
+                        channel = req_info.get("channel", 0)
+                        source = req_info.get("source", "?")
+                        recv_at = req_info.get("recv_at", done_at)
+                        started_at = req_info.get("started_at", recv_at)
+
+                    # Calculate timing breakdown (in ms for client convenience)
+                    queue_ms = int((started_at - recv_at) * 1000)
+                    capture_ms = int((done_at - started_at) * 1000)
+                    total_ms = int((done_at - recv_at) * 1000)
+
+                    # Build metadata JSON for 5th frame
+                    metadata = json.dumps({
+                        "queue_ms": queue_ms,
+                        "capture_ms": capture_ms,
+                        "total_ms": total_ms,
+                        "bytes": len(image_data),
+                        "error": is_error
+                    }).encode('utf-8')
+
+                    # Send response: [identity, empty, request_id, jpeg_bytes, metadata_json]
+                    socket.send_multipart([identity, b"", request_id.encode('utf-8'), image_data, metadata])
+                    logger.info(f"ZMQ async response {request_id}: {len(image_data)} bytes (q:{queue_ms}ms cap:{capture_ms}ms)")
+                    completed.append((req_id, nvr_ip))
+
+                    # Log event
+                    queue_sec = queue_ms / 1000
+                    capture_sec = capture_ms / 1000
+                    total_sec = total_ms / 1000
+                    if is_error:
+                        log_event("ERROR", request_id, nvr_id, channel, source, {
+                            "queue_sec": queue_sec, "capture_sec": capture_sec, "total_sec": total_sec
+                        })
+                    else:
+                        log_event("DONE", request_id, nvr_id, channel, source, {
+                            "bytes": len(image_data), "queue_sec": queue_sec, "capture_sec": capture_sec, "total_sec": total_sec
+                        })
+
+                    # Update stats
+                    with worker_state_lock:
+                        if req_id in worker_state["zmq_router"]["active_requests"]:
+                            del worker_state["zmq_router"]["active_requests"][req_id]
+                        if is_error:
+                            worker_state["zmq_router"]["errors"] += 1
+                        else:
+                            worker_state["zmq_router"]["completed"] += 1
+                            worker_state["zmq_router"]["total_bytes"] += len(image_data)
+
+            # Release NVR slots and remove from in_flight
+            for req_id, nvr_ip in completed:
+                del in_flight[req_id]
+                if nvr_ip:
+                    with nvr_active_lock:
+                        nvr_active_count[nvr_ip] = max(0, nvr_active_count[nvr_ip] - 1)
+
+            # Small sleep to avoid busy-spinning
+            if not in_flight and not pending_queue:
+                _time.sleep(0.001)
+
+        except Exception as e:
+            logger.error(f"ZMQ async handler error: {e}")
+
 def start_zmq_server():
-    """Start ZMQ server in background thread"""
+    """Start ZMQ servers in background threads"""
+    # REP server (backward compatible, serial)
     thread = threading.Thread(target=zmq_frame_handler, daemon=True)
     thread.start()
-    logger.info("ZMQ frame server thread started")
+    logger.info("ZMQ REP server thread started")
+
+    # ROUTER server (async, parallel)
+    async_thread = threading.Thread(target=zmq_async_handler, daemon=True)
+    async_thread.start()
+    logger.info("ZMQ ROUTER server thread started")
 
 # ============================================================================
 # TEST UI
@@ -1110,6 +1498,218 @@ def camera_viewer():
     else:
         return "<h1>Camera Viewer not found</h1><p>Create static/test.html</p>"
 
+@app.get("/monitor", response_class=HTMLResponse)
+def monitor_page():
+    """Server monitor UI showing worker thread activity"""
+    return '''<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Service Monitor</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #1a1a2e; color: #eee; padding: 20px; }
+        h1 { color: #00d4ff; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .panel { background: #16213e; border-radius: 8px; padding: 20px; }
+        .panel h2 { color: #00d4ff; font-size: 14px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px solid #0f3460; padding-bottom: 10px; }
+        .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #0f3460; }
+        .stat:last-child { border-bottom: none; }
+        .stat-label { color: #888; }
+        .stat-value { font-weight: bold; }
+        .status-idle { color: #888; }
+        .status-waiting { color: #ffd700; }
+        .status-capturing { color: #00ff88; }
+        .status-running { color: #00ff88; }
+        .active-list { margin-top: 10px; }
+        .active-item { background: #0f3460; padding: 10px; border-radius: 4px; margin-bottom: 8px; font-size: 13px; }
+        .active-item .id { color: #00d4ff; font-weight: bold; }
+        .active-item .detail { color: #888; margin-top: 4px; }
+        .active-item .elapsed { color: #ffd700; float: right; }
+        .no-activity { color: #555; font-style: italic; padding: 10px 0; }
+        .refresh-info { color: #555; font-size: 12px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>Camera Service Monitor</h1>
+    <div class="grid">
+        <div class="panel">
+            <h2>ZMQ REP (Serial) :5555</h2>
+            <div class="stat">
+                <span class="stat-label">Status</span>
+                <span class="stat-value" id="rep-status">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Completed</span>
+                <span class="stat-value" id="rep-completed">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Errors</span>
+                <span class="stat-value" id="rep-errors">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Current</span>
+                <span class="stat-value" id="rep-current">-</span>
+            </div>
+        </div>
+        <div class="panel">
+            <h2>ZMQ ROUTER (Async) :5556</h2>
+            <div class="stat">
+                <span class="stat-label">Status</span>
+                <span class="stat-value" id="router-status">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Pending / Active</span>
+                <span class="stat-value"><span id="router-pending">-</span> / <span id="router-active">-</span></span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Completed</span>
+                <span class="stat-value" id="router-completed">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Errors</span>
+                <span class="stat-value" id="router-errors">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Total Data</span>
+                <span class="stat-value" id="router-bytes">-</span>
+            </div>
+            <div class="active-list" id="router-requests"></div>
+        </div>
+    </div>
+    <div class="panel" style="margin-top: 20px;">
+        <h2>Event Log <span id="log-count" style="color:#888; font-weight:normal;">(0)</span></h2>
+        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+            <label style="color:#888; font-size:12px;"><input type="checkbox" id="auto-scroll" checked> Auto-scroll</label>
+            <button onclick="clearLog()" style="padding: 3px 10px; background: #0f3460; color: #ff6b6b; border: 1px solid #ff6b6b; border-radius: 4px; cursor: pointer; font-size: 11px;">Clear</button>
+        </div>
+        <div id="event-log" style="height: 300px; overflow-y: auto; background: #0a0a1a; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 12px; line-height: 1.4;"></div>
+    </div>
+    <div class="refresh-info">
+        Auto-refresh: 500ms
+        <button onclick="resetStats()" style="margin-left: 20px; padding: 5px 15px; background: #0f3460; color: #00d4ff; border: 1px solid #00d4ff; border-radius: 4px; cursor: pointer;">Reset Stats</button>
+    </div>
+    <script>
+        function statusClass(status) {
+            return 'status-' + status.toLowerCase();
+        }
+        async function refresh() {
+            try {
+                const resp = await fetch('/api/monitor');
+                const data = await resp.json();
+
+                // REP stats
+                const repStatus = document.getElementById('rep-status');
+                repStatus.textContent = data.zmq_rep.status;
+                repStatus.className = 'stat-value ' + statusClass(data.zmq_rep.status);
+                document.getElementById('rep-completed').textContent = data.zmq_rep.completed;
+                document.getElementById('rep-errors').textContent = data.zmq_rep.errors;
+
+                if (data.zmq_rep.current) {
+                    const c = data.zmq_rep.current;
+                    document.getElementById('rep-current').textContent =
+                        `${c.nvr} ch${c.channel} (${c.elapsed_sec}s)`;
+                } else {
+                    document.getElementById('rep-current').textContent = '-';
+                }
+
+                // ROUTER stats
+                const routerStatus = document.getElementById('router-status');
+                routerStatus.textContent = data.zmq_router.status;
+                routerStatus.className = 'stat-value ' + statusClass(data.zmq_router.status);
+                document.getElementById('router-pending').textContent = data.zmq_router.pending_count;
+                document.getElementById('router-active').textContent = data.zmq_router.active_count;
+                document.getElementById('router-completed').textContent = data.zmq_router.completed;
+                document.getElementById('router-errors').textContent = data.zmq_router.errors;
+                document.getElementById('router-bytes').textContent = data.zmq_router.total_bytes_mb + ' MB';
+
+                // Pending + Active requests list
+                const listEl = document.getElementById('router-requests');
+                const pending = data.zmq_router.pending_requests.map(r => `
+                    <div class="active-item" style="border-left: 3px solid #ffd700;">
+                        <span class="id">${r.id}</span>
+                        <span class="elapsed" style="color:#ffd700;">waiting ${r.waiting_sec}s</span>
+                        <div class="detail">${r.nvr} ch${r.channel} via ${r.source}</div>
+                    </div>
+                `).join('');
+                const active = data.zmq_router.active_requests.map(r => `
+                    <div class="active-item" style="border-left: 3px solid #00ff88;">
+                        <span class="id">${r.id}</span>
+                        <span class="elapsed">${r.elapsed_sec}s</span>
+                        <div class="detail">${r.nvr} ch${r.channel} via ${r.source}</div>
+                    </div>
+                `).join('');
+                if (!pending && !active) {
+                    listEl.innerHTML = '<div class="no-activity">No active requests</div>';
+                } else {
+                    listEl.innerHTML = pending + active;
+                }
+
+                // Event log
+                renderEventLog(data.zmq_router.event_log || []);
+            } catch (e) {
+                console.error('Refresh error:', e);
+            }
+        }
+
+        let lastLogLength = 0;
+        function renderEventLog(events) {
+            const logEl = document.getElementById('event-log');
+            const countEl = document.getElementById('log-count');
+            const autoScroll = document.getElementById('auto-scroll').checked;
+
+            countEl.textContent = `(${events.length})`;
+
+            // Only re-render if log changed
+            if (events.length === lastLogLength) return;
+            lastLogLength = events.length;
+
+            const typeColors = {
+                'RECV': '#888',
+                'START': '#00d4ff',
+                'DONE': '#00ff88',
+                'ERROR': '#ff6b6b'
+            };
+
+            const lines = events.map(e => {
+                const time = new Date(e.t * 1000).toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit', fractionalSecondDigits: 3});
+                const color = typeColors[e.type] || '#888';
+                let extra = '';
+                if (e.type === 'DONE') {
+                    const kb = Math.round(e.bytes / 1024);
+                    extra = ` <span style="color:#666">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s, ${kb}KB]</span>`;
+                }
+                if (e.type === 'ERROR') {
+                    extra = ` <span style="color:#ff6b6b">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s]</span>`;
+                }
+                if (e.type === 'START') {
+                    extra = e.queue_sec > 0.1 ? ` <span style="color:#ffd700">[queued ${e.queue_sec}s]</span>` : '';
+                }
+                const seq = e.seq ? `#${e.seq}` : '';
+                return `<div><span style="color:#444">${seq.padStart(5)}</span> <span style="color:#555">${time}</span> <span style="color:${color};font-weight:bold;">${e.type.padEnd(5)}</span> <span style="color:#00d4ff">${e.id}</span> ${e.nvr} ch${e.ch} ${e.src}${extra}</div>`;
+            });
+
+            logEl.innerHTML = lines.join('');
+
+            if (autoScroll) {
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+        }
+
+        async function clearLog() {
+            await fetch('/api/monitor/reset?clear_log=true', {method: 'POST'});
+            document.getElementById('event-log').innerHTML = '';
+            lastLogLength = 0;
+        }
+
+        async function resetStats() {
+            await fetch('/api/monitor/reset', {method: 'POST'});
+        }
+        refresh();
+        setInterval(refresh, 500);
+    </script>
+</body>
+</html>'''
+
 # ============================================================================
 # STARTUP
 # ============================================================================
@@ -1118,9 +1718,10 @@ if __name__ == "__main__":
     print("="*70)
     print("  Camera Capture Service")
     print("="*70)
-    print("  Port: 8001")
-    print("  Docs: http://localhost:8001/docs")
-    print(f"  ZMQ:  {ZMQ_ENDPOINT}")
+    print("  HTTP:      http://localhost:8001")
+    print("  Docs:      http://localhost:8001/docs")
+    print(f"  ZMQ REP:   {ZMQ_ENDPOINT} (serial)")
+    print(f"  ZMQ ROUTER:{ZMQ_ASYNC_ENDPOINT} (async)")
     print("="*70)
     print()
 
