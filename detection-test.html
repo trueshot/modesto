@@ -229,17 +229,9 @@
         <button class="start" id="startBtn" onclick="startTest()">Start Test</button>
         <button class="stop" id="stopBtn" onclick="stopTest()" disabled>Stop</button>
         <button class="reset" onclick="resetStats()">Reset Stats</button>
-
         <div class="source-toggle">
-            <span>Transport:</span>
-            <input type="radio" name="transport" id="tHttp" value="http" checked>
-            <label for="tHttp">HTTP</label>
-            <input type="radio" name="transport" id="tZmq" value="zmq">
-            <label for="tZmq">ZMQ</label>
-        </div>
-        <div class="source-toggle">
-            <input type="checkbox" id="useSnapshot">
-            <label for="useSnapshot" style="cursor:pointer;">Use snapshots (nvr2 only)</label>
+            <input type="checkbox" id="useSnapshots" checked>
+            <label for="useSnapshots" style="cursor:pointer;">Use snapshots (nvr2)</label>
         </div>
     </div>
 
@@ -251,23 +243,31 @@
     <div class="stats-bar">
         <div class="stat">
             <div class="value" id="statFrames">0</div>
-            <div class="label">Total Frames</div>
+            <div class="label">Frames</div>
         </div>
         <div class="stat">
-            <div class="value" id="statAvgFetch">-</div>
-            <div class="label">Avg Fetch (ms)</div>
+            <div class="value" id="statAvgQueue">-</div>
+            <div class="label">Queue (ms)</div>
+        </div>
+        <div class="stat">
+            <div class="value" id="statAvgCapture">-</div>
+            <div class="label">Capture (ms)</div>
+        </div>
+        <div class="stat">
+            <div class="value" id="statAvgOverhead">-</div>
+            <div class="label">Overhead (ms)</div>
         </div>
         <div class="stat">
             <div class="value" id="statAvgDetect">-</div>
-            <div class="label">Avg Detect (ms)</div>
+            <div class="label">Detect (ms)</div>
         </div>
         <div class="stat">
             <div class="value" id="statTags">0</div>
-            <div class="label">Total Tags</div>
+            <div class="label">Tags</div>
         </div>
         <div class="stat">
             <div class="value" id="statFps">-</div>
-            <div class="label">FPS (all cams)</div>
+            <div class="label">FPS</div>
         </div>
     </div>
 
@@ -278,29 +278,34 @@
         const DETECTION_SERVICE = window.location.port === '8002' ? '' : 'http://localhost:8002';
         const NUM_PASSES = 3;
 
-        // Camera list - will be populated from API or use defaults
-        let cameras = [
-            { nvr: 'nvr1', channel: 7, name: 'biscuit (nvr1/ch7)' },
-            { nvr: 'nvr2', channel: 2, name: 'nvr2/ch2' },
-        ];
+        // Camera list - will be populated from API
+        let cameras = [];
+        let cameraIndex = {};  // nvr/channel -> idx mapping
 
         let running = false;
-        let pass = 0;
+        let currentPassId = null;
+        let currentPassNum = 0;
+        let pollInterval = null;
         let frameCount = 0;
-        let totalFetchMs = 0;
+        let totalQueueMs = 0;
+        let totalCaptureMs = 0;
+        let totalOverheadMs = 0;
         let totalDetectMs = 0;
         let totalTags = 0;
         let startTime = null;
-        let pendingRequests = 0;
-        let cameraPassResults = {};  // Track tags per camera per pass
-        let cameraFailed = {};       // Track which cameras have failed
+        let cameraPassResults = {};  // idx -> [tags per pass]
+        let loadedImages = {};  // passId/nvr/channel -> true (track which images we've loaded)
 
         // Build camera tiles
         function buildGrid() {
             const grid = document.getElementById('cameraGrid');
             grid.innerHTML = '';
+            cameraIndex = {};
 
             cameras.forEach((cam, idx) => {
+                const key = `${cam.nvr}/${cam.channel}`;
+                cameraIndex[key] = idx;
+
                 const tile = document.createElement('div');
                 tile.className = 'camera-tile';
                 tile.id = `tile-${idx}`;
@@ -315,141 +320,143 @@
                     <img id="img-${idx}" src="" alt="Camera ${idx}">
                     <div class="pass-results" id="passes-${idx}">${passSlots}</div>
                 `;
-                // Store snapshot support for this camera
-                tile.dataset.snapshot = cam.snapshot ? 'true' : 'false';
-                // Initialize pass results tracking
                 cameraPassResults[idx] = [];
                 grid.appendChild(tile);
             });
         }
 
-        // Get query params based on transport + snapshot checkbox
-        function getSourceParams(supportsSnapshot) {
-            const transport = document.querySelector('input[name="transport"]:checked').value;
-            const useSnapshot = document.getElementById('useSnapshot').checked && (supportsSnapshot === true);
-            return `transport=${transport}&snapshot=${useSnapshot ? 'true' : 'false'}`;
-        }
+        // Process results from a pass poll
+        function processPassResults(passId, results) {
+            for (const r of results) {
+                const key = `${r.nvr}/${r.channel}`;
+                const idx = cameraIndex[key];
+                if (idx === undefined) continue;
 
-        // Update a single camera tile
-        async function updateCamera(idx) {
-            if (!running) return;
+                const tile = document.getElementById(`tile-${idx}`);
+                const timing = document.getElementById(`timing-${idx}`);
+                const img = document.getElementById(`img-${idx}`);
+                const imageKey = `${passId}/${key}`;
 
-            // Skip cameras that have already failed
-            if (cameraFailed[idx]) {
-                if (running) {
-                    setTimeout(() => updateCamera(idx), 500);
-                }
-                return;
-            }
+                if (r.status === 'done' && !loadedImages[imageKey]) {
+                    // Load image once
+                    loadedImages[imageKey] = true;
+                    img.src = `${DETECTION_SERVICE}/pass/${passId}/image/${r.nvr}/${r.channel}`;
 
-            const cam = cameras[idx];
-            const params = getSourceParams(cam.snapshot);
-            const url = `${DETECTION_SERVICE}/detect/${cam.nvr}/${cam.channel}?${params}&_t=${Date.now()}`;
+                    // Update timing display (show breakdown if available)
+                    const queue = r.queue_ms ?? '-';
+                    const capture = r.capture_ms ?? '-';
+                    const overhead = r.overhead_ms ?? '-';
+                    timing.textContent = `q:${queue} cap:${capture} oh:${overhead} det:${r.detect_ms}ms | ${r.tags}`;
 
-            const img = document.getElementById(`img-${idx}`);
-            const timing = document.getElementById(`timing-${idx}`);
-
-            pendingRequests++;
-            const fetchStart = performance.now();
-
-            const resEl = document.getElementById(`res-${idx}`);
-
-            const tile = document.getElementById(`tile-${idx}`);
-
-            try {
-                const response = await fetch(url);
-                if (response.ok) {
-                    const blob = await response.blob();
-                    img.src = URL.createObjectURL(blob);
-
-                    // Get stats from headers
-                    const resolution = response.headers.get('X-Resolution') || '--';
-                    const fetchMs = parseInt(response.headers.get('X-Fetch-Ms') || '0');
-                    const detectMs = parseInt(response.headers.get('X-Detect-Ms') || '0');
-                    const tags = parseInt(response.headers.get('X-Tags') || '0');
-
-                    resEl.textContent = resolution;
-                    timing.textContent = `${fetchMs}+${detectMs}ms | ${tags} tags`;
-
-                    totalFetchMs += fetchMs;
-                    totalDetectMs += detectMs;
-                    totalTags += tags;
+                    // Track stats
+                    totalQueueMs += r.queue_ms || 0;
+                    totalCaptureMs += r.capture_ms || 0;
+                    totalOverheadMs += r.overhead_ms || 0;
+                    totalDetectMs += r.detect_ms || 0;
                     frameCount++;
 
-                    // Track pass results for this camera
-                    const camPassNum = cameraPassResults[idx].length;
-                    if (camPassNum < NUM_PASSES) {
-                        cameraPassResults[idx].push(tags);
+                    // Record pass result for this camera
+                    if (cameraPassResults[idx].length < currentPassNum) {
+                        // Fill any skipped passes (shouldn't happen)
+                        while (cameraPassResults[idx].length < currentPassNum - 1) {
+                            cameraPassResults[idx].push('X');
+                        }
+                    }
+                    if (cameraPassResults[idx].length === currentPassNum - 1) {
+                        cameraPassResults[idx].push(r.tags);
                         updatePassDisplay(idx);
                     }
 
-                    // Trigger success animation
+                    // Animate success
                     tile.classList.remove('updated', 'failed');
-                    void tile.offsetWidth; // Force reflow to restart animation
+                    void tile.offsetWidth;
                     tile.classList.add('updated');
 
-                    updateStats();
-                } else {
-                    timing.textContent = 'error';
+                } else if (r.status === 'failed' && !loadedImages[imageKey]) {
+                    loadedImages[imageKey] = true;
+                    timing.textContent = r.error || 'failed';
+
+                    // Record failure
+                    if (cameraPassResults[idx].length === currentPassNum - 1) {
+                        cameraPassResults[idx].push('X');
+                        updatePassDisplay(idx);
+                    }
+
                     tile.classList.remove('updated', 'failed');
                     void tile.offsetWidth;
                     tile.classList.add('failed');
-                    // Mark as failed and record which pass
-                    cameraFailed[idx] = true;
-                    cameraPassResults[idx].push('X');
-                    updatePassDisplay(idx);
+                }
+            }
+
+            updateStats();
+        }
+
+        // Poll for pass results
+        async function pollPassResults() {
+            if (!currentPassId || !running) return;
+
+            try {
+                const response = await fetch(`${DETECTION_SERVICE}/pass/${currentPassId}/results`);
+                if (!response.ok) return;
+
+                const data = await response.json();
+                processPassResults(currentPassId, data.results);
+
+                // Update progress bar
+                const completed = data.completed + data.failed;
+                const total = data.total;
+                const progressPercent = total > 0 ? (completed / total) * 100 : 0;
+                document.getElementById('progressBar').style.width = `${progressPercent}%`;
+
+                // Check if pass is done
+                if (data.done) {
+                    clearInterval(pollInterval);
+                    pollInterval = null;
+
+                    // Start next pass or finish
+                    if (currentPassNum < NUM_PASSES && running) {
+                        document.getElementById('passIndicator').textContent = `Pass: ${currentPassNum} / ${NUM_PASSES}`;
+                        document.getElementById('progressBar').style.width = '0%';
+                        await startNextPass();
+                    } else {
+                        // All passes complete
+                        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                        document.getElementById('passIndicator').textContent = `Pass: ${NUM_PASSES} / ${NUM_PASSES} - COMPLETE (${elapsed}s)`;
+                        document.querySelector('.progress-container').style.display = 'none';
+                        stopTest();
+                    }
                 }
             } catch (e) {
-                timing.textContent = 'failed';
-                tile.classList.remove('updated', 'failed');
-                void tile.offsetWidth;
-                tile.classList.add('failed');
-                // Mark as failed and record which pass
-                cameraFailed[idx] = true;
-                cameraPassResults[idx].push('X');
-                updatePassDisplay(idx);
-                console.error(`Camera ${idx} error:`, e);
+                console.error('Poll error:', e);
             }
-
-            pendingRequests--;
-
-            // Schedule next update for this camera
-            if (running) {
-                setTimeout(() => updateCamera(idx), 100);  // Small delay between requests
-            }
-
-            // Check if pass complete
-            checkPassComplete();
         }
 
-        // Check if a pass is complete and update progress bar
-        function checkPassComplete() {
-            const framesPerPass = cameras.length;
-            const completedPasses = Math.floor(frameCount / framesPerPass);
-            const framesInCurrentPass = frameCount % framesPerPass;
-            const progressPercent = framesPerPass > 0 ? (framesInCurrentPass / framesPerPass) * 100 : 0;
+        // Start a single pass
+        async function startNextPass() {
+            if (!running) return;
 
-            // Update progress bar
-            const progressBar = document.getElementById('progressBar');
-            progressBar.style.width = `${progressPercent}%`;
-
-            if (completedPasses > pass && completedPasses <= NUM_PASSES) {
-                pass = completedPasses;
-                document.getElementById('passIndicator').textContent = `Pass: ${pass} / ${NUM_PASSES}`;
-
-                // Reset progress bar for next pass (or hide if complete)
-                if (pass >= NUM_PASSES) {
-                    stopTest();
-                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                    document.getElementById('passIndicator').textContent += ` - COMPLETE (${elapsed}s)`;
-                    document.querySelector('.progress-container').style.display = 'none';
-                } else {
-                    progressBar.style.width = '0%';
+            try {
+                const useSnaps = document.getElementById('useSnapshots').checked;
+                const response = await fetch(`${DETECTION_SERVICE}/pass/start?use_snapshots=${useSnaps}`, { method: 'POST' });
+                if (!response.ok) {
+                    console.error('Failed to start pass');
+                    return;
                 }
+
+                const data = await response.json();
+                currentPassId = data.passId;
+                currentPassNum++;
+
+                document.getElementById('passIndicator').textContent = `Pass: ${currentPassNum} / ${NUM_PASSES} (running)`;
+
+                // Start polling
+                pollInterval = setInterval(pollPassResults, 500);
+
+            } catch (e) {
+                console.error('Start pass error:', e);
             }
         }
 
-        // Update stats display
         // Update pass results display for a camera
         function updatePassDisplay(idx) {
             const passesEl = document.getElementById(`passes-${idx}`);
@@ -461,16 +468,13 @@
                     const tags = results[i];
                     const isCurrent = (i === results.length - 1);
 
-                    // Handle failure marker
                     if (tags === 'X') {
                         spans.push('<span class="mismatch">X</span>');
                         continue;
                     }
 
-                    // Check for mismatch with previous passes (ignore X failures)
                     const prevNumeric = results.slice(0, i).filter(v => v !== 'X');
-                    const hasMismatch = prevNumeric.length > 0 &&
-                        prevNumeric.some(prev => prev !== tags);
+                    const hasMismatch = prevNumeric.length > 0 && prevNumeric.some(prev => prev !== tags);
 
                     let cls = isCurrent ? 'current' : '';
                     if (hasMismatch) cls = 'mismatch';
@@ -487,11 +491,13 @@
             document.getElementById('statFrames').textContent = frameCount;
 
             if (frameCount > 0) {
-                document.getElementById('statAvgFetch').textContent = Math.round(totalFetchMs / frameCount);
+                document.getElementById('statAvgQueue').textContent = totalQueueMs > 0 ? Math.round(totalQueueMs / frameCount) : '-';
+                document.getElementById('statAvgCapture').textContent = totalCaptureMs > 0 ? Math.round(totalCaptureMs / frameCount) : '-';
+                document.getElementById('statAvgOverhead').textContent = totalOverheadMs > 0 ? Math.round(totalOverheadMs / frameCount) : '-';
                 document.getElementById('statAvgDetect').textContent = Math.round(totalDetectMs / frameCount);
             }
 
-            // Calculate total tags from cameraPassResults (source of truth)
+            // Calculate total tags from cameraPassResults
             let tagsSum = 0;
             for (const idx in cameraPassResults) {
                 for (const val of cameraPassResults[idx]) {
@@ -509,75 +515,39 @@
             }
         }
 
-        // Fetch server stats (for accurate timing only, tags tracked client-side)
-        async function fetchServerStats() {
-            try {
-                const response = await fetch(`${DETECTION_SERVICE}/stats`);
-                if (response.ok) {
-                    const data = await response.json();
-                    // Update with server-side accurate timing stats
-                    let totalFrames = 0;
-                    let totalFetch = 0;
-                    let totalDetect = 0;
-
-                    for (const [key, s] of Object.entries(data)) {
-                        totalFrames += s.count;
-                        totalFetch += s.avg_fetch_ms * s.count;
-                        totalDetect += s.avg_detect_ms * s.count;
-                    }
-
-                    if (totalFrames > 0) {
-                        document.getElementById('statAvgFetch').textContent = Math.round(totalFetch / totalFrames);
-                        document.getElementById('statAvgDetect').textContent = Math.round(totalDetect / totalFrames);
-                    }
-                }
-            } catch (e) {
-                console.error('Stats fetch error:', e);
-            }
-        }
-
         // Start test
         async function startTest() {
             running = true;
-            pass = 0;
+            currentPassId = null;
+            currentPassNum = 0;
             frameCount = 0;
             totalFetchMs = 0;
             totalDetectMs = 0;
             totalTags = 0;
             startTime = Date.now();
+            loadedImages = {};
 
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
             document.getElementById('passIndicator').textContent = `Pass: 0 / ${NUM_PASSES}`;
 
-            // Reset and show progress bar
+            // Reset progress bar
             const progressBar = document.getElementById('progressBar');
             progressBar.style.width = '0%';
             progressBar.classList.remove('complete');
             document.querySelector('.progress-container').style.display = 'block';
 
-            // Reset pass results and failed status for all cameras
+            // Reset pass results for all cameras
             cameras.forEach((_, idx) => {
                 cameraPassResults[idx] = [];
-                cameraFailed[idx] = false;
                 const passesEl = document.getElementById(`passes-${idx}`);
                 if (passesEl) {
                     passesEl.innerHTML = Array(NUM_PASSES).fill('<span>-</span>').join('');
                 }
             });
 
-            // Reset server stats before starting
-            try {
-                await fetch(`${DETECTION_SERVICE}/stats/reset`, { method: 'POST' });
-            } catch (e) {
-                console.error('Failed to reset server stats:', e);
-            }
-
-            // Start all cameras
-            cameras.forEach((_, idx) => updateCamera(idx));
-
-            // Poll server stats periodically
-            statsInterval = setInterval(fetchServerStats, 2000);
+            // Start first pass
+            await startNextPass();
         }
 
         // Stop test
@@ -586,25 +556,28 @@
             document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
 
-            if (statsInterval) {
-                clearInterval(statsInterval);
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
             }
-
-            // Final stats fetch
-            fetchServerStats();
         }
 
         // Reset stats
         async function resetStats() {
             frameCount = 0;
-            totalFetchMs = 0;
+            totalQueueMs = 0;
+            totalCaptureMs = 0;
+            totalOverheadMs = 0;
             totalDetectMs = 0;
             totalTags = 0;
-            pass = 0;
+            currentPassNum = 0;
             startTime = null;
+            loadedImages = {};
 
             document.getElementById('statFrames').textContent = '0';
-            document.getElementById('statAvgFetch').textContent = '-';
+            document.getElementById('statAvgQueue').textContent = '-';
+            document.getElementById('statAvgCapture').textContent = '-';
+            document.getElementById('statAvgOverhead').textContent = '-';
             document.getElementById('statAvgDetect').textContent = '-';
             document.getElementById('statTags').textContent = '0';
             document.getElementById('statFps').textContent = '-';
@@ -615,15 +588,21 @@
             progressBar.style.width = '0%';
             progressBar.classList.remove('complete');
 
-            // Reset server stats
-            try {
-                await fetch(`${DETECTION_SERVICE}/stats/reset`, { method: 'POST' });
-            } catch (e) {
-                console.error('Reset error:', e);
-            }
+            // Reset camera tiles
+            cameras.forEach((_, idx) => {
+                cameraPassResults[idx] = [];
+                const passesEl = document.getElementById(`passes-${idx}`);
+                if (passesEl) {
+                    passesEl.innerHTML = Array(NUM_PASSES).fill('<span>-</span>').join('');
+                }
+                const timing = document.getElementById(`timing-${idx}`);
+                if (timing) timing.textContent = '--';
+                const img = document.getElementById(`img-${idx}`);
+                if (img) img.src = '';
+            });
         }
 
-        // Try to fetch camera list from API
+        // Load camera list from API
         async function loadCameras() {
             try {
                 const response = await fetch(`${DETECTION_SERVICE}/cameras`);
@@ -640,11 +619,13 @@
                 }
             } catch (e) {
                 console.log('Using default camera list');
+                cameras = [
+                    { nvr: 'nvr1', channel: 7, name: 'biscuit' },
+                    { nvr: 'nvr2', channel: 2, name: 'nvr2/ch2' }
+                ];
             }
             buildGrid();
         }
-
-        let statsInterval = null;
 
         // Initialize
         loadCameras();

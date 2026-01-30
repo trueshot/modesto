@@ -5,14 +5,19 @@ FastAPI endpoint that fetches frames, runs detection, returns annotated JPEGs.
 Supports both HTTP and ZMQ frame sources for comparison.
 
 Author: modeltapriltagcat gen-4
+Updated: modeltapriltagcat gen-6 (pass-based API)
 
 Usage:
   python detection-service.py [--port 8002]
 
 Endpoints:
-  GET /detect/{nvr}/{channel}?source=http|zmq  - Returns annotated JPEG
+  GET /detect/{nvr}/{channel}?source=http|zmq  - Returns annotated JPEG (legacy)
   GET /cameras                                  - List available cameras
   GET /stats                                    - Detection timing stats
+
+  POST /pass/start                              - Start a detection pass (all cameras parallel)
+  GET /pass/{passId}/results                    - Poll for pass results
+  GET /pass/{passId}/image/{nvr}/{channel}      - Get image for specific camera
 """
 
 import cv2
@@ -21,6 +26,8 @@ import requests
 import zmq
 import time
 import json
+import uuid
+import asyncio
 from fastapi import FastAPI, Response, Query
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -46,6 +53,11 @@ ZMQ_ENDPOINT = "tcp://127.0.0.1:5555"
 # Stats tracking
 stats = defaultdict(lambda: {"count": 0, "total_fetch_ms": 0, "total_detect_ms": 0, "total_tags": 0})
 stats_lock = threading.Lock()
+
+# Pass storage: passId -> { cameras: [...], results: {...}, images: {...}, startTime, done }
+passes = {}
+passes_lock = threading.Lock()
+MAX_PASSES = 10  # Keep last N passes in memory
 
 # Initialize detectors
 print("Initializing AprilTag detectors...")
@@ -73,18 +85,74 @@ detectors = {
 }
 print("Detectors ready.")
 
-# ZMQ context (lazy init)
+# ZMQ REQ socket (legacy, synchronous)
 zmq_context = None
-zmq_socket = None
+zmq_req_socket = None
 
-def get_zmq_socket():
-    """Get or create ZMQ socket"""
-    global zmq_context, zmq_socket
-    if zmq_socket is None:
+def get_zmq_req_socket():
+    """Get or create ZMQ REQ socket (synchronous)"""
+    global zmq_context, zmq_req_socket
+    if zmq_req_socket is None:
         zmq_context = zmq.Context()
-        zmq_socket = zmq_context.socket(zmq.REQ)
-        zmq_socket.connect(ZMQ_ENDPOINT)
-    return zmq_socket
+        zmq_req_socket = zmq_context.socket(zmq.REQ)
+        zmq_req_socket.connect(ZMQ_ENDPOINT)
+    return zmq_req_socket
+
+# ZMQ DEALER socket (async, for parallel requests)
+# Requires camera-service to use ROUTER on port 5556
+ZMQ_DEALER_ENDPOINT = "tcp://127.0.0.1:5556"
+zmq_dealer_socket = None
+zmq_dealer_lock = threading.Lock()
+zmq_pending_responses = {}  # request_id -> (asyncio.Event, result, loop)
+zmq_event_loop = None  # Main asyncio loop for thread-safe signaling
+
+def get_zmq_dealer_socket():
+    """Get or create ZMQ DEALER socket"""
+    global zmq_context, zmq_dealer_socket
+    if zmq_dealer_socket is None:
+        if zmq_context is None:
+            zmq_context = zmq.Context()
+        zmq_dealer_socket = zmq_context.socket(zmq.DEALER)
+        zmq_dealer_socket.setsockopt_string(zmq.IDENTITY, f"detect-{uuid.uuid4().hex[:8]}")
+        zmq_dealer_socket.connect(ZMQ_DEALER_ENDPOINT)
+        # Start receiver thread
+        receiver = threading.Thread(target=_dealer_receiver, daemon=True)
+        receiver.start()
+        print(f"DEALER socket connected to {ZMQ_DEALER_ENDPOINT}")
+    return zmq_dealer_socket
+
+def _dealer_receiver():
+    """Background thread to receive DEALER responses"""
+    global zmq_dealer_socket, zmq_pending_responses
+    recv_count = 0
+    while True:
+        try:
+            # DEALER receives: [empty, request_id, jpeg_bytes] (3 frames)
+            # Or with timing: [empty, request_id, jpeg_bytes, timing_json] (4 frames)
+            frames = zmq_dealer_socket.recv_multipart()
+            recv_count += 1
+
+            if len(frames) >= 3:
+                _, request_id_bytes, jpeg_bytes = frames[:3]
+                request_id = request_id_bytes.decode('utf-8')
+
+                # Parse timing metadata if present (4th frame)
+                timing_meta = None
+                if len(frames) >= 4:
+                    try:
+                        timing_meta = json.loads(frames[3].decode('utf-8'))
+                    except:
+                        pass
+
+                with zmq_dealer_lock:
+                    if request_id in zmq_pending_responses:
+                        event, _, _, loop = zmq_pending_responses[request_id]
+                        zmq_pending_responses[request_id] = (event, jpeg_bytes, timing_meta, loop)
+                        # Thread-safe signal to asyncio event
+                        loop.call_soon_threadsafe(event.set)
+        except Exception as e:
+            print(f"DEALER receiver error: {e}")
+            time.sleep(0.1)
 
 
 def fetch_frame_http(nvr: str, channel: int, use_snapshot: bool = False) -> tuple[np.ndarray | None, float]:
@@ -109,10 +177,10 @@ def fetch_frame_http(nvr: str, channel: int, use_snapshot: bool = False) -> tupl
 
 
 def fetch_frame_zmq(nvr: str, channel: int, use_snapshot: bool = False) -> tuple[np.ndarray | None, float]:
-    """Fetch frame via ZMQ, return (frame, fetch_time_ms)"""
+    """Fetch frame via ZMQ REQ (synchronous), return (frame, fetch_time_ms)"""
     start = time.perf_counter()
     try:
-        sock = get_zmq_socket()
+        sock = get_zmq_req_socket()
         source = "snapshot" if use_snapshot else "rtsp"
         sock.send_json({"nvr": nvr, "channel": channel, "source": source})
         jpeg_bytes = sock.recv()
@@ -121,8 +189,44 @@ def fetch_frame_zmq(nvr: str, channel: int, use_snapshot: bool = False) -> tuple
             frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
             return frame, (time.perf_counter() - start) * 1000
     except Exception as e:
-        print(f"ZMQ fetch error: {e}")
+        print(f"ZMQ REQ fetch error: {e}")
     return None, (time.perf_counter() - start) * 1000
+
+
+async def fetch_frame_zmq_dealer(nvr: str, channel: int, use_snapshot: bool = False) -> tuple[np.ndarray | None, float, dict | None]:
+    """Fetch frame via ZMQ DEALER (async), return (frame, fetch_time_ms, timing_meta)"""
+    start = time.perf_counter()
+    try:
+        sock = get_zmq_dealer_socket()
+        source = "snapshot" if use_snapshot else "rtsp"
+        request_id = uuid.uuid4().hex
+        loop = asyncio.get_event_loop()
+
+        # Register pending response with asyncio.Event
+        event = asyncio.Event()
+        with zmq_dealer_lock:
+            zmq_pending_responses[request_id] = (event, None, None, loop)  # (event, jpeg_bytes, timing_meta, loop)
+
+        # Send: JSON with 'id' field included (single frame)
+        sock.send_json({"id": request_id, "nvr": nvr, "channel": channel, "source": source})
+
+        # Async wait for response (with timeout)
+        try:
+            await asyncio.wait_for(event.wait(), timeout=30.0)
+            with zmq_dealer_lock:
+                _, jpeg_bytes, timing_meta, _ = zmq_pending_responses.pop(request_id, (None, None, None, None))
+
+            if jpeg_bytes and len(jpeg_bytes) > 0:
+                arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+                frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                return frame, (time.perf_counter() - start) * 1000, timing_meta
+        except asyncio.TimeoutError:
+            # Timeout - clean up
+            with zmq_dealer_lock:
+                zmq_pending_responses.pop(request_id, None)
+    except Exception as e:
+        print(f"ZMQ DEALER fetch error: {e}")
+    return None, (time.perf_counter() - start) * 1000, None
 
 
 def run_detection(frame: np.ndarray) -> tuple[list, float]:
@@ -183,13 +287,15 @@ def draw_detections(frame: np.ndarray, detections: list) -> np.ndarray:
 async def detect(
     nvr: str,
     channel: int,
-    transport: str = Query("http", pattern="^(http|zmq)$"),
+    transport: str = Query("http", pattern="^(http|zmq|dealer)$"),
     snapshot: bool = Query(False)
 ):
     """Fetch frame, detect tags, return annotated JPEG"""
 
     # Fetch frame
-    if transport == "zmq":
+    if transport == "dealer":
+        frame, fetch_ms, _ = await fetch_frame_zmq_dealer(nvr, channel, use_snapshot=snapshot)
+    elif transport == "zmq":
         frame, fetch_ms = fetch_frame_zmq(nvr, channel, use_snapshot=snapshot)
     else:
         frame, fetch_ms = fetch_frame_http(nvr, channel, use_snapshot=snapshot)
@@ -313,6 +419,181 @@ async def test_page():
     if html_path.exists():
         return html_path.read_text(encoding="utf-8")
     return "<h1>detection-test.html not found</h1>"
+
+
+# =============================================================================
+# Pass-based API (parallel detection for all cameras)
+# =============================================================================
+
+async def _process_camera_for_pass(pass_id: str, cam: dict):
+    """Process a single camera for a pass - fetch, detect, store result"""
+    nvr = cam["nvr"]
+    channel = cam["channel"]
+    key = f"{nvr}/{channel}"
+
+    try:
+        # Fetch frame via DEALER (parallel-friendly)
+        use_snapshot = cam.get("snapshot", False)
+        frame, fetch_ms, timing_meta = await fetch_frame_zmq_dealer(nvr, channel, use_snapshot=use_snapshot)
+
+        if frame is None:
+            with passes_lock:
+                if pass_id in passes:
+                    passes[pass_id]["results"][key] = {
+                        "nvr": nvr, "channel": channel, "status": "failed",
+                        "error": "no_frame", "fetch_ms": int(fetch_ms)
+                    }
+            return
+
+        # Calculate overhead if camera-service provided timing
+        queue_ms = timing_meta.get("queue_ms") if timing_meta else None
+        capture_ms = timing_meta.get("capture_ms") if timing_meta else None
+        overhead_ms = None
+        if queue_ms is not None and capture_ms is not None:
+            overhead_ms = max(0, int(fetch_ms) - queue_ms - capture_ms)
+
+        # Run detection
+        detections, detect_ms = run_detection(frame)
+
+        # Draw overlays
+        annotated = draw_detections(frame.copy(), detections)
+
+        # Add timing overlay
+        h, w = annotated.shape[:2]
+        source_label = "DEALER" + ("+SNAP" if use_snapshot else "")
+        cv2.rectangle(annotated, (0, 0), (450, 110), (40, 40, 40), -1)
+        cv2.putText(annotated, f"{w}x{h}", (10, 28),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+        cv2.putText(annotated, f"Fetch: {fetch_ms:.0f}ms ({source_label})", (10, 58),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        cv2.putText(annotated, f"Detect: {detect_ms:.0f}ms | Tags: {len(detections)}", (10, 88),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+
+        # Resize for web (max 800px wide)
+        if w > 800:
+            scale = 800 / w
+            annotated = cv2.resize(annotated, (800, int(h * scale)))
+
+        # Encode JPEG
+        _, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+        # Store result and image
+        with passes_lock:
+            if pass_id in passes:
+                result = {
+                    "nvr": nvr, "channel": channel, "status": "done",
+                    "tags": len(detections), "fetch_ms": int(fetch_ms), "detect_ms": int(detect_ms)
+                }
+                # Include timing breakdown if available
+                if queue_ms is not None:
+                    result["queue_ms"] = queue_ms
+                if capture_ms is not None:
+                    result["capture_ms"] = capture_ms
+                if overhead_ms is not None:
+                    result["overhead_ms"] = overhead_ms
+                passes[pass_id]["results"][key] = result
+                passes[pass_id]["images"][key] = jpeg.tobytes()
+
+    except Exception as e:
+        with passes_lock:
+            if pass_id in passes:
+                passes[pass_id]["results"][key] = {
+                    "nvr": nvr, "channel": channel, "status": "failed",
+                    "error": str(e)
+                }
+
+
+async def _run_pass(pass_id: str):
+    """Run detection on all cameras in parallel"""
+    with passes_lock:
+        if pass_id not in passes:
+            return
+        cameras = passes[pass_id]["cameras"]
+
+    # Fire all cameras in parallel
+    tasks = [_process_camera_for_pass(pass_id, cam) for cam in cameras]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Mark pass as done
+    with passes_lock:
+        if pass_id in passes:
+            passes[pass_id]["done"] = True
+            passes[pass_id]["endTime"] = time.time()
+
+
+@app.post("/pass/start")
+async def start_pass(use_snapshots: bool = Query(True, description="Use snapshots for cameras that support it")):
+    """Start a detection pass - fetches all cameras in parallel"""
+    # Get camera list
+    cameras_resp = await list_cameras()
+    cameras = cameras_resp["cameras"]
+
+    # Override snapshot setting if disabled
+    if not use_snapshots:
+        cameras = [{**c, "snapshot": False} for c in cameras]
+
+    # Generate pass ID
+    pass_id = uuid.uuid4().hex[:12]
+
+    # Initialize pass storage
+    with passes_lock:
+        # Cleanup old passes if we have too many
+        if len(passes) >= MAX_PASSES:
+            oldest = min(passes.keys(), key=lambda k: passes[k].get("startTime", 0))
+            del passes[oldest]
+
+        passes[pass_id] = {
+            "cameras": cameras,
+            "results": {f"{c['nvr']}/{c['channel']}": {"nvr": c["nvr"], "channel": c["channel"], "status": "pending"} for c in cameras},
+            "images": {},
+            "startTime": time.time(),
+            "done": False
+        }
+
+    # Kick off parallel detection (don't await - let it run in background)
+    asyncio.create_task(_run_pass(pass_id))
+
+    return {"passId": pass_id, "total": len(cameras)}
+
+
+@app.get("/pass/{pass_id}/results")
+async def get_pass_results(pass_id: str):
+    """Get current results for a pass"""
+    with passes_lock:
+        if pass_id not in passes:
+            return {"error": "pass not found"}, 404
+
+        p = passes[pass_id]
+        results = list(p["results"].values())
+        pending = sum(1 for r in results if r["status"] == "pending")
+        done_count = sum(1 for r in results if r["status"] == "done")
+        failed = sum(1 for r in results if r["status"] == "failed")
+
+        return {
+            "passId": pass_id,
+            "done": p["done"],
+            "pending": pending,
+            "completed": done_count,
+            "failed": failed,
+            "total": len(results),
+            "results": results
+        }
+
+
+@app.get("/pass/{pass_id}/image/{nvr}/{channel}")
+async def get_pass_image(pass_id: str, nvr: str, channel: int):
+    """Get the image for a specific camera from a pass"""
+    key = f"{nvr}/{channel}"
+
+    with passes_lock:
+        if pass_id not in passes:
+            return Response(content=b"", status_code=404)
+
+        jpeg_bytes = passes[pass_id]["images"].get(key)
+        if not jpeg_bytes:
+            return Response(content=b"", status_code=404)
+
+        return Response(content=jpeg_bytes, media_type="image/jpeg")
 
 
 if __name__ == "__main__":
