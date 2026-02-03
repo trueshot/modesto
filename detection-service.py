@@ -478,12 +478,23 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
         # Encode JPEG
         _, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
+        # Build tag details list
+        tag_details = []
+        for det in detections:
+            tag_details.append({
+                "id": det.tag_id,
+                "family": det.asset_name,  # asset_name maps to family (Fiducial=36h11, etc.)
+                "margin": round(det.decision_margin, 1)  # distinctiveness score, higher = better (not a %)
+            })
+
         # Store result and image
         with passes_lock:
             if pass_id in passes:
                 result = {
                     "nvr": nvr, "channel": channel, "status": "done",
-                    "tags": len(detections), "fetch_ms": int(fetch_ms), "detect_ms": int(detect_ms)
+                    "tags": len(detections), "tag_details": tag_details,
+                    "resolution": f"{w}x{h}",
+                    "fetch_ms": int(fetch_ms), "detect_ms": int(detect_ms)
                 }
                 # Include timing breakdown if available
                 if queue_ms is not None:

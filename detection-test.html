@@ -263,6 +263,43 @@
         .nvr-control input[type="checkbox"] {
             cursor: pointer;
         }
+        .camera-tile .tag-details {
+            padding: 8px 10px;
+            background: #1a1a2e;
+            font-size: 11px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .camera-tile .tag-details .tag-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 3px 6px;
+            margin-bottom: 2px;
+            background: #2d2d44;
+            border-radius: 3px;
+            border-left: 3px solid #888;
+        }
+        .camera-tile .tag-details .tag-item.Fiducial { border-left-color: #00ff00; }
+        .camera-tile .tag-details .tag-item.Forklift { border-left-color: #ffa500; }
+        .camera-tile .tag-details .tag-item.Pallet { border-left-color: #ff00ff; }
+        .camera-tile .tag-details .tag-item.Reserved { border-left-color: #00ffff; }
+        .camera-tile .tag-details .tag-id {
+            font-weight: bold;
+            color: #fff;
+        }
+        .camera-tile .tag-details .tag-family {
+            color: #888;
+            font-size: 10px;
+        }
+        .camera-tile .tag-details .tag-margin {
+            color: #00d4ff;
+        }
+        .camera-tile .tag-details .no-tags {
+            color: #666;
+            font-style: italic;
+            text-align: center;
+            padding: 10px;
+        }
     </style>
 </head>
 <body>
@@ -336,6 +373,7 @@
         let totalTags = 0;
         let startTime = null;
         let cameraPassResults = {};  // idx -> [tags per pass]
+        let cameraTagDetails = {};  // idx -> [{id, family, confidence}, ...] from latest successful pass
         let loadedImages = {};  // passId/nvr/channel -> true (track which images we've loaded)
 
         // Build NVR control panel
@@ -440,8 +478,10 @@
                     </div>
                     <img id="img-${idx}" src="" alt="Camera ${idx}">
                     <div class="pass-results" id="passes-${idx}">${passSlots}</div>
+                    <div class="tag-details" id="tags-${idx}"></div>
                 `;
                 cameraPassResults[idx] = [];
+                cameraTagDetails[idx] = [];
                 grid.appendChild(tile);
             });
         }
@@ -462,6 +502,10 @@
                     // Load image once
                     loadedImages[imageKey] = true;
                     img.src = `${DETECTION_SERVICE}/pass/${passId}/image/${r.nvr}/${r.channel}`;
+
+                    // Update resolution
+                    const resEl = document.getElementById(`res-${idx}`);
+                    if (resEl && r.resolution) resEl.textContent = r.resolution;
 
                     // Update timing display (show breakdown if available)
                     const queue = r.queue_ms ?? '-';
@@ -486,6 +530,12 @@
                     if (cameraPassResults[idx].length === currentPassNum - 1) {
                         cameraPassResults[idx].push(r.tags);
                         updatePassDisplay(idx);
+                    }
+
+                    // Store tag details from this successful pass
+                    if (r.tag_details) {
+                        cameraTagDetails[idx] = r.tag_details;
+                        updateTagDetails(idx);
                     }
 
                     // Animate success
@@ -590,6 +640,33 @@
             } catch (e) {
                 console.error('Start pass error:', e);
             }
+        }
+
+        // Update tag details display for a camera
+        function updateTagDetails(idx) {
+            const tagsEl = document.getElementById(`tags-${idx}`);
+            if (!tagsEl) return;
+
+            const details = cameraTagDetails[idx] || [];
+            if (details.length === 0) {
+                tagsEl.innerHTML = '<div class="no-tags">No tags detected</div>';
+                return;
+            }
+
+            // Sort by family then id
+            const sorted = [...details].sort((a, b) => {
+                if (a.family !== b.family) return a.family.localeCompare(b.family);
+                return a.id - b.id;
+            });
+
+            const html = sorted.map(t => `
+                <div class="tag-item ${t.family}">
+                    <span><span class="tag-id">#${t.id}</span> <span class="tag-family">${t.family}</span></span>
+                    <span class="tag-margin">${t.margin}</span>
+                </div>
+            `).join('');
+
+            tagsEl.innerHTML = html;
         }
 
         // Update pass results display for a camera
@@ -731,6 +808,7 @@
             currentPassNum = 0;
             startTime = null;
             loadedImages = {};
+            cameraTagDetails = {};
 
             document.getElementById('statFrames').textContent = '0';
             document.getElementById('statAvgQueue').textContent = '-';
@@ -749,10 +827,13 @@
             // Reset camera tiles
             cameras.forEach((_, idx) => {
                 cameraPassResults[idx] = [];
+                cameraTagDetails[idx] = [];
                 const passesEl = document.getElementById(`passes-${idx}`);
                 if (passesEl) {
                     passesEl.innerHTML = Array(NUM_PASSES).fill('<span>-</span>').join('');
                 }
+                const tagsEl = document.getElementById(`tags-${idx}`);
+                if (tagsEl) tagsEl.innerHTML = '';
                 const timing = document.getElementById(`timing-${idx}`);
                 if (timing) timing.textContent = '--';
                 const img = document.getElementById(`img-${idx}`);
