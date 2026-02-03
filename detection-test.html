@@ -220,6 +220,49 @@
         .progress-bar.complete {
             background: #00d46a;
         }
+        .nvr-controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .nvr-control {
+            background: #2d2d44;
+            padding: 12px 16px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-width: 140px;
+        }
+        .nvr-control.disabled {
+            opacity: 0.5;
+        }
+        .nvr-control .nvr-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .nvr-control .nvr-name {
+            font-weight: bold;
+            color: #00d4ff;
+        }
+        .nvr-control .nvr-count {
+            font-size: 11px;
+            color: #888;
+        }
+        .nvr-control label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #aaa;
+            cursor: pointer;
+        }
+        .nvr-control input[type="checkbox"] {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -229,11 +272,8 @@
         <button class="start" id="startBtn" onclick="startTest()">Start Test</button>
         <button class="stop" id="stopBtn" onclick="stopTest()" disabled>Stop</button>
         <button class="reset" onclick="resetStats()">Reset Stats</button>
-        <div class="source-toggle">
-            <input type="checkbox" id="useSnapshots" checked>
-            <label for="useSnapshots" style="cursor:pointer;">Use snapshots (nvr2)</label>
-        </div>
     </div>
+    <div class="nvr-controls" id="nvrControls"></div>
 
     <div class="pass-indicator" id="passIndicator">Pass: 0 / 3</div>
     <div class="progress-container">
@@ -281,6 +321,8 @@
         // Camera list - will be populated from API
         let cameras = [];
         let cameraIndex = {};  // nvr/channel -> idx mapping
+        let nvrList = [];  // List of unique NVR IDs
+        let nvrConfig = {};  // nvr_id -> { enabled: bool, snapshots: bool }
 
         let running = false;
         let currentPassId = null;
@@ -296,20 +338,99 @@
         let cameraPassResults = {};  // idx -> [tags per pass]
         let loadedImages = {};  // passId/nvr/channel -> true (track which images we've loaded)
 
-        // Build camera tiles
+        // Build NVR control panel
+        function buildNvrControls() {
+            const container = document.getElementById('nvrControls');
+            container.innerHTML = '';
+
+            // Get unique NVRs and count cameras per NVR
+            const nvrCounts = {};
+            const nvrHasSnap = {};
+            cameras.forEach(cam => {
+                nvrCounts[cam.nvr] = (nvrCounts[cam.nvr] || 0) + 1;
+                if (cam.snapshot) nvrHasSnap[cam.nvr] = true;
+            });
+            nvrList = Object.keys(nvrCounts).sort();
+
+            // Initialize config if not set
+            nvrList.forEach(nvr => {
+                if (!nvrConfig[nvr]) {
+                    nvrConfig[nvr] = { enabled: true, snapshots: true };
+                }
+            });
+
+            // Build controls
+            nvrList.forEach(nvr => {
+                const cfg = nvrConfig[nvr];
+                const count = nvrCounts[nvr];
+                const hasSnap = nvrHasSnap[nvr];
+
+                const div = document.createElement('div');
+                div.className = 'nvr-control' + (cfg.enabled ? '' : ' disabled');
+                div.id = `nvr-ctrl-${nvr}`;
+
+                div.innerHTML = `
+                    <div class="nvr-header">
+                        <input type="checkbox" id="nvr-enable-${nvr}" ${cfg.enabled ? 'checked' : ''} onchange="toggleNvr('${nvr}')">
+                        <span class="nvr-name">${nvr}</span>
+                        <span class="nvr-count">(${count})</span>
+                    </div>
+                    ${hasSnap ? `<label><input type="checkbox" id="nvr-snap-${nvr}" ${cfg.snapshots ? 'checked' : ''} onchange="toggleNvrSnap('${nvr}')" ${cfg.enabled ? '' : 'disabled'}> Snapshots</label>` : ''}
+                `;
+                container.appendChild(div);
+            });
+
+            updateStartButton();
+        }
+
+        // Toggle NVR enabled state
+        function toggleNvr(nvr) {
+            const cb = document.getElementById(`nvr-enable-${nvr}`);
+            nvrConfig[nvr].enabled = cb.checked;
+
+            const ctrl = document.getElementById(`nvr-ctrl-${nvr}`);
+            ctrl.className = 'nvr-control' + (cb.checked ? '' : ' disabled');
+
+            const snapCb = document.getElementById(`nvr-snap-${nvr}`);
+            if (snapCb) snapCb.disabled = !cb.checked;
+
+            buildGrid();
+            updateStartButton();
+        }
+
+        // Toggle NVR snapshot setting
+        function toggleNvrSnap(nvr) {
+            const cb = document.getElementById(`nvr-snap-${nvr}`);
+            nvrConfig[nvr].snapshots = cb.checked;
+        }
+
+        // Update start button state
+        function updateStartButton() {
+            const anyEnabled = nvrList.some(nvr => nvrConfig[nvr].enabled);
+            document.getElementById('startBtn').disabled = !anyEnabled || running;
+        }
+
+        // Get enabled cameras based on NVR config
+        function getEnabledCameras() {
+            return cameras.filter(cam => nvrConfig[cam.nvr]?.enabled);
+        }
+
+        // Build camera tiles (only for enabled NVRs)
         function buildGrid() {
             const grid = document.getElementById('cameraGrid');
             grid.innerHTML = '';
             cameraIndex = {};
 
-            cameras.forEach((cam, idx) => {
+            const enabledCameras = getEnabledCameras();
+
+            enabledCameras.forEach((cam, idx) => {
                 const key = `${cam.nvr}/${cam.channel}`;
                 cameraIndex[key] = idx;
 
                 const tile = document.createElement('div');
                 tile.className = 'camera-tile';
                 tile.id = `tile-${idx}`;
-                const snapBadge = cam.snapshot ? '<span class="snapshot-badge">SNAP</span>' : '';
+                const snapBadge = cam.snapshot && nvrConfig[cam.nvr]?.snapshots ? '<span class="snapshot-badge">SNAP</span>' : '';
                 const passSlots = Array(NUM_PASSES).fill('<span>-</span>').join('');
                 tile.innerHTML = `
                     <div class="header">
@@ -436,8 +557,22 @@
             if (!running) return;
 
             try {
-                const useSnaps = document.getElementById('useSnapshots').checked;
-                const response = await fetch(`${DETECTION_SERVICE}/pass/start?use_snapshots=${useSnaps}`, { method: 'POST' });
+                // Build NVR config for request
+                const nvrs = {};
+                nvrList.forEach(nvr => {
+                    if (nvrConfig[nvr].enabled) {
+                        nvrs[nvr] = {
+                            enabled: true,
+                            snapshots: nvrConfig[nvr].snapshots
+                        };
+                    }
+                });
+
+                const response = await fetch(`${DETECTION_SERVICE}/pass/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ nvrs })
+                });
                 if (!response.ok) {
                     console.error('Failed to start pass');
                     return;
@@ -521,7 +656,9 @@
             currentPassId = null;
             currentPassNum = 0;
             frameCount = 0;
-            totalFetchMs = 0;
+            totalQueueMs = 0;
+            totalCaptureMs = 0;
+            totalOverheadMs = 0;
             totalDetectMs = 0;
             totalTags = 0;
             startTime = Date.now();
@@ -531,14 +668,26 @@
             document.getElementById('stopBtn').disabled = false;
             document.getElementById('passIndicator').textContent = `Pass: 0 / ${NUM_PASSES}`;
 
+            // Disable NVR controls during test
+            nvrList.forEach(nvr => {
+                const cb = document.getElementById(`nvr-enable-${nvr}`);
+                if (cb) cb.disabled = true;
+                const snapCb = document.getElementById(`nvr-snap-${nvr}`);
+                if (snapCb) snapCb.disabled = true;
+            });
+
+            // Rebuild grid with current selection
+            buildGrid();
+
             // Reset progress bar
             const progressBar = document.getElementById('progressBar');
             progressBar.style.width = '0%';
             progressBar.classList.remove('complete');
             document.querySelector('.progress-container').style.display = 'block';
 
-            // Reset pass results for all cameras
-            cameras.forEach((_, idx) => {
+            // Reset pass results for all visible cameras
+            const enabledCameras = getEnabledCameras();
+            enabledCameras.forEach((_, idx) => {
                 cameraPassResults[idx] = [];
                 const passesEl = document.getElementById(`passes-${idx}`);
                 if (passesEl) {
@@ -553,13 +702,22 @@
         // Stop test
         function stopTest() {
             running = false;
-            document.getElementById('startBtn').disabled = false;
             document.getElementById('stopBtn').disabled = true;
 
             if (pollInterval) {
                 clearInterval(pollInterval);
                 pollInterval = null;
             }
+
+            // Re-enable NVR controls
+            nvrList.forEach(nvr => {
+                const cb = document.getElementById(`nvr-enable-${nvr}`);
+                if (cb) cb.disabled = false;
+                const snapCb = document.getElementById(`nvr-snap-${nvr}`);
+                if (snapCb) snapCb.disabled = !nvrConfig[nvr].enabled;
+            });
+
+            updateStartButton();
         }
 
         // Reset stats
@@ -624,6 +782,7 @@
                     { nvr: 'nvr2', channel: 2, name: 'nvr2/ch2' }
                 ];
             }
+            buildNvrControls();
             buildGrid();
         }
 

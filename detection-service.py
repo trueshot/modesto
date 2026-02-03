@@ -29,6 +29,7 @@ import json
 import uuid
 import asyncio
 from fastapi import FastAPI, Response, Query
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
@@ -521,16 +522,38 @@ async def _run_pass(pass_id: str):
             passes[pass_id]["endTime"] = time.time()
 
 
+class NvrConfig(BaseModel):
+    enabled: bool = True
+    snapshots: bool = True
+
+class PassStartRequest(BaseModel):
+    nvrs: dict[str, NvrConfig] | None = None  # e.g. {"nvr1": {"enabled": true, "snapshots": false}}
+
 @app.post("/pass/start")
-async def start_pass(use_snapshots: bool = Query(True, description="Use snapshots for cameras that support it")):
-    """Start a detection pass - fetches all cameras in parallel"""
+async def start_pass(request: PassStartRequest = None):
+    """Start a detection pass - fetches all cameras in parallel
+
+    Body (optional):
+        { "nvrs": { "nvr1": { "enabled": true, "snapshots": false }, "nvr2": { "enabled": true, "snapshots": true } } }
+    """
     # Get camera list
     cameras_resp = await list_cameras()
-    cameras = cameras_resp["cameras"]
+    all_cameras = cameras_resp["cameras"]
 
-    # Override snapshot setting if disabled
-    if not use_snapshots:
-        cameras = [{**c, "snapshot": False} for c in cameras]
+    # Filter and configure cameras based on NVR settings
+    if request and request.nvrs:
+        cameras = []
+        for cam in all_cameras:
+            nvr_id = cam["nvr"]
+            if nvr_id in request.nvrs:
+                nvr_cfg = request.nvrs[nvr_id]
+                if nvr_cfg.enabled:
+                    # Override snapshot setting per NVR
+                    cam_copy = {**cam, "snapshot": cam.get("snapshot", False) and nvr_cfg.snapshots}
+                    cameras.append(cam_copy)
+            # If NVR not in config, exclude it
+    else:
+        cameras = all_cameras
 
     # Generate pass ID
     pass_id = uuid.uuid4().hex[:12]
