@@ -296,7 +296,11 @@ function captureFrame(nextNonce, rtspUrl) {
       return nal.hasVPS && nal.hasSPS && nal.hasPPS && nal.idrComplete;
     }
 
+    // Profiling timestamps
+    const prof = { wsCreate: Date.now() };
+
     ws.on('open', () => {
+      prof.wsOpen = Date.now();
       if (debug) console.log('WebSocket connected, waiting for auth challenge...');
     });
 
@@ -320,12 +324,18 @@ function captureFrame(nextNonce, rtspUrl) {
 
           if (haveKeyframe() && nal.extraAfterIDR >= 3 && !closing) {
             closing = true;
-            if (debug) console.log(`Got keyframe after ${frameCount} packets (${Date.now() - firstBinaryAt}ms since first packet), closing...`);
+            prof.idrDone = Date.now();
+            if (debug) console.log(`Got keyframe after ${frameCount} packets (${Date.now() - firstBinaryAt}ms since first packet), extracting...`);
+            // Extract immediately — don't wait for WS close
+            extractFrame(Buffer.concat(binaryChunks), resolve, reject);
+            // Send TEARDOWN, then graceful close with a hard deadline
             cseq++;
             try {
               ws.send(`TEARDOWN ${rtspUrl} RTSP/1.0\r\nSession: ${sessionId}\r\nCSeq: ${cseq}\r\nUser-Agent: SFRtsp 0.3\r\nAuthorization: Basic ${basicAuth}\r\n\r\n`);
             } catch (e) {}
             ws.close();
+            const killTimer = setTimeout(() => ws.terminate(), 500);
+            killTimer.unref();
           }
         }
         return;
@@ -347,11 +357,13 @@ function captureFrame(nextNonce, rtspUrl) {
           const authMsg = `Authorization=${authStr}\r\n`;
           if (debug) console.log('>>>', authMsg.substring(0, 200));
           ws.send(authMsg);
+          prof.wsAuthSent = Date.now();
           wsAuthed = true;
           return;
         }
 
         if (parsed.errorCode === 0) {
+          prof.wsAuthOk = Date.now();
           if (debug) console.log('WebSocket authenticated!');
           rtspState = 'OPTIONS';
 
@@ -433,6 +445,7 @@ function captureFrame(nextNonce, rtspUrl) {
               const playMsg = `PLAY ${rtspUrl} RTSP/1.0\r\nSession: ${sessionId}\r\nCSeq: ${cseq}\r\nUser-Agent: SFRtsp 0.3\r\nAuthorization: Basic ${basicAuth}\r\n\r\n`;
               if (debug) console.log('>>>', playMsg.trim().substring(0, 150));
               ws.send(playMsg);
+              prof.playSent = Date.now();
               if (debug) console.log('\n--- Step 6: Waiting for video frames ---');
             }
           } else {
@@ -466,8 +479,22 @@ function captureFrame(nextNonce, rtspUrl) {
     });
 
     ws.on('close', () => {
-      if (debug) console.log(`WebSocket closed (${frameCount} frames received)`);
-      if (frameCount > 0) {
+      prof.wsClosed = Date.now();
+      if (debug) {
+        console.log(`WebSocket closed (${frameCount} frames received)`);
+        const b = prof.wsCreate;
+        console.log(`\n--- Profile ---`);
+        console.log(`WS connect:    ${(prof.wsOpen||b)-b}ms`);
+        console.log(`WS auth sent:  ${(prof.wsAuthSent||b)-b}ms`);
+        console.log(`WS auth OK:    ${(prof.wsAuthOk||b)-b}ms`);
+        console.log(`PLAY sent:     ${(prof.playSent||b)-b}ms`);
+        console.log(`First binary:  ${(firstBinaryAt||b)-b}ms`);
+        console.log(`IDR complete:  ${(prof.idrDone||b)-b}ms`);
+        console.log(`WS closed:     ${(prof.wsClosed||b)-b}ms`);
+      }
+      if (closing) {
+        // Already extracted in the message handler
+      } else if (frameCount > 0) {
         extractFrame(Buffer.concat(binaryChunks), resolve, reject);
       } else if (rtspState !== 'STREAMING') {
         reject(new Error('WebSocket closed before receiving frames. State: ' + rtspState));
