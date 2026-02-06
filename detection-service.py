@@ -265,15 +265,13 @@ def run_detection(frame: np.ndarray) -> tuple[list, float]:
     """Run all detectors, return (detections, detect_time_ms)"""
     start = time.perf_counter()
 
-    # Resize for detection (50% for speed)
+    # Resize for detection (75% — balances speed vs small tag detection)
     h, w = frame.shape[:2]
-    scale = 0.5
+    scale = 0.75
     small = cv2.resize(frame, (int(w * scale), int(h * scale)))
     gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
-    # CLAHE enhancement
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-    gray = clahe.apply(gray)
+    # Note: CLAHE removed — it hurts borderline tag detection (e.g. tag36h11 #37 on forklift)
 
     all_detections = []
     found_keys = set()  # (asset_name, tag_id) to deduplicate
