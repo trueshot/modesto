@@ -17,7 +17,7 @@ import time
 from pupil_apriltags import Detector
 
 # Camera service configuration
-CAMERA_SERVICE_URL = "http://localhost:8001"
+CAMERA_SERVICE_URL = "http://127.0.0.1:8001"
 FACILITY = "lodge"
 CAMERA_ID = "biscuit"
 

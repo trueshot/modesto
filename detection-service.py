@@ -48,7 +48,7 @@ app.add_middleware(
 )
 
 # Configuration
-CAMERA_SERVICE_URL = "http://localhost:8001"
+CAMERA_SERVICE_URL = "http://127.0.0.1:8001"
 ZMQ_ENDPOINT = "tcp://127.0.0.1:5555"
 
 # Stats tracking
@@ -85,6 +85,37 @@ detectors = {
     },
 }
 print("Detectors ready.")
+
+# OpenCV ArUco fallback detectors (better perspective tolerance)
+print("Initializing ArUco fallback detectors...")
+aruco_detectors = {
+    'Fiducial': {
+        'dictionary': cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11),
+        'params': cv2.aruco.DetectorParameters(),
+        'color': (0, 255, 0),
+    },
+    'Forklift': {
+        'dictionary': cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_25h9),
+        'params': cv2.aruco.DetectorParameters(),
+        'color': (0, 165, 255),
+    },
+}
+# Build ArUco detector objects
+for cfg in aruco_detectors.values():
+    cfg['detector'] = cv2.aruco.ArucoDetector(cfg['dictionary'], cfg['params'])
+print("ArUco fallback detectors ready.")
+
+
+class ArUcoDetection:
+    """Wrapper to match pupil_apriltags detection interface"""
+    def __init__(self, tag_id, corners, asset_name, color):
+        self.tag_id = tag_id
+        self.corners = corners  # 4x2 numpy array
+        self.center = corners.mean(axis=0)
+        self.decision_margin = -1  # ArUco doesn't provide this
+        self.asset_name = asset_name
+        self.color = color
+
 
 # ZMQ REQ socket (legacy, synchronous)
 zmq_context = None
@@ -245,6 +276,9 @@ def run_detection(frame: np.ndarray) -> tuple[list, float]:
     gray = clahe.apply(gray)
 
     all_detections = []
+    found_keys = set()  # (asset_name, tag_id) to deduplicate
+
+    # Primary: pupil_apriltags
     for asset_name, config in detectors.items():
         dets = config['detector'].detect(gray, estimate_tag_pose=False)
         for d in dets:
@@ -254,6 +288,20 @@ def run_detection(frame: np.ndarray) -> tuple[list, float]:
             d.center = d.center / scale
             d.corners = d.corners / scale
             all_detections.append(d)
+            found_keys.add((asset_name, d.tag_id))
+
+    # Fallback: OpenCV ArUco at full resolution (better perspective tolerance)
+    gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    for asset_name, config in aruco_detectors.items():
+        corners_list, ids, _ = config['detector'].detectMarkers(gray_full)
+        if ids is not None:
+            for i, tag_id in enumerate(ids):
+                tid = int(tag_id[0])
+                if (asset_name, tid) not in found_keys:
+                    corners = corners_list[i][0]  # already full resolution
+                    det = ArUcoDetection(tid, corners, asset_name, config['color'])
+                    all_detections.append(det)
+                    found_keys.add((asset_name, tid))
 
     return all_detections, (time.perf_counter() - start) * 1000
 
@@ -481,10 +529,11 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
         # Build tag details list
         tag_details = []
         for det in detections:
+            margin = det.decision_margin
             tag_details.append({
                 "id": det.tag_id,
                 "family": det.asset_name,  # asset_name maps to family (Fiducial=36h11, etc.)
-                "margin": round(det.decision_margin, 1)  # distinctiveness score, higher = better (not a %)
+                "margin": round(margin, 1) if margin >= 0 else "aruco"  # -1 = ArUco fallback detection
             })
 
         # Store result and image
