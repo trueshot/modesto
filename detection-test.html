@@ -282,7 +282,7 @@
         .camera-tile .tag-details .tag-item.Fiducial { border-left-color: #00ff00; }
         .camera-tile .tag-details .tag-item.Forklift { border-left-color: #ffa500; }
         .camera-tile .tag-details .tag-item.Pallet { border-left-color: #ff00ff; }
-        .camera-tile .tag-details .tag-item.Reserved { border-left-color: #00ffff; }
+        .camera-tile .tag-details .tag-item.Pallet52h13 { border-left-color: #00ffff; }
         .camera-tile .tag-details .tag-id {
             font-weight: bold;
             color: #fff;
@@ -503,9 +503,15 @@
                     loadedImages[imageKey] = true;
                     img.src = `${DETECTION_SERVICE}/pass/${passId}/image/${r.nvr}/${r.channel}`;
 
-                    // Update resolution
+                    // Update resolution (with low-res warning and detect dimensions)
                     const resEl = document.getElementById(`res-${idx}`);
-                    if (resEl && r.resolution) resEl.textContent = r.resolution;
+                    if (resEl && r.resolution) {
+                        let resText = r.resolution;
+                        if (r.detect_res) resText += ` → ${r.detect_res}`;
+                        if (r.low_res) resText += ' LOW RES';
+                        resEl.textContent = resText;
+                        if (r.low_res) resEl.style.color = '#ff4757';
+                    }
 
                     // Update timing display (show breakdown if available)
                     const queue = r.queue_ms ?? '-';

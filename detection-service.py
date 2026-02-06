@@ -78,7 +78,7 @@ detectors = {
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (255, 0, 255)  # Magenta
     },
-    'Reserved': {
+    'Pallet52h13': {
         'detector': Detector(families='tagStandard52h13', nthreads=4, quad_decimate=1.0,
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (255, 255, 0)  # Cyan
@@ -261,17 +261,28 @@ async def fetch_frame_zmq_dealer(nvr: str, channel: int, use_snapshot: bool = Fa
     return None, (time.perf_counter() - start) * 1000, None
 
 
-def run_detection(frame: np.ndarray) -> tuple[list, float]:
-    """Run all detectors, return (detections, detect_time_ms)"""
+TARGET_DETECT_WIDTH = 3072  # Right-size to ~3K for detection
+
+
+def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
+    """Run all detectors, return (detections, detect_time_ms, detect_info)"""
     start = time.perf_counter()
 
-    # Resize for detection (75% — balances speed vs small tag detection)
     h, w = frame.shape[:2]
-    scale = 0.75
-    small = cv2.resize(frame, (int(w * scale), int(h * scale)))
-    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    detect_info = {"capture_w": w, "capture_h": h}
 
-    # Note: CLAHE removed — it hurts borderline tag detection (e.g. tag36h11 #37 on forklift)
+    # Right-size: scale down to TARGET_DETECT_WIDTH if larger, otherwise use as-is
+    if w > TARGET_DETECT_WIDTH:
+        scale = TARGET_DETECT_WIDTH / w
+        small = cv2.resize(frame, (int(w * scale), int(h * scale)))
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        detect_info["detect_w"] = int(w * scale)
+        detect_info["detect_h"] = int(h * scale)
+    else:
+        scale = 1.0
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if w < TARGET_DETECT_WIDTH:
+            detect_info["low_res"] = True
 
     all_detections = []
     found_keys = set()  # (asset_name, tag_id) to deduplicate
@@ -301,7 +312,7 @@ def run_detection(frame: np.ndarray) -> tuple[list, float]:
                     all_detections.append(det)
                     found_keys.add((asset_name, tid))
 
-    return all_detections, (time.perf_counter() - start) * 1000
+    return all_detections, (time.perf_counter() - start) * 1000, detect_info
 
 
 def draw_detections(frame: np.ndarray, detections: list) -> np.ndarray:
@@ -354,7 +365,7 @@ async def detect(
         return Response(content=b"", media_type="image/jpeg", status_code=404)
 
     # Detect
-    detections, detect_ms = run_detection(frame)
+    detections, detect_ms, detect_info = run_detection(frame)
 
     # Draw overlays
     annotated = draw_detections(frame.copy(), detections)
@@ -500,7 +511,7 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
             overhead_ms = max(0, int(fetch_ms) - queue_ms - capture_ms)
 
         # Run detection
-        detections, detect_ms = run_detection(frame)
+        detections, detect_ms, detect_info = run_detection(frame)
 
         # Draw overlays
         annotated = draw_detections(frame.copy(), detections)
@@ -508,13 +519,20 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
         # Add timing overlay
         h, w = annotated.shape[:2]
         source_label = "DEALER" + ("+SNAP" if use_snapshot else "")
-        cv2.rectangle(annotated, (0, 0), (450, 110), (40, 40, 40), -1)
+        overlay_h = 140 if detect_info.get("low_res") else 110
+        cv2.rectangle(annotated, (0, 0), (500, overlay_h), (40, 40, 40), -1)
         cv2.putText(annotated, f"{w}x{h}", (10, 28),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
         cv2.putText(annotated, f"Fetch: {fetch_ms:.0f}ms ({source_label})", (10, 58),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
         cv2.putText(annotated, f"Detect: {detect_ms:.0f}ms | Tags: {len(detections)}", (10, 88),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        if detect_info.get("low_res"):
+            cv2.putText(annotated, f"LOW RES — {w}x{h} (no downscale)", (10, 118),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        elif "detect_w" in detect_info:
+            cv2.putText(annotated, f"Detect: {detect_info['detect_w']}x{detect_info['detect_h']}", (10, 118),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
 
         # Resize for web (max 800px wide)
         if w > 800:
@@ -530,8 +548,8 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
             margin = det.decision_margin
             tag_details.append({
                 "id": det.tag_id,
-                "family": det.asset_name,  # asset_name maps to family (Fiducial=36h11, etc.)
-                "margin": round(margin, 1) if margin >= 0 else "aruco"  # -1 = ArUco fallback detection
+                "family": det.asset_name,
+                "margin": round(margin, 1) if margin >= 0 else "aruco"
             })
 
         # Store result and image
@@ -543,6 +561,10 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
                     "resolution": f"{w}x{h}",
                     "fetch_ms": int(fetch_ms), "detect_ms": int(detect_ms)
                 }
+                if detect_info.get("low_res"):
+                    result["low_res"] = True
+                if "detect_w" in detect_info:
+                    result["detect_res"] = f"{detect_info['detect_w']}x{detect_info['detect_h']}"
                 # Include timing breakdown if available
                 if queue_ms is not None:
                     result["queue_ms"] = queue_ms
