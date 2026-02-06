@@ -413,10 +413,12 @@ async def detect(
 async def list_cameras():
     """List active cameras from camera-service"""
     cameras = []
+    camera_service_online = False
     try:
         # Get configured cameras from lodge
         response = requests.get(f"{CAMERA_SERVICE_URL}/api/cameras/lodge", timeout=5)
         if response.status_code == 200:
+            camera_service_online = True
             data = response.json()
             for cam in data.get("cameras", []):
                 cameras.append({
@@ -427,23 +429,20 @@ async def list_cameras():
                     "snapshot": False,  # nvr1 doesn't support snapshots
                 })
     except Exception as e:
-        print(f"Error fetching cameras: {e}")
+        print(f"Camera service unreachable: {e}")
 
     # Add nvr2 channels 2-5 (unconfigured but active, supports snapshots)
-    for ch in [2, 3, 4, 5]:
-        cameras.append({
-            "nvr": "nvr2",
-            "channel": ch,
-            "name": f"nvr2-ch{ch}",
-            "resolution": "unknown",
-            "snapshot": True,  # nvr2 (UNIVIEW) supports snapshots
-        })
+    if camera_service_online:
+        for ch in [2, 3, 4, 5]:
+            cameras.append({
+                "nvr": "nvr2",
+                "channel": ch,
+                "name": f"nvr2-ch{ch}",
+                "resolution": "unknown",
+                "snapshot": True,  # nvr2 (UNIVIEW) supports snapshots
+            })
 
-    if not cameras:
-        # Fallback
-        cameras = [{"nvr": "nvr1", "channel": 7, "name": "biscuit", "snapshot": False}]
-
-    return {"cameras": cameras, "count": len(cameras)}
+    return {"cameras": cameras, "count": len(cameras), "camera_service_online": camera_service_online}
 
 
 @app.get("/stats")

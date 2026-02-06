@@ -847,12 +847,38 @@
             });
         }
 
+        // Show offline message when camera service is down
+        function showOfflineMessage() {
+            document.getElementById('cameraGrid').innerHTML = '';
+            document.getElementById('nvrControls').innerHTML = '';
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('passIndicator').textContent = '';
+            document.querySelector('.progress-container').style.display = 'none';
+            document.querySelector('.stats-bar').style.display = 'none';
+
+            const grid = document.getElementById('cameraGrid');
+            grid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 80px 20px;">
+                    <div style="font-size: 48px; margin-bottom: 20px; color: #ff4757;">&#x26A0;</div>
+                    <div style="font-size: 24px; color: #ff4757; margin-bottom: 12px;">Camera Service Offline</div>
+                    <div style="color: #888; font-size: 14px;">
+                        Cannot reach camera-service at 127.0.0.1:8001
+                    </div>
+                    <button onclick="loadCameras()" style="margin-top: 24px; padding: 10px 24px; font-size: 14px; border: 1px solid #555; border-radius: 6px; background: #2d2d44; color: #eee; cursor: pointer;">Retry</button>
+                </div>
+            `;
+        }
+
         // Load camera list from API
         async function loadCameras() {
             try {
                 const response = await fetch(`${DETECTION_SERVICE}/cameras`);
                 if (response.ok) {
                     const data = await response.json();
+                    if (!data.camera_service_online) {
+                        showOfflineMessage();
+                        return;
+                    }
                     if (data.cameras && data.cameras.length > 0) {
                         cameras = data.cameras.map(c => ({
                             nvr: c.nvr,
@@ -861,14 +887,17 @@
                             snapshot: c.snapshot || false
                         }));
                     }
+                } else {
+                    showOfflineMessage();
+                    return;
                 }
             } catch (e) {
-                console.log('Using default camera list');
-                cameras = [
-                    { nvr: 'nvr1', channel: 7, name: 'biscuit' },
-                    { nvr: 'nvr2', channel: 2, name: 'nvr2/ch2' }
-                ];
+                showOfflineMessage();
+                return;
             }
+            // Restore UI elements in case we're returning from offline state
+            document.querySelector('.stats-bar').style.display = '';
+            document.querySelector('.progress-container').style.display = '';
             buildNvrControls();
             buildGrid();
         }
