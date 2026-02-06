@@ -36,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from capture import CameraCapture
 from cache import ImageCache
 from scanner import NVRScanner
+from playback import capture_playback_frame
 
 # Configure logging - console + file
 LOG_FILE = Path(__file__).parent / "camera-service.log"
@@ -951,13 +952,20 @@ def nvr_supports_snapshot(nvr: dict) -> bool:
     brand = (nvr.get('brand') or '').upper()
     return 'UNIVIEW' in brand
 
+def nvr_supports_playback(nvr: dict) -> bool:
+    """Check if NVR supports WebSocket-based historic playback"""
+    # Only UNIVIEW NVRs support the LAPI + WS playback protocol
+    brand = (nvr.get('brand') or '').upper()
+    return 'UNIVIEW' in brand
+
 @app.get("/api/nvr/{nvr_id}/channel/{channel}/frame")
 def get_nvr_channel_frame(
     nvr_id: str,
     channel: int,
-    source: str = Query("rtsp", description="Capture source: 'rtsp' or 'snapshot'"),
+    source: str = Query("rtsp", description="Capture source: 'rtsp', 'snapshot', or 'playback'"),
     format: str = Query("image", description="Response format: 'image' or 'base64'"),
-    timeout: int = Query(8, description="Capture timeout in seconds")
+    timeout: int = Query(8, description="Capture timeout in seconds"),
+    timestamp: Optional[int] = Query(None, description="Unix epoch for playback source (required when source=playback)")
 ):
     """
     Capture frame directly from NVR channel.
@@ -965,15 +973,45 @@ def get_nvr_channel_frame(
     Args:
         nvr_id: NVR ID (e.g., "nvr1", "nvr2")
         channel: Channel number (1-32)
-        source: 'rtsp' (decode stream) or 'snapshot' (HTTP snapshot, UNIVIEW only)
+        source: 'rtsp' (decode stream), 'snapshot' (HTTP snapshot, UNIVIEW only), or 'playback' (historic, UNIVIEW only)
         format: 'image' returns JPEG, 'base64' returns JSON with base64 string
         timeout: Capture timeout in seconds
+        timestamp: Unix epoch seconds for playback source
     """
     nvr = get_nvr_info(nvr_id)
     if not nvr:
         raise HTTPException(status_code=404, detail=f"NVR '{nvr_id}' not found in lodge.db")
 
-    if source == "snapshot":
+    if source == "playback":
+        if not nvr_supports_playback(nvr):
+            raise HTTPException(
+                status_code=400,
+                detail=f"NVR '{nvr_id}' ({nvr.get('brand')}) does not support playback (UNIVIEW only)"
+            )
+        if timestamp is None:
+            raise HTTPException(
+                status_code=400,
+                detail="timestamp query parameter is required when source=playback"
+            )
+        # Check playback cache first (historic frames are immutable)
+        playback_cache_key = f"playback/{nvr_id}/ch{channel}/{timestamp}"
+        image_data = image_cache.get(playback_cache_key)
+        if not image_data:
+            epoch_begin = timestamp
+            epoch_end = timestamp + 60
+            logger.info(f"Playback from {nvr_id} ch{channel} @{timestamp}: {nvr['ip']}")
+            image_data = capture_playback_frame(
+                nvr_ip=nvr['ip'],
+                username=nvr['username'] or 'admin',
+                password=nvr['password'] or '',
+                channel=channel,
+                epoch_begin=epoch_begin,
+                epoch_end=epoch_end,
+                timeout=max(timeout, 30)
+            )
+            if image_data:
+                image_cache.set(playback_cache_key, image_data, ttl=300)
+    elif source == "snapshot":
         if not nvr_supports_snapshot(nvr):
             raise HTTPException(
                 status_code=400,
@@ -1007,7 +1045,7 @@ def get_nvr_channel_frame(
 def get_nvr_channel_info(
     nvr_id: str,
     channel: int,
-    source: str = Query("rtsp", description="Capture source: 'rtsp' or 'snapshot'")
+    source: str = Query("rtsp", description="Capture source: 'rtsp', 'snapshot', or 'playback'")
 ):
     """
     Get capture info for an NVR channel (without actually capturing).
@@ -1018,8 +1056,20 @@ def get_nvr_channel_info(
         raise HTTPException(status_code=404, detail=f"NVR '{nvr_id}' not found in lodge.db")
 
     supports_snapshot = nvr_supports_snapshot(nvr)
+    supports_playback = nvr_supports_playback(nvr)
 
-    if source == "snapshot":
+    if source == "playback":
+        return {
+            "nvr_id": nvr_id,
+            "channel": channel,
+            "nvr_ip": nvr['ip'],
+            "nvr_brand": nvr['brand'],
+            "source": "playback",
+            "supports_playback": supports_playback,
+            "method": "WebSocket RTSP playback via LAPI (UNIVIEW)" if supports_playback else "Not supported",
+            "notes": "LAPI Login → KeepAlive → RecordURL → WS+RTSP → H.265 depacketize → ffmpeg. ~3-5s. Requires timestamp param." if supports_playback else f"{nvr.get('brand')} does not support WebSocket playback"
+        }
+    elif source == "snapshot":
         snapshot_url = f"http://{nvr['ip']}/LAPI/V1.0/Channels/{channel}/Media/Video/Streams/0/Snapshot"
         return {
             "nvr_id": nvr_id,
@@ -1046,6 +1096,7 @@ def get_nvr_channel_info(
             "nvr_brand": nvr['brand'],
             "source": "rtsp",
             "supports_snapshot": supports_snapshot,
+            "supports_playback": supports_playback,
             "capture_url": display_url,
             "method": "RTSP stream capture via OpenCV/FFmpeg",
             "notes": "Decodes H.264/HEVC stream, encodes to JPEG. Reads up to 3 frames, skips grey frames. ~1-2MB, ~1-2s"
@@ -1212,7 +1263,25 @@ def zmq_frame_handler():
                 continue
 
             # Capture based on source
-            if source == "snapshot":
+            if source == "playback":
+                timestamp = req.get("timestamp")
+                if not timestamp or not nvr_supports_playback(nvr):
+                    with worker_state_lock:
+                        worker_state["zmq_rep"]["errors"] += 1
+                    socket.send(b"")
+                    continue
+                epoch_begin = timestamp
+                epoch_end = timestamp + 60
+                image_data = capture_playback_frame(
+                    nvr_ip=nvr['ip'],
+                    username=nvr['username'] or 'admin',
+                    password=nvr['password'] or '',
+                    channel=channel,
+                    epoch_begin=epoch_begin,
+                    epoch_end=epoch_end,
+                    timeout=30
+                )
+            elif source == "snapshot":
                 image_data = capture_snapshot(nvr, channel)
             else:  # rtsp
                 rtsp_url = build_rtsp_url(nvr, channel)
@@ -1258,6 +1327,10 @@ def zmq_async_handler():
     socket.bind(ZMQ_ASYNC_ENDPOINT)
     logger.info(f"ZMQ async (ROUTER) server listening on {ZMQ_ASYNC_ENDPOINT}")
 
+    # Poller for blocking recv with timeout (avoids GIL-hungry busy spin)
+    poller = zmq.Poller()
+    poller.register(socket, zmq.POLLIN)
+
     # Thread pool for parallel captures
     executor = ThreadPoolExecutor(max_workers=8)  # More workers since they don't block
 
@@ -1280,7 +1353,7 @@ def zmq_async_handler():
                 nvr_ip_cache[nvr_id] = nvr['ip']
         return nvr_ip_cache.get(nvr_id)
 
-    def process_request(identity: bytes, request_id: str, nvr_id: str, channel: int, source: str, nvr_ip: str):
+    def process_request(identity: bytes, request_id: str, nvr_id: str, channel: int, source: str, nvr_ip: str, timestamp: Optional[int] = None):
         """Process single frame request, return result tuple"""
         try:
             # Mark as actively processing
@@ -1294,7 +1367,19 @@ def zmq_async_handler():
             if not nvr:
                 return (identity, request_id, b"", True, nvr_ip)
 
-            if source == "snapshot":
+            if source == "playback":
+                if not timestamp or not nvr_supports_playback(nvr):
+                    return (identity, request_id, b"", True, nvr_ip)
+                image_data = capture_playback_frame(
+                    nvr_ip=nvr['ip'],
+                    username=nvr['username'] or 'admin',
+                    password=nvr['password'] or '',
+                    channel=channel,
+                    epoch_begin=timestamp,
+                    epoch_end=timestamp + 60,
+                    timeout=30
+                )
+            elif source == "snapshot":
                 image_data = capture_snapshot(nvr, channel)
             else:
                 rtsp_url = build_rtsp_url(nvr, channel)
@@ -1314,9 +1399,12 @@ def zmq_async_handler():
                 has_work = bool(in_flight) or bool(pending_queue)
                 worker_state["zmq_router"]["status"] = "running" if has_work else "idle"
 
-            # Non-blocking receive to check for new requests
-            try:
-                frames = socket.recv_multipart(zmq.NOBLOCK)
+            # Poll for new requests (blocks up to 50ms, releasing GIL)
+            poll_timeout = 1 if (in_flight or pending_queue) else 50  # responsive when busy, relaxed when idle
+            socks = dict(poller.poll(poll_timeout))
+
+            if socket in socks:
+                frames = socket.recv_multipart()
                 identity = frames[0]
                 msg = frames[-1].decode('utf-8')
                 req = json.loads(msg)
@@ -1325,6 +1413,7 @@ def zmq_async_handler():
                 nvr_id = req.get("nvr", "nvr1")
                 channel = req.get("channel", 1)
                 source = req.get("source", "rtsp")
+                req_timestamp = req.get("timestamp")  # For playback source
 
                 logger.info(f"ZMQ async request {request_id}: {nvr_id} ch{channel} via {source}")
 
@@ -1338,6 +1427,7 @@ def zmq_async_handler():
                     "nvr": nvr_id,
                     "channel": channel,
                     "source": source,
+                    "timestamp": req_timestamp,
                     "recv_at": recv_at,
                     "queued_at": recv_at  # Alias for backward compat
                 }
@@ -1351,9 +1441,6 @@ def zmq_async_handler():
                         "recv_at": recv_at,
                         "queued_at": recv_at
                     }
-
-            except zmq.Again:
-                pass
 
             # Schedule: find requests for NVRs with available capacity
             to_submit = []
@@ -1385,7 +1472,7 @@ def zmq_async_handler():
                 future = executor.submit(
                     process_request,
                     req["identity"], req_id, req["nvr"], req["channel"], req["source"],
-                    nvr_ip or ""
+                    nvr_ip or "", req.get("timestamp")
                 )
                 in_flight[req_id] = future
 
@@ -1456,9 +1543,7 @@ def zmq_async_handler():
                     with nvr_active_lock:
                         nvr_active_count[nvr_ip] = max(0, nvr_active_count[nvr_ip] - 1)
 
-            # Small sleep to avoid busy-spinning
-            if not in_flight and not pending_queue:
-                _time.sleep(0.001)
+            # Poller handles sleep — no busy-spin needed
 
         except Exception as e:
             logger.error(f"ZMQ async handler error: {e}")
