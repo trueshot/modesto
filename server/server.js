@@ -35,6 +35,11 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// NVR dashboard
+app.get('/nvr', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'nvr.html'));
+});
+
 // API Routes
 app.use('/api/warehouses', warehousesRouter);
 app.use('/api/warehouses', cameraRouter);
