@@ -879,11 +879,11 @@
           "x": 180,
           "y": 275,
           "elevation": 12,
-          "direction": 242,
+          "direction": 80,
           "tilt": 3,
           "viewingAngle": 80,
           "range": 50,
-          "location": "Main Floor, West wall, 13ft from south",
+          "location": "Main Floor, West wall mounting, facing East toward loading bays",
           "roll": 0,
           "intrinsics": {
             "calibrated": true,

@@ -1,0 +1,327 @@
+-- lodge.db snapshot
+-- Generated: 2026-02-12T07:06:02.264Z
+
+BEGIN TRANSACTION;
+
+CREATE TABLE cameras (
+    mac TEXT PRIMARY KEY,             -- 'F0:00:00:77:2D:8D'
+    model TEXT,
+    manufacturer TEXT,
+    serial TEXT,
+    resolution TEXT,                  -- '3072x2048', '3840x2160'
+    ip TEXT,                          -- current IP (can change via DHCP)
+    firmware TEXT,
+    acquired_date TEXT,
+    retired_date TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO "cameras" VALUES('F0:00:00:77:2D:8D','YM600F_AF','A_ONVIF_CAMERA','EF00000000772D8D','3072x2048','192.168.0.151','V3.0.2.5 build 2020-09-24 17:00:10 
+',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('F0:00:00:77:2E:EB','YM600F_AF','A_ONVIF_CAMERA','EF00000000772EEB','3072x2048','192.168.0.152','V3.0.2.5 build 2020-09-24 17:00:10 
+',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('f4:00:00:01:a8:bb','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb','3840x2160','192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('f4:00:00:01:a9:01','N802-IRC-GW','A_ONVIF_CAMERA','01a901','3840x2160','192.168.0.185','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('f4:00:00:01:a8:ef','N802-IRC-GW','A_ONVIF_CAMERA','01a8ef','3840x2160','192.168.0.224','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('F0:00:00:77:28:F4','YM600F_AF','A_ONVIF_CAMERA','EF000000007728F4','3072x2048','192.168.0.156','V3.0.2.5 build 2020-09-24',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('f4:00:00:01:a8:e2','N802-IRC-GW','A_ONVIF_CAMERA','01a8e2','3840x2160','192.168.0.170','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('F0:00:00:C5:4C:B4','YMF52_STARIR_GW_AF','A_ONVIF_CAMERA','EF00000000C54CB4','3072x2048','192.168.0.66','V3.0.7.5 build 2022-04-22 18:50:44 
+',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('38:24:f1:01:3c:c2','GW12577MIC','GW','10001',NULL,'192.168.0.128','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('f4-00-00-01-a8-bb','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb',NULL,'192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('f4-00-00-01-a8-e2','N802-IRC-GW','A_ONVIF_CAMERA','01a8e2',NULL,'192.168.0.170','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('f4-00-00-01-a9-01','N802-IRC-GW','A_ONVIF_CAMERA','01a901',NULL,'192.168.0.185','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('38:24:f1:01:3c:ad','GW12577MIC','GW','10001',NULL,'192.168.0.209','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('38:24:f1:01:3c:ae','GW12577MIC','GW','10001',NULL,'192.168.0.223','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('f4-00-00-01-a8-ef','N802-IRC-GW','A_ONVIF_CAMERA','01a8ef',NULL,'192.168.0.224','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('38:24:f1:01:3c:be','GW12577MIC','GW','10001',NULL,'192.168.0.238','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
+INSERT INTO "cameras" VALUES('38:24:f1:01:14:b2','GWIP85BF','GW','10001',NULL,'192.168.0.245','V26.34.8.2.3.5_230831',NULL,NULL,NULL,'2026-01-24 13:37:47');
+
+CREATE TABLE channels (
+    id TEXT PRIMARY KEY,              -- 'nvr1_ch01', 'nvr2_ch05'
+    nvr_id TEXT NOT NULL REFERENCES nvrs(id),
+    channel_number INTEGER NOT NULL,
+    rtsp_path TEXT,                   -- computed or overridden
+    status TEXT DEFAULT 'unknown',    -- 'active', 'empty', 'dead', 'unknown'
+    last_probed TEXT, camera_id TEXT, recording INTEGER DEFAULT 0, resolution TEXT,
+    UNIQUE(nvr_id, channel_number)
+);
+
+INSERT INTO "channels" VALUES('nvr1_ch01','nvr1',1,'rtsp://admin:@192.168.0.199:554/ch01/0','active',NULL,'F0:00:00:77:2D:8D',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch02','nvr1',2,'rtsp://admin:@192.168.0.199:554/ch02/0','active',NULL,'F0:00:00:77:2E:EB',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch03','nvr1',3,'rtsp://admin:@192.168.0.199:554/ch03/0','active',NULL,'f4:00:00:01:a8:bb',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch04','nvr1',4,'rtsp://admin:@192.168.0.199:554/ch04/0','active',NULL,'f4:00:00:01:a9:01',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch05','nvr1',5,'rtsp://admin:@192.168.0.199:554/ch05/0','active',NULL,'f4:00:00:01:a8:ef',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch06','nvr1',6,'rtsp://admin:@192.168.0.199:554/ch06/0','active',NULL,'F0:00:00:77:28:F4',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch07','nvr1',7,'rtsp://admin:@192.168.0.199:554/ch07/0','active',NULL,'38:24:f1:01:3c:c2',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch09','nvr1',9,'rtsp://admin:@192.168.0.199:554/ch09/0','active',NULL,'38:24:f1:01:3c:ad',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch10','nvr1',10,'rtsp://admin:@192.168.0.199:554/ch10/0','active',NULL,'38:24:f1:01:3c:ae',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch26','nvr1',26,'rtsp://admin:@192.168.0.199:554/ch26/0','active',NULL,'38:24:f1:01:14:b2',1,'2592x1944');
+INSERT INTO "channels" VALUES('nvr1_ch27','nvr1',27,'rtsp://admin:@192.168.0.199:554/ch27/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch28','nvr1',28,'rtsp://admin:@192.168.0.199:554/ch28/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch29','nvr1',29,'rtsp://admin:@192.168.0.199:554/ch29/0','active',NULL,'f4:00:00:01:a8:e2',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch30','nvr1',30,'rtsp://admin:@192.168.0.199:554/ch30/0','active',NULL,'F0:00:00:C5:4C:B4',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch31','nvr1',31,'rtsp://admin:@192.168.0.199:554/ch31/0','active',NULL,'38:24:f1:01:3c:be',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch32','nvr1',32,'rtsp://admin:@192.168.0.199:554/ch32/0','active',NULL,NULL,1,'2880x1624');
+INSERT INTO "channels" VALUES('nvr2_ch01','nvr2',1,NULL,'dead',NULL,NULL,0,NULL);
+INSERT INTO "channels" VALUES('nvr2_ch02','nvr2',2,NULL,'active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch03','nvr2',3,NULL,'active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch04','nvr2',4,NULL,'active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch05','nvr2',5,NULL,'active',NULL,NULL,1,'3840x2160');
+
+CREATE TABLE fiducials (
+    tag_id INTEGER PRIMARY KEY,       -- AprilTag ID (1, 2, 10, 20, etc.)
+    family TEXT DEFAULT 'tag36h11',
+    x REAL NOT NULL,                  -- ModelT X coordinate
+    y REAL NOT NULL,                  -- ModelT Y coordinate
+    z REAL NOT NULL,                  -- Elevation
+    wall TEXT,                        -- which wall it's mounted on
+    facing TEXT,                      -- 'north', 'south', etc.
+    size_inches REAL DEFAULT 5.5,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO "fiducials" VALUES(1,'tag36h11',185,100,10,'mercury_perimeter_north','south',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(2,'tag36h11',215,100,10,'mercury_perimeter_north','south',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(3,'tag36h11',250,100,10,'mercury_perimeter_north','south',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(4,'tag36h11',285,100,10,'mercury_perimeter_north','south',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(5,'tag36h11',315,100,10,'mercury_perimeter_north','south',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(10,'tag36h11',330,130,10,'mercury_perimeter_east','west',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(11,'tag36h11',330,170,10,'mercury_perimeter_east','west',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(12,'tag36h11',330,210,10,'mercury_perimeter_east','west',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(13,'tag36h11',330,250,10,'mercury_perimeter_east','west',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(14,'tag36h11',330,270,10,'mercury_perimeter_east','west',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(20,'tag36h11',170,130,10,'mercury_perimeter_west','east',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(21,'tag36h11',170,170,10,'mercury_perimeter_west','east',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(22,'tag36h11',170,210,10,'mercury_perimeter_west','east',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(23,'tag36h11',170,240,10,'mercury_perimeter_west','east',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(24,'tag36h11',170,270,10,'mercury_perimeter_west','east',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(30,'tag36h11',165,400,10,'mercury_perimeter_south','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(31,'tag36h11',200,400,10,'mercury_perimeter_south','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(32,'tag36h11',250,400,10,'mercury_perimeter_south','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(33,'tag36h11',290,400,10,'mercury_perimeter_south','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(34,'tag36h11',320,400,10,'mercury_perimeter_south','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(40,'tag36h11',190,239,8,'abigail','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(41,'tag36h11',220,239,8,'abigail','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(42,'tag36h11',260,239,8,'abigail','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(43,'tag36h11',290,239,8,'abigail','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(44,'tag36h11',320,239,8,'abigail','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(50,'tag36h11',195,308,8,'beatrice','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(51,'tag36h11',235,308,8,'beatrice','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(52,'tag36h11',275,308,8,'beatrice','north',5.5,'2026-01-22 12:23:18');
+INSERT INTO "fiducials" VALUES(53,'tag36h11',315,308,8,'beatrice','north',5.5,'2026-01-22 12:23:18');
+
+CREATE TABLE linkage_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mount_id TEXT NOT NULL,
+    camera_mac TEXT,
+    channel_id TEXT,
+    action TEXT,                      -- 'installed', 'removed', 'rewired'
+    changed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    changed_by TEXT,
+    reason TEXT
+);
+
+CREATE TABLE linkages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mount_id TEXT NOT NULL REFERENCES mounts(id),
+    camera_mac TEXT REFERENCES cameras(mac),  -- NULL if unknown
+    channel_id TEXT REFERENCES channels(id),  -- NULL if not connected to NVR
+    verified_at TEXT,
+    verified_by TEXT,                 -- 'novicat', 'manual', 'onvif_discovery'
+    confidence TEXT DEFAULT 'assumed', -- 'verified', 'assumed', 'unverified'
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(mount_id)                  -- one linkage per mount
+);
+
+INSERT INTO "linkages" VALUES(2,'bacon','F0:00:00:77:2E:EB','nvr1_ch02','2026-01-17','novicat','verified',NULL,'2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(5,'cinnamonroll','f4:00:00:01:a8:ef','nvr1_ch05','2026-01-17','gemcat','MEDIUM','gemcat vision match - needs verification','2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(6,'bread','F0:00:00:77:28:F4','nvr1_ch06','2026-01-17','novicat','verified',NULL,'2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(8,'butter',NULL,'nvr1_ch09',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(9,'cake',NULL,'nvr1_ch10',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(10,'candy',NULL,'nvr1_ch26',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(11,'cheese',NULL,'nvr1_ch27',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(12,'chicken',NULL,'nvr1_ch28',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(13,'beef','f4:00:00:01:a8:e2','nvr1_ch29','2026-01-17','gemcat','LOW','gemcat vision match - needs verification','2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(14,'bagel','F0:00:00:C5:4C:B4','nvr1_ch30','2026-01-17','gemcat','MEDIUM','gemcat vision match - needs verification','2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(17,'biscuit','F0:00:00:77:2D:8D','nvr1_ch01',NULL,'gemcat','HIGH','gemcat vision match','2026-01-31 20:45:15');
+INSERT INTO "linkages" VALUES(18,'coffee','f4:00:00:01:a8:bb','nvr1_ch03',NULL,'gemcat','MEDIUM','gemcat vision match - needs verification','2026-01-31 20:45:15');
+INSERT INTO "linkages" VALUES(19,'burger','f4:00:00:01:a9:01','nvr1_ch04',NULL,'gemcat','HIGH','gemcat vision match','2026-01-31 20:45:15');
+
+CREATE TABLE mount_fiducial_visibility (
+    mount_id TEXT REFERENCES mounts(id),
+    fiducial_id INTEGER REFERENCES fiducials(tag_id),
+    expected INTEGER DEFAULT 1,       -- 1 = should be visible, 0 = maybe
+    PRIMARY KEY (mount_id, fiducial_id)
+);
+
+INSERT INTO "mount_fiducial_visibility" VALUES('burger',1,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('burger',2,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('burger',3,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('chicken',3,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('burger',4,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('brownie',10,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('chili',10,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('brownie',11,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('chocolate',11,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('brownie',12,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cake',12,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('bread',13,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cake',13,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('bread',14,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('biscuit',20,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('biscuit',21,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('biscuit',22,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('biscuit',23,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('biscuit',24,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('beef',30,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('bagel',30,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('beef',31,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('coffee',31,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('coffee',32,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('coffee',33,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('candy',40,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('butter',40,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('candy',41,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('butter',41,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cheese',42,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('butter',42,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cheese',43,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cake',43,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cake',44,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cinnamonroll',50,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('cinnamonroll',51,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('coffee',51,1);
+INSERT INTO "mount_fiducial_visibility" VALUES('coffee',52,1);
+
+CREATE TABLE mounts (
+    id TEXT PRIMARY KEY,              -- 'bagel', 'bacon', 'burger' (food name)
+    x REAL NOT NULL,                  -- ModelT X coordinate (feet)
+    y REAL NOT NULL,                  -- ModelT Y coordinate (feet)
+    z REAL NOT NULL,                  -- Elevation (feet)
+    wall TEXT,                        -- 'mercury_perimeter_east', 'abigail'
+    facing TEXT,                      -- 'north', 'south', 'east', 'west', 'northwest'
+    zone_id TEXT REFERENCES zones(id),
+    description TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO "mounts" VALUES('bagel',0,0,12,'mercury_perimeter_east','southwest','packing_line_2','Packing Line 2, East wall, 50ft from south, looking SW','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('bacon',0,0,12,'mercury_perimeter_east','northwest','packing_line_2','Packing Line 2, East wall, 50ft from south, looking NW','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('burger',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('beef',0,0,12,'mercury_perimeter_south',NULL,'packing_line_2','Packing Line 2, South wall, 9ft from east','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('brownie',0,0,12,'mercury_perimeter_west',NULL,'main_floor','Main Floor, West wall, 13ft from south','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('bread',0,0,12,'mercury_perimeter_east',NULL,'main_floor','Main Floor, East wall, 5ft from south','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('biscuit',0,0,12,'mercury_perimeter_east',NULL,'main_floor','Main Floor, East wall, 14ft from south','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('butter',0,0,12,NULL,NULL,'packing_line_1','Packing Line 1, ceiling, 93ft W / 16ft N','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('cake',0,0,12,'mercury_perimeter_south',NULL,'packing_line_1','Packing Line 1, South wall, 15ft from east','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('candy',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('cheese',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('chicken',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('chili',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('chocolate',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('cinnamonroll',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('coffee',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+
+CREATE TABLE nvr_capabilities (
+    nvr_id TEXT NOT NULL REFERENCES nvrs(id),
+    capability TEXT NOT NULL,
+    value TEXT NOT NULL,
+    notes TEXT,
+    updated_by TEXT,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (nvr_id, capability)
+);
+
+INSERT INTO "nvr_capabilities" VALUES('nvr1','api_protocol','dahua','CGI-based (configManager, snapshot, etc)','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr1','onvif','no',NULL,'novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr1','live_rtsp','yes','ch{N}/0 for main, ch{N}/1 for sub','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr1','snapshot_url','yes','/cgi-bin/snapshot.cgi?channel={ch}','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr1','playback_rtsp','no','starttime param kills connection','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr1','playback_ws','no',NULL,'novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr1','api_auth','unknown','basic/digest fail, needs browser plugin','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr1','remote_device','unknown','configManager RemoteDevice endpoint, untested — NVR was offline','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','api_protocol','lapi','UNIVIEW /LAPI/V1.0/*','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','onvif','yes',NULL,'novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','live_rtsp','yes',NULL,'novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','snapshot_url','yes','via LAPI or RTSP first-frame','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','playback_rtsp','no','ignores starttime, returns live','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','playback_ws','yes','reverse-engineered, ~1s per frame','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','api_auth','digest','custom 2-step nonce, NextNonce from KeepAlive','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','ws_auth_quirk','yes','use LAPI NextNonce, not WS 401 nonce','novicat gen-9','2026-02-06 11:39:44');
+INSERT INTO "nvr_capabilities" VALUES('nvr2','ws_close_latency','10s','must terminate after TEARDOWN, NVR slow to ack','novicat gen-9','2026-02-06 11:39:44');
+
+CREATE TABLE nvrs (
+    id TEXT PRIMARY KEY,              -- 'nvr1', 'nvr2'
+    brand TEXT,                       -- 'GW Security', 'UNIVIEW'
+    model TEXT,
+    ip TEXT,
+    mac TEXT,
+    max_channels INTEGER,
+    protocol TEXT DEFAULT 'rtsp',     -- 'rtsp', 'onvif'
+    path_format TEXT,                 -- 'ch{channel:02d}/0'
+    username TEXT,
+    password TEXT,
+    notes TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+, serial TEXT, ownership TEXT DEFAULT 'OURS', onvif_supported INTEGER DEFAULT 0);
+
+INSERT INTO "nvrs" VALUES('nvr1','GW Security',NULL,'192.168.0.199','00:23:63:6e:bc:7f',16,'rtsp','ch{channel:02d}/0','admin','','Chinese NVR with web-based admin. ONVIF not supported.','2026-01-22 12:23:18',NULL,'OURS',0);
+INSERT INTO "nvrs" VALUES('nvr2','UNIVIEW','XVR302-16Q3','192.168.0.134','c4:79:05:e4:f5:0f',24,'rtsp','unicast/c{channel}/s0','admin','Dad5eeeee!','Chinese UNIVIEW hybrid NVR. LAPI partially functional. Web UI in Chinese.','2026-01-22 12:23:18','210235XJGM324C000048','OURS',1);
+
+CREATE TABLE sqlite_sequence(name,seq);
+
+INSERT INTO "sqlite_sequence" VALUES('linkages',19);
+
+CREATE TABLE zones (
+    id TEXT PRIMARY KEY,              -- 'dock_east', 'cooler_1', 'packing_line_2'
+    name TEXT NOT NULL,
+    zone_type TEXT,                   -- 'dock', 'cooler', 'packing', 'staging', 'office'
+    notes TEXT
+);
+
+INSERT INTO "zones" VALUES('packing_line_1','Packing Line 1','packing',NULL);
+INSERT INTO "zones" VALUES('packing_line_2','Packing Line 2','packing',NULL);
+INSERT INTO "zones" VALUES('main_floor','Main Floor','staging',NULL);
+INSERT INTO "zones" VALUES('unknown','Unknown','unknown',NULL);
+
+CREATE INDEX idx_channels_nvr ON channels(nvr_id);
+
+CREATE INDEX idx_fiducials_wall ON fiducials(wall);
+
+CREATE INDEX idx_linkages_camera ON linkages(camera_mac);
+
+CREATE INDEX idx_linkages_channel ON linkages(channel_id);
+
+CREATE INDEX idx_mounts_zone ON mounts(zone_id);
+
+CREATE VIEW camera_full AS
+SELECT
+    m.id AS mount_id,
+    m.x, m.y, m.z,
+    m.wall, m.facing,
+    m.zone_id,
+    m.description,
+    c.mac AS camera_mac,
+    c.model AS camera_model,
+    c.resolution,
+    c.ip AS camera_ip,
+    ch.id AS channel_id,
+    ch.nvr_id,
+    ch.channel_number,
+    n.ip AS nvr_ip,
+    n.protocol,
+    n.path_format,
+    n.username,
+    n.password,
+    l.verified_at,
+    l.confidence
+FROM mounts m
+LEFT JOIN linkages l ON m.id = l.mount_id
+LEFT JOIN cameras c ON l.camera_mac = c.mac
+LEFT JOIN channels ch ON l.channel_id = ch.id
+LEFT JOIN nvrs n ON ch.nvr_id = n.id;
+
+COMMIT;
