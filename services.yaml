@@ -1,0 +1,27 @@
+services:
+  modelt-server:
+    name: ModelT Server
+    command: node server.js
+    cwd: server
+    port: 5173
+    autostart: true
+
+  camera-service:
+    name: Camera Service
+    command: python api/server.py
+    cwd: camera-service
+    port: 8001
+    autostart: true
+
+  asksam:
+    name: AskSAM
+    command: docker-compose up
+    cwd: ../asksam
+    port: 8000
+    autostart: false
+
+  detection:
+    name: Detection Service
+    command: python detection-service.py
+    port: 8002
+    autostart: false
