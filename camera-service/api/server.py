@@ -906,6 +906,24 @@ def reload_config():
     image_cache.clear()
     return {"message": "Image cache cleared"}
 
+@app.get("/api/admin/circuit-breaker")
+def get_circuit_breaker_status():
+    """Show circuit breaker status for all NVRs"""
+    now = _time.time()
+    with nvr_down_lock:
+        status = {}
+        for nvr_ip, deadline in nvr_down_until.items():
+            remaining = deadline - now
+            if remaining > 0:
+                status[nvr_ip] = {"down": True, "remaining_sec": round(remaining, 1)}
+    return {"cooldown_sec": NVR_DOWN_COOLDOWN, "tripped": status}
+
+@app.delete("/api/admin/circuit-breaker/{nvr_ip}")
+def clear_circuit_breaker(nvr_ip: str):
+    """Clear circuit breaker for a specific NVR IP"""
+    clear_nvr_down(nvr_ip)
+    return {"message": f"Circuit breaker cleared for {nvr_ip}"}
+
 # ============================================================================
 # NVR DIRECT ACCESS (queries lodge.db)
 # ============================================================================
@@ -982,6 +1000,13 @@ def get_nvr_channel_frame(
     if not nvr:
         raise HTTPException(status_code=404, detail=f"NVR '{nvr_id}' not found in lodge.db")
 
+    # Circuit breaker check
+    if is_nvr_down(nvr['ip']):
+        raise HTTPException(
+            status_code=503,
+            detail=f"NVR '{nvr_id}' ({nvr['ip']}) is unreachable (circuit breaker tripped)"
+        )
+
     if source == "playback":
         if not nvr_supports_playback(nvr):
             raise HTTPException(
@@ -1025,10 +1050,11 @@ def get_nvr_channel_frame(
         image_data = camera_capture.capture_frame(rtsp_url, timeout=timeout)
 
     if not image_data:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to capture from {nvr_id} channel {channel} via {source}"
-        )
+        mark_nvr_down_if_unreachable(nvr['ip'])
+        detail = f"Failed to capture from {nvr_id} channel {channel} via {source}"
+        if is_nvr_down(nvr['ip']):
+            detail += f" — NVR marked unreachable for {NVR_DOWN_COOLDOWN}s"
+        raise HTTPException(status_code=503, detail=detail)
 
     if format == "base64":
         return {
@@ -1204,6 +1230,50 @@ def get_nvr_semaphore(nvr_ip: str) -> threading.Semaphore:
             nvr_semaphores[nvr_ip] = threading.Semaphore(NVR_MAX_CONCURRENT)
         return nvr_semaphores[nvr_ip]
 
+def is_nvr_reachable(nvr_ip: str, port: int = 554, timeout: float = 2) -> bool:
+    """Quick TCP probe to NVR RTSP port. Used after capture failure to distinguish NVR-down from channel-dead."""
+    import socket
+    try:
+        s = socket.create_connection((nvr_ip, port), timeout=timeout)
+        s.close()
+        return True
+    except (socket.timeout, ConnectionRefusedError, OSError):
+        return False
+
+def mark_nvr_down_if_unreachable(nvr_ip: str):
+    """Trip circuit breaker only if NVR is actually unreachable (TCP probe fails)."""
+    if not is_nvr_reachable(nvr_ip):
+        mark_nvr_down(nvr_ip)
+    else:
+        logger.info(f"Capture failed but NVR {nvr_ip} is TCP-reachable — channel issue, not tripping breaker")
+
+# Circuit breaker: skip requests to NVRs that recently failed
+NVR_DOWN_COOLDOWN = 60  # seconds
+nvr_down_until = {}  # nvr_ip -> timestamp when retry is allowed
+nvr_down_lock = threading.Lock()
+
+def mark_nvr_down(nvr_ip: str):
+    """Mark an NVR as unreachable for NVR_DOWN_COOLDOWN seconds"""
+    with nvr_down_lock:
+        nvr_down_until[nvr_ip] = _time.time() + NVR_DOWN_COOLDOWN
+    logger.warning(f"Circuit breaker TRIPPED for {nvr_ip} — skipping requests for {NVR_DOWN_COOLDOWN}s")
+
+def is_nvr_down(nvr_ip: str) -> bool:
+    """Check if an NVR is marked as down"""
+    with nvr_down_lock:
+        deadline = nvr_down_until.get(nvr_ip, 0)
+        if _time.time() < deadline:
+            return True
+        # Expired — clean up
+        nvr_down_until.pop(nvr_ip, None)
+        return False
+
+def clear_nvr_down(nvr_ip: str):
+    """Manually clear circuit breaker for an NVR"""
+    with nvr_down_lock:
+        nvr_down_until.pop(nvr_ip, None)
+    logger.info(f"Circuit breaker CLEARED for {nvr_ip}")
+
 def capture_snapshot(nvr: dict, channel: int) -> Optional[bytes]:
     """Capture frame via NVR's HTTP snapshot endpoint (UNIVIEW only)"""
     # UNIVIEW LAPI snapshot URL pattern
@@ -1262,6 +1332,14 @@ def zmq_frame_handler():
                 socket.send(b"")  # Empty response for error
                 continue
 
+            # Circuit breaker check
+            if is_nvr_down(nvr['ip']):
+                logger.info(f"ZMQ REP: circuit breaker skipping {nvr_id} ch{channel}")
+                with worker_state_lock:
+                    worker_state["zmq_rep"]["errors"] += 1
+                socket.send(b"")
+                continue
+
             # Capture based on source
             if source == "playback":
                 timestamp = req.get("timestamp")
@@ -1292,6 +1370,7 @@ def zmq_frame_handler():
                     worker_state["zmq_rep"]["completed"] += 1
                 socket.send(image_data)
             else:
+                mark_nvr_down_if_unreachable(nvr['ip'])
                 with worker_state_lock:
                     worker_state["zmq_rep"]["errors"] += 1
                 socket.send(b"")  # Empty response for error
@@ -1385,9 +1464,14 @@ def zmq_async_handler():
                 rtsp_url = build_rtsp_url(nvr, channel)
                 image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
 
-            return (identity, request_id, image_data or b"", not image_data, nvr_ip)
+            if image_data:
+                return (identity, request_id, image_data, False, nvr_ip)
+            else:
+                mark_nvr_down_if_unreachable(nvr_ip)
+                return (identity, request_id, b"", True, nvr_ip)
         except Exception as e:
             logger.error(f"Async capture error: {e}")
+            mark_nvr_down_if_unreachable(nvr_ip)
             return (identity, request_id, b"", True, nvr_ip)
 
     in_flight = {}  # request_id -> future
@@ -1444,6 +1528,7 @@ def zmq_async_handler():
 
             # Schedule: find requests for NVRs with available capacity
             to_submit = []
+            to_reject = []  # Requests to NVRs with tripped circuit breaker
             for req_id, req in list(pending_queue.items()):
                 nvr_id = req["nvr"]
                 nvr_ip = get_nvr_ip(nvr_id)
@@ -1452,10 +1537,32 @@ def zmq_async_handler():
                     to_submit.append((req_id, req, None))
                     continue
 
+                # Circuit breaker: reject immediately if NVR is down
+                if is_nvr_down(nvr_ip):
+                    to_reject.append((req_id, req, nvr_ip))
+                    continue
+
                 with nvr_active_lock:
                     if nvr_active_count[nvr_ip] < NVR_MAX_CONCURRENT:
                         nvr_active_count[nvr_ip] += 1
                         to_submit.append((req_id, req, nvr_ip))
+
+            # Reject circuit-breaker'd requests immediately
+            for req_id, req, nvr_ip in to_reject:
+                del pending_queue[req_id]
+                now = _time.time()
+                log_event("CIRCUIT_BREAK", req_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip})
+                logger.info(f"ZMQ async CIRCUIT_BREAK {req_id}: {req['nvr']} ch{req['channel']} — NVR {nvr_ip} down")
+
+                metadata = json.dumps({
+                    "queue_ms": 0, "capture_ms": 0, "total_ms": int((now - req.get("recv_at", now)) * 1000),
+                    "bytes": 0, "error": True, "circuit_breaker": True
+                }).encode('utf-8')
+                socket.send_multipart([req["identity"], b"", req_id.encode('utf-8'), b"", metadata])
+
+                with worker_state_lock:
+                    worker_state["zmq_router"]["pending_requests"].pop(req_id, None)
+                    worker_state["zmq_router"]["errors"] += 1
 
             # Submit scheduled requests
             for req_id, req, nvr_ip in to_submit:
