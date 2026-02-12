@@ -1,3 +1,3 @@
 node server.js
-pause
-0
+1.bat
+

@@ -11,6 +11,8 @@ const errorHandler = require('./middleware/errorHandler');
 const warehousesRouter = require('./routes/api/warehouses');
 const cameraRouter = require('./routes/api/camera');
 const svgRouter = require('./routes/api/svg');
+const nvrRouter = require('./routes/api/nvr');
+const discoveryRouter = require('./routes/api/discovery');
 
 const app = express();
 
@@ -25,6 +27,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Serve camera screenshots from the cameras folder
 app.use('/cameras', express.static(path.join(__dirname, '..', 'cameras')));
 
+// Serve warehouse static files (thumbnails, etc.)
+app.use('/warehouses', express.static(path.join(__dirname, '..', 'warehouses')));
+
 // Serve warehouse3d.html as index
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -34,6 +39,8 @@ app.get('/', (req, res) => {
 app.use('/api/warehouses', warehousesRouter);
 app.use('/api/warehouses', cameraRouter);
 app.use('/api/warehouses', svgRouter);
+app.use('/api/nvrs', nvrRouter);
+app.use('/api/discovery', discoveryRouter);
 
 // Marked position endpoint (for CLI access)
 app.get('/api/warehouses/:id/marked-position', (req, res) => {
@@ -256,6 +263,66 @@ wss.on('connection', (ws) => {
             type: 'save-error',
             warehouseId: data.warehouseId,
             cameraId: data.cameraId,
+            error: error.message
+          }));
+        }
+      }
+
+      // Handle create camera from browser (camera placement mode)
+      else if (data.type === 'create-camera') {
+        console.log(`📷 Creating camera for ${data.warehouseId}:`, data.camera);
+
+        const { execSync } = require('child_process');
+        const cliPath = path.join(__dirname, '..', 'tools', 'modelt-cli.js');
+
+        try {
+          // Build CLI command - add-camera requires slab, use first slab (mercury) by default
+          const cam = data.camera;
+          let cmd = `node "${cliPath}" ${data.warehouseId} add-camera --slab mercury`;
+          cmd += ` --x ${cam.x}`;
+          cmd += ` --y ${cam.y}`;
+          cmd += ` --elevation ${cam.elevation}`;
+          cmd += ` --direction ${cam.direction}`;
+          cmd += ` --tilt ${cam.tilt}`;
+          if (cam.viewingAngle !== undefined) cmd += ` --viewingAngle ${cam.viewingAngle}`;
+          if (cam.range !== undefined) cmd += ` --range ${cam.range}`;
+
+          console.log(`   Running: ${cmd}`);
+          const result = execSync(cmd, { encoding: 'utf8' });
+          console.log(`   ✓ Camera created successfully`);
+
+          // Parse result to get new camera ID
+          let newCameraId = null;
+          try {
+            const resultJson = JSON.parse(result);
+            newCameraId = resultJson.camera?.id;
+          } catch (e) {}
+
+          ws.send(JSON.stringify({
+            type: 'create-confirmed',
+            warehouseId: data.warehouseId,
+            cameraId: newCameraId || cam.id,
+            success: true
+          }));
+
+          // Broadcast reload to all clients viewing this warehouse
+          const warehouseClients = clients.get(data.warehouseId);
+          if (warehouseClients) {
+            warehouseClients.forEach(client => {
+              if (client.readyState === WebSocket.OPEN) {
+                client.send(JSON.stringify({
+                  type: 'reload-warehouse',
+                  warehouseId: data.warehouseId
+                }));
+              }
+            });
+            console.log(`   ✓ Reload sent to ${warehouseClients.size} browser client(s)`);
+          }
+        } catch (error) {
+          console.error(`   ✗ Create failed:`, error.message);
+          ws.send(JSON.stringify({
+            type: 'create-error',
+            warehouseId: data.warehouseId,
             error: error.message
           }));
         }
