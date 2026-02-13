@@ -150,10 +150,10 @@
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0, 0, 0, 0.8);
-            padding: 10px;
-            border-radius: 5px;
+            padding: 6px;
+            border-radius: 4px;
             display: flex;
-            gap: 5px;
+            gap: 3px;
             flex-wrap: wrap;
             max-width: 90%;
             justify-content: center;
@@ -161,11 +161,11 @@
         .cameraBtn {
             background: rgba(255, 100, 100, 0.8);
             color: white;
-            border: 2px solid transparent;
-            padding: 8px 12px;
+            border: 1px solid transparent;
+            padding: 4px 8px;
             border-radius: 3px;
             cursor: pointer;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: bold;
             transition: background 0.2s, border-color 0.2s;
         }
@@ -177,7 +177,7 @@
         }
         .cameraBtn.selected {
             background: rgba(255, 200, 50, 1);
-            border-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.9);
             color: black;
         }
         .overviewBtn {
@@ -188,7 +188,7 @@
         }
         .overviewBtn.selected {
             background: rgba(100, 200, 255, 1);
-            border-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.9);
             color: black;
         }
         .viewToggleBtn {
@@ -304,11 +304,11 @@
         .overlayBtn {
             background: rgba(200, 100, 255, 0.8);
             color: white;
-            border: 2px solid transparent;
-            padding: 8px 12px;
+            border: 1px solid transparent;
+            padding: 4px 8px;
             border-radius: 3px;
             cursor: pointer;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: bold;
             transition: background 0.2s;
         }
@@ -317,7 +317,196 @@
         }
         .overlayBtn.active {
             background: rgba(150, 50, 200, 1);
-            border-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+        }
+        .placeCameraBtn {
+            background: rgba(50, 200, 200, 0.8);
+            color: white;
+            border: 1px solid transparent;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .placeCameraBtn:hover {
+            background: rgba(100, 220, 220, 1);
+        }
+        .placeCameraBtn.active {
+            background: rgba(0, 180, 180, 1);
+            border: 1px solid rgba(255, 255, 0, 0.9);
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        #placementStatus {
+            position: absolute;
+            top: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 180, 180, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: bold;
+            display: none;
+            z-index: 100;
+        }
+        #placementStatus.active {
+            display: block;
+        }
+        /* Camera Mapping Panel */
+        .mapCameraBtn {
+            background: rgba(255, 180, 50, 0.8);
+            color: black;
+            border: 1px solid transparent;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+        .mapCameraBtn:hover {
+            background: rgba(255, 200, 100, 1);
+        }
+        .mapCameraBtn.active {
+            background: rgba(255, 220, 50, 1);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+        }
+        .mapCameraBtn:disabled {
+            background: rgba(150, 150, 150, 0.5);
+            cursor: not-allowed;
+        }
+        #cameraMappingPanel {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.95);
+            border: 2px solid rgba(255, 180, 50, 0.8);
+            border-radius: 8px;
+            padding: 15px;
+            z-index: 200;
+            display: none;
+            max-width: 90vw;
+            max-height: 85vh;
+            overflow: auto;
+        }
+        #cameraMappingPanel.active {
+            display: block;
+        }
+        #cameraMappingPanel h3 {
+            margin: 0 0 10px 0;
+            color: rgba(255, 180, 50, 1);
+            font-size: 14px;
+            text-align: center;
+        }
+        #cameraMappingPanel .instructions {
+            color: #aaa;
+            font-size: 11px;
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        #thumbnailGrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 8px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        .thumbnailCard {
+            background: rgba(40, 40, 40, 1);
+            border: 2px solid transparent;
+            border-radius: 4px;
+            padding: 6px;
+            cursor: pointer;
+            transition: border-color 0.2s, transform 0.1s;
+        }
+        .thumbnailCard:hover {
+            border-color: rgba(255, 180, 50, 0.6);
+            transform: scale(1.02);
+        }
+        .thumbnailCard.mapped {
+            border-color: rgba(100, 200, 100, 0.8);
+        }
+        .thumbnailCard.mapped::after {
+            content: '✓';
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(100, 200, 100, 0.9);
+            color: white;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .thumbnailCard img {
+            width: 100%;
+            height: 90px;
+            object-fit: cover;
+            border-radius: 2px;
+        }
+        .thumbnailCard .label {
+            color: white;
+            font-size: 10px;
+            text-align: center;
+            margin-top: 4px;
+            font-weight: bold;
+        }
+        .thumbnailCard .sublabel {
+            color: #888;
+            font-size: 9px;
+            text-align: center;
+        }
+        #mappingPanelClose {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(200, 50, 50, 0.8);
+            color: white;
+            border: none;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+        }
+        #mappingPanelClose:hover {
+            background: rgba(255, 80, 80, 1);
+        }
+        #nvrTabs {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            justify-content: center;
+        }
+        .nvrTab {
+            background: rgba(60, 60, 60, 1);
+            color: #aaa;
+            border: 1px solid rgba(100, 100, 100, 0.5);
+            padding: 4px 12px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: bold;
+        }
+        .nvrTab:hover {
+            background: rgba(80, 80, 80, 1);
+        }
+        .nvrTab.active {
+            background: rgba(255, 180, 50, 0.8);
+            color: black;
+            border-color: rgba(255, 180, 50, 1);
         }
     </style>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
@@ -353,7 +542,10 @@
     <div id="cameraControls">
         <button class="cameraBtn overviewBtn" onclick="setCameraView('overview', this)">Overview</button>
         <button id="overlayToggleBtn" class="overlayBtn" onclick="toggleOverlay()" style="margin-left: 15px;">Show Image</button>
+        <button id="placeCameraBtn" class="placeCameraBtn" onclick="togglePlaceCameraMode()" style="margin-left: 15px;">Place Camera</button>
+        <button id="mapCameraBtn" class="mapCameraBtn" onclick="openMappingPanel()" style="margin-left: 15px;" disabled>Map Camera</button>
     </div>
+    <div id="placementStatus">Click a wall or column to set camera mount point</div>
     <div id="debug">
         <strong>Debug Info:</strong><br>
         <div id="debugContent"></div>
@@ -492,6 +684,15 @@
         <button class="overlayBtn" onclick="toggleOverlay()">Hide Overlay</button>
     </div>
 
+    <!-- Camera Mapping Panel -->
+    <div id="cameraMappingPanel">
+        <button id="mappingPanelClose" onclick="closeMappingPanel()">×</button>
+        <h3>Map Camera: <span id="mappingCameraName">-</span></h3>
+        <div class="instructions">Select the real camera feed that matches this 3D view</div>
+        <div id="nvrTabs"></div>
+        <div id="thumbnailGrid"></div>
+    </div>
+
     <script>
         const canvas = document.getElementById("renderCanvas");
         const engine = new BABYLON.Engine(canvas, true);
@@ -514,6 +715,197 @@
         let ws = null;
         let viewMarker = null;  // Floating marker box in front of camera
         let overlayActive = false;
+
+        // Camera Placement Mode
+        let placementMode = false;
+        let placementStep = 0;  // 0=inactive, 1=waiting for mount point, 2=waiting for target
+        let placementMountPoint = null;  // {position: Vector3, normal: Vector3}
+        let placementMarker = null;  // Visual marker for mount point
+
+        // Camera Mapping
+        let cameraMappings = {};  // { digitalTwinCameraId: { nvrId, channel } }
+        let availableThumbnails = [];  // Loaded from API
+        let currentNvrTab = null;
+
+        // Camera Mapping Functions
+        async function openMappingPanel() {
+            console.log('openMappingPanel called, currentCameraData:', currentCameraData);
+
+            if (!currentCameraData) {
+                alert('Select a camera view first');
+                return;
+            }
+
+            const panel = document.getElementById('cameraMappingPanel');
+            console.log('cameraMappingPanel element:', panel);
+
+            if (!panel) {
+                console.error('cameraMappingPanel element not found!');
+                return;
+            }
+
+            document.getElementById('mappingCameraName').textContent =
+                `${currentCameraData.name} (#${currentCameraData.number})`;
+
+            panel.classList.add('active');
+            console.log('Panel activated, classList:', panel.classList);
+
+            // Fetch available thumbnails from API
+            await loadThumbnails();
+        }
+
+        function closeMappingPanel() {
+            document.getElementById('cameraMappingPanel').classList.remove('active');
+        }
+
+        async function loadThumbnails() {
+            // Fetch thumbnails from Express server, filtered to nvr1 (GW Security) only
+            const baseUrl = 'http://localhost:5173';
+            console.log('loadThumbnails called, currentWarehouseId:', currentWarehouseId);
+            try {
+                // Filter to nvr1 (GW Security at 192.168.0.165) - our cameras
+                const resp = await fetch(`${baseUrl}/api/warehouses/${currentWarehouseId}/thumbnails?nvr=nvr1`);
+                const data = await resp.json();
+                console.log('Thumbnails API response:', data.count, 'thumbnails (nvr filter:', data.nvrFilter, ')');
+                availableThumbnails = (data.thumbnails || []).map(t => ({
+                    cameraId: t.id,
+                    channel: 0,
+                    thumbnailUrl: `${baseUrl}${t.url}`,
+                    label: t.id
+                }));
+                console.log('availableThumbnails:', availableThumbnails.length);
+            } catch (err) {
+                console.error('Failed to load thumbnails:', err);
+                availableThumbnails = [];
+            }
+            availableThumbnails.sort((a, b) => a.cameraId.localeCompare(b.cameraId));
+            renderNvrTabs([]);
+            renderThumbnailGrid();
+            console.log('renderThumbnailGrid done, grid children:', document.getElementById('thumbnailGrid')?.children.length);
+        }
+
+        function renderNvrTabs(nvrs) {
+            const tabsContainer = document.getElementById('nvrTabs');
+            tabsContainer.innerHTML = '';
+
+            if (nvrs.length <= 1) {
+                currentNvrTab = nvrs[0]?.id || null;
+                return;
+            }
+
+            // Add "All" tab
+            const allTab = document.createElement('button');
+            allTab.className = 'nvrTab active';
+            allTab.textContent = 'All';
+            allTab.onclick = () => selectNvrTab(null, allTab);
+            tabsContainer.appendChild(allTab);
+
+            nvrs.forEach(nvr => {
+                const tab = document.createElement('button');
+                tab.className = 'nvrTab';
+                tab.textContent = nvr.name;
+                tab.onclick = () => selectNvrTab(nvr.id, tab);
+                tabsContainer.appendChild(tab);
+            });
+
+            currentNvrTab = null;  // Show all by default
+        }
+
+        function selectNvrTab(nvrId, tabElement) {
+            // Update active tab
+            document.querySelectorAll('.nvrTab').forEach(t => t.classList.remove('active'));
+            tabElement.classList.add('active');
+
+            currentNvrTab = nvrId;
+            renderThumbnailGrid();
+        }
+
+        function renderThumbnailGrid() {
+            const grid = document.getElementById('thumbnailGrid');
+            grid.innerHTML = '';
+
+            const filtered = currentNvrTab
+                ? availableThumbnails.filter(t => t.nvrId === currentNvrTab)
+                : availableThumbnails;
+
+            filtered.forEach(thumb => {
+                const card = document.createElement('div');
+                card.className = 'thumbnailCard';
+                card.style.position = 'relative';
+
+                // Check if this channel is already mapped to current camera
+                const mapping = cameraMappings[currentCameraData?.id];
+                if (mapping && mapping.nvrId === thumb.nvrId && mapping.channel === thumb.channel) {
+                    card.classList.add('mapped');
+                }
+
+                const img = document.createElement('img');
+                img.src = thumb.thumbnailUrl;
+                img.alt = `${thumb.nvrName} Ch${thumb.channel}`;
+                img.onerror = () => {
+                    // Show placeholder on error
+                    img.src = 'data:image/svg+xml,' + encodeURIComponent(
+                        `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90" viewBox="0 0 160 90">
+                            <rect fill="#333" width="160" height="90"/>
+                            <text x="80" y="45" fill="#666" text-anchor="middle" font-size="12">No Signal</text>
+                            <text x="80" y="60" fill="#888" text-anchor="middle" font-size="10">Ch ${thumb.channel}</text>
+                        </svg>`
+                    );
+                };
+
+                const label = document.createElement('div');
+                label.className = 'label';
+                label.textContent = thumb.label || `Channel ${thumb.channel}`;
+
+                const sublabel = document.createElement('div');
+                sublabel.className = 'sublabel';
+                sublabel.textContent = thumb.nvrName;
+
+                card.appendChild(img);
+                card.appendChild(label);
+                card.appendChild(sublabel);
+
+                card.onclick = () => selectThumbnailMapping(thumb, card);
+
+                grid.appendChild(card);
+            });
+        }
+
+        function selectThumbnailMapping(thumb, cardElement) {
+            if (!currentCameraData) return;
+
+            // Save mapping
+            cameraMappings[currentCameraData.id] = {
+                nvrId: thumb.nvrId,
+                channel: thumb.channel,
+                label: thumb.label
+            };
+
+            console.log(`Mapped ${currentCameraData.name} → ${thumb.nvrName} Ch${thumb.channel}`);
+
+            // Send to server via WebSocket
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'save-camera-mapping',
+                    warehouseId: currentWarehouseId,
+                    cameraId: currentCameraData.id,
+                    mapping: {
+                        nvrId: thumb.nvrId,
+                        channel: thumb.channel
+                    }
+                }));
+            }
+
+            // Visual feedback
+            document.querySelectorAll('.thumbnailCard').forEach(c => c.classList.remove('mapped'));
+            cardElement.classList.add('mapped');
+
+            // Flash success and close
+            cardElement.style.borderColor = 'rgba(100, 255, 100, 1)';
+            setTimeout(() => {
+                closeMappingPanel();
+            }, 500);
+        }
 
         // Camera Image Overlay Functions
         function toggleOverlay() {
@@ -587,6 +979,210 @@
             const label = document.getElementById('opacityValue');
             img.style.opacity = value / 100;
             label.textContent = value + '%';
+        }
+
+        // Camera Placement Mode Functions
+        function togglePlaceCameraMode() {
+            const btn = document.getElementById('placeCameraBtn');
+            const statusEl = document.getElementById('placementStatus');
+
+            placementMode = !placementMode;
+
+            if (placementMode) {
+                // Enter placement mode
+                placementStep = 1;
+                btn.classList.add('active');
+                btn.textContent = 'Cancel Placement';
+                statusEl.textContent = 'Step 1: Click a wall or column to set camera mount point';
+                statusEl.classList.add('active');
+
+                // Switch to overview camera for better placement
+                if (currentScene.activeCamera !== arcRotateCamera) {
+                    setCameraView('overview', document.querySelector('.overviewBtn'));
+                }
+
+                console.log('📷 Camera placement mode ACTIVATED');
+            } else {
+                // Exit placement mode
+                exitPlacementMode();
+            }
+        }
+
+        function exitPlacementMode() {
+            const btn = document.getElementById('placeCameraBtn');
+            const statusEl = document.getElementById('placementStatus');
+
+            placementMode = false;
+            placementStep = 0;
+            placementMountPoint = null;
+
+            btn.classList.remove('active');
+            btn.textContent = 'Place Camera';
+            statusEl.classList.remove('active');
+
+            // Remove placement marker if exists
+            if (placementMarker) {
+                placementMarker.dispose();
+                placementMarker = null;
+            }
+
+            console.log('📷 Camera placement mode DEACTIVATED');
+        }
+
+        function handlePlacementClick(pickResult) {
+            if (!placementMode || !pickResult.hit) return false;
+
+            const statusEl = document.getElementById('placementStatus');
+
+            if (placementStep === 1) {
+                // Step 1: Set mount point
+                const mesh = pickResult.pickedMesh;
+
+                // Only allow clicking on walls, columns, or ceilings
+                const validSurface = mesh.name && (
+                    mesh.name.includes('_seg') ||
+                    mesh.name.includes('column') ||
+                    mesh.name.includes('partition')
+                );
+
+                if (!validSurface) {
+                    statusEl.textContent = 'Step 1: Click a WALL or COLUMN (not floor/slab)';
+                    statusEl.style.background = 'rgba(200, 50, 50, 0.9)';
+                    setTimeout(() => {
+                        statusEl.style.background = 'rgba(0, 180, 180, 0.9)';
+                    }, 1000);
+                    return true;  // Consumed the click
+                }
+
+                // Store mount point
+                placementMountPoint = {
+                    position: pickResult.pickedPoint.clone(),
+                    normal: pickResult.getNormal(true),
+                    meshName: mesh.name
+                };
+
+                // Create visual marker at mount point (cyan sphere)
+                if (placementMarker) placementMarker.dispose();
+                placementMarker = BABYLON.MeshBuilder.CreateSphere(
+                    'placementMarker',
+                    { diameter: 1.5 },
+                    currentScene
+                );
+                placementMarker.position = placementMountPoint.position;
+                const markerMat = new BABYLON.StandardMaterial('placementMarkerMat', currentScene);
+                markerMat.diffuseColor = new BABYLON.Color3(0, 1, 1);  // Cyan
+                markerMat.emissiveColor = new BABYLON.Color3(0, 0.5, 0.5);
+                placementMarker.material = markerMat;
+
+                // Move to step 2
+                placementStep = 2;
+                statusEl.textContent = 'Step 2: Click floor/wall to set camera target point';
+
+                console.log('📷 Mount point set:', placementMountPoint.position, 'on', mesh.name);
+                return true;  // Consumed the click
+            }
+
+            if (placementStep === 2) {
+                // Step 2: Set target point and create camera
+                const targetPoint = pickResult.pickedPoint.clone();
+
+                // Calculate camera parameters from mount and target
+                const cameraParams = calculateCameraParams(placementMountPoint.position, targetPoint);
+
+                console.log('📷 Target point set:', targetPoint);
+                console.log('📷 Calculated camera params:', cameraParams);
+
+                // Create camera via WebSocket
+                createNewCamera(cameraParams);
+
+                // Exit placement mode
+                exitPlacementMode();
+                return true;  // Consumed the click
+            }
+
+            return false;
+        }
+
+        function calculateCameraParams(mountPoint, targetPoint) {
+            // Mount point is in Babylon coords (X, Y, Z)
+            // Convert back to SVG coords for storage
+            const svgX = mountPoint.x;
+            const svgY = -mountPoint.z;  // Babylon Z = -SVG Y
+
+            // Calculate elevation above slab (assume slab at Y=4)
+            const slabTop = 4;
+            const elevation = mountPoint.y - slabTop;
+
+            // Calculate direction (bearing from camera to target)
+            const dx = targetPoint.x - mountPoint.x;
+            const dz = targetPoint.z - mountPoint.z;  // In Babylon coords
+
+            // Direction: 0=North(-Z), 90=East(+X), 180=South(+Z), 270=West(-X)
+            // atan2 gives angle from +X axis, we need angle from -Z axis
+            let direction = Math.atan2(dx, -dz) * 180 / Math.PI;
+            if (direction < 0) direction += 360;
+
+            // Calculate tilt (angle down from horizontal)
+            const horizontalDist = Math.sqrt(dx * dx + dz * dz);
+            const verticalDist = mountPoint.y - targetPoint.y;
+            const tilt = Math.atan2(verticalDist, horizontalDist) * 180 / Math.PI;
+
+            // Calculate range (distance to target)
+            const range = Math.sqrt(dx * dx + dz * dz + Math.pow(mountPoint.y - targetPoint.y, 2));
+
+            return {
+                x: Math.round(svgX * 10) / 10,
+                y: Math.round(svgY * 10) / 10,
+                elevation: Math.round(elevation * 10) / 10,
+                direction: Math.round(direction),
+                tilt: Math.round(tilt * 10) / 10,
+                viewingAngle: 90,  // Default FOV
+                range: Math.round(range)
+            };
+        }
+
+        function createNewCamera(params) {
+            // Generate a new camera ID (food name)
+            const foodNames = ['apple', 'banana', 'cherry', 'donut', 'eclair', 'fudge', 'grape', 'honey'];
+            const existingIds = warehouseCameras.map(c => c.id);
+            let newId = null;
+
+            for (const name of foodNames) {
+                if (!existingIds.includes(name)) {
+                    newId = name;
+                    break;
+                }
+            }
+
+            if (!newId) {
+                newId = 'camera_' + Date.now();
+            }
+
+            const newCamera = {
+                id: newId,
+                name: newId.charAt(0).toUpperCase() + newId.slice(1),
+                number: warehouseCameras.length + 1,
+                ...params
+            };
+
+            // Send to server via WebSocket
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'create-camera',
+                    warehouseId: currentWarehouseId,
+                    camera: newCamera
+                }));
+
+                console.log('📷 Created new camera:', newCamera);
+
+                // Show feedback
+                const statusEl = document.getElementById('status');
+                statusEl.textContent = `Camera "${newId}" created! Reloading...`;
+
+                // The server should trigger a reload after creating the camera
+            } else {
+                alert('WebSocket not connected. Cannot create camera.');
+            }
         }
 
         // WebSocket setup
@@ -1167,8 +1763,13 @@
         }
 
         function updateCameraInfoPanel(cam) {
+            console.log('updateCameraInfoPanel called for:', cam.id);
             document.getElementById('cameraInfo').style.display = 'block';
             document.getElementById('cameraName').textContent = `${cam.name || cam.id} (#${cam.number || '?'})`;
+            const mapBtn = document.getElementById('mapCameraBtn');
+            console.log('mapCameraBtn before enable:', mapBtn, 'disabled:', mapBtn?.disabled);
+            mapBtn.disabled = false;
+            console.log('mapCameraBtn after enable, disabled:', mapBtn.disabled);
 
             currentCameraData = {
                 id: cam.id,
@@ -1357,9 +1958,16 @@
         // Door editing functions
         let currentDoorData = null;
 
-        // Setup door label click detection via scene pointer
+        // Setup scene pointer for door labels and camera placement
         function setupDoorLabelClicking(scene) {
             scene.onPointerDown = function(evt, pickResult) {
+                // First, check if we're in placement mode
+                if (placementMode && pickResult.hit) {
+                    const consumed = handlePlacementClick(pickResult);
+                    if (consumed) return;  // Placement handled the click
+                }
+
+                // Otherwise, check for door label clicks
                 if (pickResult.hit && pickResult.pickedMesh) {
                     const mesh = pickResult.pickedMesh;
                     if (mesh.metadata && mesh.metadata.isDoorLabel) {
@@ -1480,6 +2088,7 @@
 
             if (cameraId === 'overview') {
                 document.getElementById('cameraInfo').style.display = 'none';
+                document.getElementById('mapCameraBtn').disabled = true;
 
                 // Remove view marker when switching to overview
                 if (viewMarker) {
