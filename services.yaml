@@ -6,13 +6,6 @@ services:
     port: 5173
     autostart: true
 
-  camera-service:
-    name: Camera Service
-    command: python api/server.py
-    cwd: camera-service
-    port: 8001
-    autostart: true
-
   asksam:
     name: AskSAM
     command: docker-compose up
@@ -20,8 +13,15 @@ services:
     port: 8000
     autostart: false
 
+  camera-service:
+    name: Cameras
+    command: python api/server.py
+    cwd: camera-service
+    port: 8001
+    autostart: false
+
   detection:
-    name: Detection Service
+    name: AprilTag Detection
     command: python detection-service.py
     port: 8002
     autostart: false
