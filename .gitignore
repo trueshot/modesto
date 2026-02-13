@@ -9,3 +9,5 @@ __pycache__/
 nul
 tmpclaude-*-cwd
 *.log
+/zpl_output/
+/test-output/
