@@ -241,7 +241,21 @@ def get_monitor_status():
                 "stats": active["stats"]
             }
         else:
-            state["tag_scan"] = {"active": False}
+            # Show last completed scan stats until next scan or manual clear
+            if tag_scan_state["history"]:
+                last = tag_scan_state["history"][-1]
+                elapsed = round(last["finished_at"] - last["started_at"], 1)
+                fps = round(last["stats"]["frames_pushed"] / elapsed, 2) if elapsed > 0 else 0
+                state["tag_scan"] = {
+                    "active": False,
+                    "scan_id": last["scan_id"],
+                    "status": last["status"],
+                    "elapsed_sec": elapsed,
+                    "remaining_sec": 0,
+                    "stats": last["stats"]
+                }
+            else:
+                state["tag_scan"] = {"active": False}
 
     return state
 
@@ -1692,12 +1706,15 @@ class TagScanRequest(BaseModel):
     cameras: List[TagScanCamera]
     timeout: int = 30
     push_to: str = "tcp://127.0.0.1:5557"
+    scan_id: Optional[str] = None  # Client-provided ID; server generates if omitted
 
-def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, stop_event: threading.Event):
+def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_lock: threading.Lock, stop_event: threading.Event):
     """
-    Round-robin capture for one NVR's channels.
-    Runs until timeout or stop_event is set.
+    N worker threads per NVR, round-robining channels from a shared queue.
+    N = NVR_MAX_CONCURRENT (request/response model chokes beyond that).
     """
+    import queue
+
     nvr = get_nvr_info(nvr_id)
     if not nvr:
         logger.error(f"Tag scan: NVR '{nvr_id}' not found")
@@ -1707,62 +1724,87 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, stop_e
     started_at = scan["started_at"]
     timeout = scan["timeout"]
 
-    while not stop_event.is_set():
-        if _time.time() - started_at >= timeout:
-            break
+    # Channel queue — workers pull next channel, capture, re-enqueue
+    ch_queue = queue.Queue()
+    for ch in channels:
+        ch_queue.put(ch)
 
-        cycle_did_work = False
-        for channel in channels:
-            if stop_event.is_set() or _time.time() - started_at >= timeout:
+    def worker():
+        import uuid
+        while not stop_event.is_set():
+            if _time.time() - started_at >= timeout:
                 break
 
-            # Circuit breaker check
             if is_nvr_down(nvr_ip):
-                _time.sleep(5)  # Don't spin — wait before retrying
-                break  # Skip rest of cycle, retry next cycle
+                _time.sleep(5)
+                continue
+
+            try:
+                channel = ch_queue.get(timeout=0.5)
+            except queue.Empty:
+                continue
+
+            req_id = f"ts-{uuid.uuid4().hex[:8]}"
+            log_event("START", req_id, nvr_id, channel, "tagscan")
+            cap_start = _time.time()
 
             rtsp_url = build_rtsp_url(nvr, channel)
             jpeg = camera_capture.capture_frame(rtsp_url, timeout=8)
 
+            cap_sec = round(_time.time() - cap_start, 3)
+
+            # Re-enqueue channel for next round
+            ch_queue.put(channel)
+
             if not jpeg:
                 mark_nvr_down_if_unreachable(nvr_ip)
+                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec})
                 with tag_scan_lock:
                     scan["stats"]["frames_failed"] += 1
                 if is_nvr_down(nvr_ip):
-                    break  # NVR confirmed down, skip rest of cycle
-                continue  # Channel issue, try next channel
+                    _time.sleep(5)
+                continue
 
-            # Push frame
             try:
                 ts = str(_time.time()).encode('utf-8')
-                push_socket.send_multipart([
-                    nvr_id.encode('utf-8'),
-                    str(channel).encode('utf-8'),
-                    jpeg,
-                    ts
-                ], zmq.NOBLOCK)
-                cycle_did_work = True
+                with push_lock:
+                    push_socket.send_multipart([
+                        nvr_id.encode('utf-8'),
+                        str(channel).encode('utf-8'),
+                        jpeg,
+                        ts
+                    ], zmq.NOBLOCK)
+                log_event("DONE", req_id, nvr_id, channel, "tagscan", {"bytes": len(jpeg), "capture_sec": cap_sec})
                 with tag_scan_lock:
                     scan["stats"]["frames_pushed"] += 1
                     scan["stats"]["bytes_pushed"] += len(jpeg)
             except zmq.Again:
                 logger.warning(f"Tag scan: ZMQ send buffer full, dropping {nvr_id} ch{channel}")
+                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec, "drop": True})
                 with tag_scan_lock:
                     scan["stats"]["frames_failed"] += 1
             except Exception as e:
                 logger.error(f"Tag scan: ZMQ send error: {e}")
+                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec})
                 with tag_scan_lock:
                     scan["stats"]["frames_failed"] += 1
 
-        if cycle_did_work:
-            with tag_scan_lock:
-                scan["stats"]["cycles_completed"] += 1
+    n_workers = min(NVR_MAX_CONCURRENT, len(channels))
+    threads = []
+    for _ in range(n_workers):
+        t = threading.Thread(target=worker, daemon=True)
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join()
 
 def _tag_scan_coordinator(scan):
     """Spawns one worker thread per NVR, waits for all to finish, cleans up."""
     try:
         stop_event = scan["stop_event"]
         push_socket = scan["push_socket"]
+        push_lock = threading.Lock()  # ZMQ socket not thread-safe
 
         # Group cameras by NVR
         from collections import defaultdict
@@ -1773,17 +1815,17 @@ def _tag_scan_coordinator(scan):
         with tag_scan_lock:
             scan["status"] = "running"
 
-        # One thread per NVR
+        # One thread per NVR (each spawns per-channel threads internally)
         threads = []
         for nvr_id, channels in cameras_by_nvr.items():
             t = threading.Thread(
                 target=_nvr_scan_worker,
-                args=(scan, nvr_id, channels, push_socket, stop_event),
+                args=(scan, nvr_id, channels, push_socket, push_lock, stop_event),
                 daemon=True
             )
             threads.append(t)
             t.start()
-            logger.info(f"Tag scan {scan['scan_id']}: started worker for {nvr_id} ({len(channels)} channels)")
+            logger.info(f"Tag scan {scan['scan_id']}: started worker for {nvr_id} ({len(channels)} channels, 1 thread/channel)")
 
         # Wait for all workers
         for t in threads:
@@ -1850,7 +1892,7 @@ def start_tag_scan(request: TagScanRequest):
 
     # Create ZMQ PUSH socket
     import uuid
-    scan_id = str(uuid.uuid4())[:8]
+    scan_id = request.scan_id or str(uuid.uuid4())[:8]
     ctx = zmq.Context()
     push_socket = ctx.socket(zmq.PUSH)
     push_socket.setsockopt(zmq.SNDTIMEO, 1000)  # 1s send timeout
@@ -1988,7 +2030,7 @@ def monitor_page():
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #1a1a2e; color: #eee; padding: 20px; }
         h1 { color: #00d4ff; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
         .panel { background: #16213e; border-radius: 8px; padding: 20px; }
         .panel h2 { color: #00d4ff; font-size: 14px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px solid #0f3460; padding-bottom: 10px; }
         .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #0f3460; }
@@ -2053,6 +2095,33 @@ def monitor_page():
                 <span class="stat-value" id="router-bytes">-</span>
             </div>
             <div class="active-list" id="router-requests"></div>
+        </div>
+        <div class="panel" id="push-panel">
+            <h2>PUSH :5557 (Tag Scan)</h2>
+            <div class="stat">
+                <span class="stat-label">Status</span>
+                <span class="stat-value" id="push-status">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Scan ID</span>
+                <span class="stat-value" id="push-scan-id">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Pushed / Failed</span>
+                <span class="stat-value"><span id="push-pushed" style="color:#00ff88">-</span> / <span id="push-failed" style="color:#ff6b6b">-</span></span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Throughput</span>
+                <span class="stat-value" id="push-fps">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Data</span>
+                <span class="stat-value" id="push-bytes">-</span>
+            </div>
+            <div class="stat">
+                <span class="stat-label">Elapsed / Remaining</span>
+                <span class="stat-value" id="push-time">-</span>
+            </div>
         </div>
     </div>
     <div class="panel" style="margin-top: 20px;">
@@ -2123,6 +2192,33 @@ def monitor_page():
                     listEl.innerHTML = pending + active;
                 }
 
+                // PUSH :5557 (Tag Scan)
+                const ts = data.tag_scan;
+                const pushStatus = document.getElementById('push-status');
+                if (ts && ts.scan_id) {
+                    const fps = ts.elapsed_sec > 0 ? (ts.stats.frames_pushed / ts.elapsed_sec).toFixed(2) : '0';
+                    const mb = (ts.stats.bytes_pushed / (1024*1024)).toFixed(1);
+                    pushStatus.textContent = ts.status;
+                    pushStatus.className = 'stat-value status-' + (ts.active ? ts.status : 'idle');
+                    document.getElementById('push-scan-id').textContent = ts.scan_id;
+                    document.getElementById('push-pushed').textContent = ts.stats.frames_pushed;
+                    document.getElementById('push-failed').textContent = ts.stats.frames_failed;
+                    document.getElementById('push-fps').textContent = fps + ' fps';
+                    document.getElementById('push-bytes').textContent = mb + ' MB';
+                    document.getElementById('push-time').textContent = ts.active
+                        ? ts.elapsed_sec + 's / ' + ts.remaining_sec + 's'
+                        : ts.elapsed_sec + 's (done)';
+                } else {
+                    pushStatus.textContent = 'idle';
+                    pushStatus.className = 'stat-value status-idle';
+                    document.getElementById('push-scan-id').textContent = '-';
+                    document.getElementById('push-pushed').textContent = '-';
+                    document.getElementById('push-failed').textContent = '-';
+                    document.getElementById('push-fps').textContent = '-';
+                    document.getElementById('push-bytes').textContent = '-';
+                    document.getElementById('push-time').textContent = '-';
+                }
+
                 // Event log
                 renderEventLog(data.zmq_router.event_log || []);
             } catch (e) {
@@ -2154,14 +2250,22 @@ def monitor_page():
                 const color = typeColors[e.type] || '#888';
                 let extra = '';
                 if (e.type === 'DONE') {
-                    const kb = Math.round(e.bytes / 1024);
-                    extra = ` <span style="color:#666">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s, ${kb}KB]</span>`;
+                    const kb = Math.round((e.bytes || 0) / 1024);
+                    if (e.queue_sec != null) {
+                        extra = ` <span style="color:#666">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s, ${kb}KB]</span>`;
+                    } else {
+                        extra = ` <span style="color:#666">[cap:${e.capture_sec}s, ${kb}KB]</span>`;
+                    }
                 }
                 if (e.type === 'ERROR') {
-                    extra = ` <span style="color:#ff6b6b">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s]</span>`;
+                    if (e.queue_sec != null) {
+                        extra = ` <span style="color:#ff6b6b">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s]</span>`;
+                    } else {
+                        extra = ` <span style="color:#ff6b6b">[cap:${e.capture_sec || '?'}s]</span>`;
+                    }
                 }
                 if (e.type === 'START') {
-                    extra = e.queue_sec > 0.1 ? ` <span style="color:#ffd700">[queued ${e.queue_sec}s]</span>` : '';
+                    extra = (e.queue_sec && e.queue_sec > 0.1) ? ` <span style="color:#ffd700">[queued ${e.queue_sec}s]</span>` : '';
                 }
                 const seq = e.seq ? `#${e.seq}` : '';
                 return `<div><span style="color:#444">${seq.padStart(5)}</span> <span style="color:#555">${time}</span> <span style="color:${color};font-weight:bold;">${e.type.padEnd(5)}</span> <span style="color:#00d4ff">${e.id}</span> ${e.nvr} ch${e.ch} ${e.src}${extra}</div>`;
