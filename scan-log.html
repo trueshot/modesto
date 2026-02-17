@@ -153,6 +153,17 @@
         <div class="log-lines" id="logLines"></div>
     </div>
 
+    <div class="log-container" id="rawContainer" style="display: none; margin-top: 16px;">
+        <div class="log-header">
+            <span>Raw JSONL</span>
+            <div>
+                <button class="btn-small" id="rawAutoscrollBtn" onclick="toggleRawAutoscroll()">Auto-scroll: ON</button>
+                <button class="btn-small" onclick="clearRaw()">Clear</button>
+            </div>
+        </div>
+        <div class="log-lines" id="rawLines" style="font-size: 11px; line-height: 1.4; color: #777; word-break: break-all; white-space: pre-wrap;"></div>
+    </div>
+
 <script>
 const DETECTION_SERVICE = window.location.port === '8002' ? '' : 'http://localhost:8002';
 let allCameras = [];  // from /cameras endpoint
@@ -161,6 +172,7 @@ let scanId = null;
 let pollInterval = null;
 let logOffset = 0;
 let autoscroll = true;
+let rawAutoscroll = true;
 let totalLines = 0;
 
 // ── Camera selector ──
@@ -306,7 +318,9 @@ async function startScan() {
     document.getElementById('stopBtn').disabled = false;
     document.getElementById('statusBar').style.display = 'flex';
     document.getElementById('logContainer').style.display = 'block';
+    document.getElementById('rawContainer').style.display = 'block';
     document.getElementById('logLines').innerHTML = '';
+    document.getElementById('rawLines').innerHTML = '';
     document.getElementById('summary').innerHTML = '';
     logOffset = 0;
     totalLines = 0;
@@ -379,7 +393,11 @@ async function pollScan() {
         if (status.cameras) {
             const summary = document.getElementById('summary');
             summary.innerHTML = '';
-            for (const [key, cam] of Object.entries(status.cameras)) {
+            for (const [key, cam] of Object.entries(status.cameras).sort((a, b) => {
+                const [nvrA, chA] = a[0].split('/');
+                const [nvrB, chB] = b[0].split('/');
+                return nvrA.localeCompare(nvrB) || (parseInt(chA) || 0) - (parseInt(chB) || 0);
+            })) {
                 const chip = document.createElement('div');
                 chip.className = 'cam-chip';
                 chip.innerHTML = `<span class="label">${key}</span> ` +
@@ -398,9 +416,14 @@ async function pollScan() {
                 // ts might be Unix epoch or relative seconds — detect and format accordingly
                 let ts;
                 if (entry.ts > 1e9) {
-                    ts = new Date(entry.ts * 1000).toLocaleTimeString('en-US', {hour12: false, fractionalSecondDigits: 1});
+                    const d = new Date(entry.ts * 1000);
+                    const hh = String(d.getHours()).padStart(2, '0');
+                    const mm = String(d.getMinutes()).padStart(2, '0');
+                    const ss = String(d.getSeconds()).padStart(2, '0');
+                    const ms = String(Math.floor(d.getMilliseconds() / 100));
+                    ts = `${hh}:${mm}:${ss}.${ms}`;
                 } else {
-                    ts = entry.ts.toFixed(1) + 's';
+                    ts = Number(entry.ts).toFixed(1) + 's';
                 }
                 if (entry.type === 'frame') {
                     // Frame event — show even with 0 tags
@@ -425,6 +448,18 @@ async function pollScan() {
                 }
                 container.appendChild(div);
             }
+            // Raw JSONL
+            const rawContainer = document.getElementById('rawLines');
+            for (const entry of log.lines) {
+                const div = document.createElement('div');
+                div.textContent = JSON.stringify(entry);
+                rawContainer.appendChild(div);
+            }
+            if (rawAutoscroll) {
+                document.getElementById('rawContainer').scrollTop =
+                    document.getElementById('rawContainer').scrollHeight;
+            }
+
             logOffset = log.nextOffset;
             totalLines += log.lines.length;
             document.getElementById('logCount').textContent = `${totalLines} lines`;
@@ -441,6 +476,24 @@ async function pollScan() {
             pollInterval = null;
             resetControls();
             appendLogLine(`Scan complete \u2014 ${status.total_observations} observations, ${status.unique_tags} unique tags`);
+
+            // Per-NVR FPS summary
+            if (status.cameras && status.elapsed_s > 0) {
+                const byNvr = {};
+                for (const [key, cam] of Object.entries(status.cameras)) {
+                    const nvr = key.split('/')[0];
+                    if (!byNvr[nvr]) byNvr[nvr] = { frames: 0, channels: 0, tags: 0 };
+                    byNvr[nvr].frames += cam.frames;
+                    byNvr[nvr].channels += 1;
+                    byNvr[nvr].tags += cam.unique_tags;
+                }
+                appendLogLine('');
+                appendLogLine('Per-NVR throughput:');
+                for (const [nvr, info] of Object.entries(byNvr).sort()) {
+                    const fps = (info.frames / status.elapsed_s).toFixed(2);
+                    appendLogLine(`  ${nvr}: ${info.frames} frames / ${status.elapsed_s}s = ${fps} fps  (${info.channels} ch, ${info.tags} tags)`);
+                }
+            }
         }
     } catch (e) {
         console.error('Poll error:', e);
@@ -472,6 +525,15 @@ function clearLog() {
     document.getElementById('logLines').innerHTML = '';
     totalLines = 0;
     document.getElementById('logCount').textContent = '0 lines';
+}
+
+function toggleRawAutoscroll() {
+    rawAutoscroll = !rawAutoscroll;
+    document.getElementById('rawAutoscrollBtn').textContent = `Auto-scroll: ${rawAutoscroll ? 'ON' : 'OFF'}`;
+}
+
+function clearRaw() {
+    document.getElementById('rawLines').innerHTML = '';
 }
 
 // ── Init ──
