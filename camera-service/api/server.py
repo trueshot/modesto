@@ -226,6 +226,23 @@ def get_monitor_status():
         # Include event log (last N events)
         state["zmq_router"]["event_log"] = list(worker_state["zmq_router"]["event_log"])
 
+    # Tag scan status (separate lock)
+    with tag_scan_lock:
+        active = tag_scan_state["active_scan"]
+        if active:
+            elapsed = now - active["started_at"]
+            state["tag_scan"] = {
+                "active": True,
+                "scan_id": active["scan_id"],
+                "status": active["status"],
+                "cameras": len(active["cameras"]),
+                "elapsed_sec": round(elapsed, 1),
+                "remaining_sec": round(max(0, active["timeout"] - elapsed), 1),
+                "stats": active["stats"]
+            }
+        else:
+            state["tag_scan"] = {"active": False}
+
     return state
 
 @app.post("/api/monitor/reset")
@@ -1654,6 +1671,276 @@ def zmq_async_handler():
 
         except Exception as e:
             logger.error(f"ZMQ async handler error: {e}")
+
+# ============================================================================
+# TAG SCAN (continuous frame push for AprilTag detection)
+# ============================================================================
+
+# State tracking — one scan at a time
+tag_scan_state = {
+    "active_scan": None,
+    "history": []
+}
+tag_scan_lock = threading.Lock()
+TAG_SCAN_HISTORY_MAX = 10
+
+class TagScanCamera(BaseModel):
+    nvr: str
+    channel: int
+
+class TagScanRequest(BaseModel):
+    cameras: List[TagScanCamera]
+    timeout: int = 30
+    push_to: str = "tcp://127.0.0.1:5557"
+
+def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, stop_event: threading.Event):
+    """
+    Round-robin capture for one NVR's channels.
+    Runs until timeout or stop_event is set.
+    """
+    nvr = get_nvr_info(nvr_id)
+    if not nvr:
+        logger.error(f"Tag scan: NVR '{nvr_id}' not found")
+        return
+
+    nvr_ip = nvr['ip']
+    started_at = scan["started_at"]
+    timeout = scan["timeout"]
+
+    while not stop_event.is_set():
+        if _time.time() - started_at >= timeout:
+            break
+
+        cycle_did_work = False
+        for channel in channels:
+            if stop_event.is_set() or _time.time() - started_at >= timeout:
+                break
+
+            # Circuit breaker check
+            if is_nvr_down(nvr_ip):
+                _time.sleep(5)  # Don't spin — wait before retrying
+                break  # Skip rest of cycle, retry next cycle
+
+            rtsp_url = build_rtsp_url(nvr, channel)
+            jpeg = camera_capture.capture_frame(rtsp_url, timeout=8)
+
+            if not jpeg:
+                mark_nvr_down_if_unreachable(nvr_ip)
+                with tag_scan_lock:
+                    scan["stats"]["frames_failed"] += 1
+                if is_nvr_down(nvr_ip):
+                    break  # NVR confirmed down, skip rest of cycle
+                continue  # Channel issue, try next channel
+
+            # Push frame
+            try:
+                ts = str(_time.time()).encode('utf-8')
+                push_socket.send_multipart([
+                    nvr_id.encode('utf-8'),
+                    str(channel).encode('utf-8'),
+                    jpeg,
+                    ts
+                ], zmq.NOBLOCK)
+                cycle_did_work = True
+                with tag_scan_lock:
+                    scan["stats"]["frames_pushed"] += 1
+                    scan["stats"]["bytes_pushed"] += len(jpeg)
+            except zmq.Again:
+                logger.warning(f"Tag scan: ZMQ send buffer full, dropping {nvr_id} ch{channel}")
+                with tag_scan_lock:
+                    scan["stats"]["frames_failed"] += 1
+            except Exception as e:
+                logger.error(f"Tag scan: ZMQ send error: {e}")
+                with tag_scan_lock:
+                    scan["stats"]["frames_failed"] += 1
+
+        if cycle_did_work:
+            with tag_scan_lock:
+                scan["stats"]["cycles_completed"] += 1
+
+def _tag_scan_coordinator(scan):
+    """Spawns one worker thread per NVR, waits for all to finish, cleans up."""
+    try:
+        stop_event = scan["stop_event"]
+        push_socket = scan["push_socket"]
+
+        # Group cameras by NVR
+        from collections import defaultdict
+        cameras_by_nvr = defaultdict(list)
+        for cam in scan["cameras"]:
+            cameras_by_nvr[cam["nvr"]].append(cam["channel"])
+
+        with tag_scan_lock:
+            scan["status"] = "running"
+
+        # One thread per NVR
+        threads = []
+        for nvr_id, channels in cameras_by_nvr.items():
+            t = threading.Thread(
+                target=_nvr_scan_worker,
+                args=(scan, nvr_id, channels, push_socket, stop_event),
+                daemon=True
+            )
+            threads.append(t)
+            t.start()
+            logger.info(f"Tag scan {scan['scan_id']}: started worker for {nvr_id} ({len(channels)} channels)")
+
+        # Wait for all workers
+        for t in threads:
+            t.join()
+
+        with tag_scan_lock:
+            if scan["status"] != "error":
+                scan["status"] = "stopped" if stop_event.is_set() else "completed"
+
+    except Exception as e:
+        logger.error(f"Tag scan coordinator error: {e}")
+        with tag_scan_lock:
+            scan["status"] = "error"
+            scan["stats"]["error"] = str(e)
+
+    finally:
+        # Cleanup
+        try:
+            scan["push_socket"].close()
+        except:
+            pass
+        scan["finished_at"] = _time.time()
+        logger.info(f"Tag scan {scan['scan_id']} {scan['status']}: {scan['stats']}")
+
+        # Move to history
+        with tag_scan_lock:
+            tag_scan_state["active_scan"] = None
+            tag_scan_state["history"].append({
+                "scan_id": scan["scan_id"],
+                "status": scan["status"],
+                "started_at": scan["started_at"],
+                "finished_at": scan["finished_at"],
+                "stats": scan["stats"]
+            })
+            if len(tag_scan_state["history"]) > TAG_SCAN_HISTORY_MAX:
+                tag_scan_state["history"] = tag_scan_state["history"][-TAG_SCAN_HISTORY_MAX:]
+
+@app.post("/api/tag-scan/start")
+def start_tag_scan(request: TagScanRequest):
+    """
+    Start continuous tag scan. Pushes frames via ZMQ PUSH to the given endpoint.
+    One scan at a time. Each NVR's cameras are round-robined independently.
+    """
+    # Validate
+    if not request.cameras:
+        raise HTTPException(status_code=400, detail="No cameras specified")
+    if request.timeout <= 0:
+        raise HTTPException(status_code=400, detail="Timeout must be positive")
+
+    # Check no scan already active
+    with tag_scan_lock:
+        if tag_scan_state["active_scan"] is not None:
+            active = tag_scan_state["active_scan"]
+            raise HTTPException(
+                status_code=409,
+                detail=f"Scan '{active['scan_id']}' already active ({active['status']})"
+            )
+
+    # Validate NVRs exist
+    for cam in request.cameras:
+        nvr = get_nvr_info(cam.nvr)
+        if not nvr:
+            raise HTTPException(status_code=400, detail=f"NVR '{cam.nvr}' not found")
+
+    # Create ZMQ PUSH socket
+    import uuid
+    scan_id = str(uuid.uuid4())[:8]
+    ctx = zmq.Context()
+    push_socket = ctx.socket(zmq.PUSH)
+    push_socket.setsockopt(zmq.SNDTIMEO, 1000)  # 1s send timeout
+    push_socket.setsockopt(zmq.SNDHWM, 100)  # Buffer up to 100 frames
+    try:
+        push_socket.connect(request.push_to)
+    except Exception as e:
+        push_socket.close()
+        raise HTTPException(status_code=400, detail=f"Cannot connect to {request.push_to}: {e}")
+
+    # Build scan state
+    stop_event = threading.Event()
+    scan = {
+        "scan_id": scan_id,
+        "cameras": [{"nvr": c.nvr, "channel": c.channel} for c in request.cameras],
+        "timeout": request.timeout,
+        "push_to": request.push_to,
+        "started_at": _time.time(),
+        "finished_at": None,
+        "stop_event": stop_event,
+        "push_socket": push_socket,
+        "status": "starting",
+        "stats": {
+            "frames_pushed": 0,
+            "frames_failed": 0,
+            "bytes_pushed": 0,
+            "cycles_completed": 0,
+            "error": None
+        }
+    }
+
+    with tag_scan_lock:
+        tag_scan_state["active_scan"] = scan
+
+    # Start coordinator thread
+    coord = threading.Thread(target=_tag_scan_coordinator, args=(scan,), daemon=True)
+    coord.start()
+
+    logger.info(f"Tag scan {scan_id} started: {len(request.cameras)} cameras, {request.timeout}s, push_to={request.push_to}")
+
+    return {
+        "scan_id": scan_id,
+        "status": "starting",
+        "cameras": len(request.cameras),
+        "timeout": request.timeout,
+        "push_to": request.push_to
+    }
+
+@app.get("/api/tag-scan/{scan_id}/status")
+def get_tag_scan_status(scan_id: str):
+    """Get status of a tag scan (active or recently completed)."""
+    now = _time.time()
+
+    with tag_scan_lock:
+        # Check active scan
+        active = tag_scan_state["active_scan"]
+        if active and active["scan_id"] == scan_id:
+            elapsed = now - active["started_at"]
+            return {
+                "scan_id": scan_id,
+                "status": active["status"],
+                "elapsed_sec": round(elapsed, 1),
+                "remaining_sec": round(max(0, active["timeout"] - elapsed), 1),
+                "stats": active["stats"]
+            }
+
+        # Check history
+        for entry in reversed(tag_scan_state["history"]):
+            if entry["scan_id"] == scan_id:
+                return {
+                    "scan_id": scan_id,
+                    "status": entry["status"],
+                    "elapsed_sec": round(entry["finished_at"] - entry["started_at"], 1),
+                    "remaining_sec": 0,
+                    "stats": entry["stats"]
+                }
+
+    raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' not found")
+
+@app.post("/api/tag-scan/{scan_id}/stop")
+def stop_tag_scan(scan_id: str):
+    """Stop an active tag scan early."""
+    with tag_scan_lock:
+        active = tag_scan_state["active_scan"]
+        if not active or active["scan_id"] != scan_id:
+            raise HTTPException(status_code=404, detail=f"No active scan '{scan_id}'")
+        active["stop_event"].set()
+        active["status"] = "stopping"
+
+    return {"scan_id": scan_id, "message": "Stop requested"}
 
 def start_zmq_server():
     """Start ZMQ servers in background threads"""
