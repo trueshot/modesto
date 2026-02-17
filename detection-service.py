@@ -36,6 +36,8 @@ from pathlib import Path
 from pupil_apriltags import Detector
 from collections import defaultdict
 import threading
+import math
+import os
 
 app = FastAPI(title="AprilTag Detection Service")
 
@@ -315,6 +317,19 @@ def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
     return all_detections, (time.perf_counter() - start) * 1000, detect_info
 
 
+def compute_tag_size(corners: np.ndarray) -> float:
+    """Mean edge length in pixels from 4x2 corners array"""
+    edges = [np.linalg.norm(corners[(i + 1) % 4] - corners[i]) for i in range(4)]
+    return float(np.mean(edges))
+
+
+def compute_tag_orientation(corners: np.ndarray) -> float:
+    """Rotation angle in degrees from top edge (corners[0] -> corners[1])"""
+    dx = corners[1][0] - corners[0][0]
+    dy = corners[1][1] - corners[0][1]
+    return float(math.degrees(math.atan2(dy, dx)))
+
+
 def draw_detections(frame: np.ndarray, detections: list) -> np.ndarray:
     """Draw detection overlays on frame"""
     for det in detections:
@@ -411,36 +426,39 @@ async def detect(
 
 @app.get("/cameras")
 async def list_cameras():
-    """List active cameras from camera-service"""
+    """List active cameras from camera-service.
+    Combines /api/cameras/lodge (configured mounts) with /api/nvrs (brand info)
+    to determine snapshot capability per NVR.
+    """
     cameras = []
     camera_service_online = False
     try:
-        # Get configured cameras from lodge
-        response = requests.get(f"{CAMERA_SERVICE_URL}/api/cameras/lodge", timeout=5)
-        if response.status_code == 200:
+        # Fetch cameras and NVR info in parallel (well, sequentially here but both needed)
+        cam_resp = requests.get(f"{CAMERA_SERVICE_URL}/api/cameras/lodge", timeout=5)
+        nvr_resp = requests.get(f"{CAMERA_SERVICE_URL}/api/nvrs", timeout=5)
+
+        if cam_resp.status_code == 200:
             camera_service_online = True
-            data = response.json()
+
+            # Build NVR brand lookup for snapshot capability
+            nvr_brands = {}
+            if nvr_resp.status_code == 200:
+                for nvr in nvr_resp.json().get("nvrs", []):
+                    brand = (nvr.get("brand") or "").upper()
+                    nvr_brands[nvr["id"]] = "UNIVIEW" in brand
+
+            data = cam_resp.json()
             for cam in data.get("cameras", []):
+                nvr_id = cam.get("nvr_id", "nvr1")
                 cameras.append({
-                    "nvr": cam.get("nvr_id", "nvr1"),
+                    "nvr": nvr_id,
                     "channel": cam.get("channel"),
                     "name": cam.get("name", f"ch{cam.get('channel')}"),
                     "resolution": cam.get("resolution"),
-                    "snapshot": False,  # nvr1 doesn't support snapshots
+                    "snapshot": nvr_brands.get(nvr_id, False),
                 })
     except Exception as e:
         print(f"Camera service unreachable: {e}")
-
-    # Add nvr2 channels 2-5 (unconfigured but active, supports snapshots)
-    if camera_service_online:
-        for ch in [2, 3, 4, 5]:
-            cameras.append({
-                "nvr": "nvr2",
-                "channel": ch,
-                "name": f"nvr2-ch{ch}",
-                "resolution": "unknown",
-                "snapshot": True,  # nvr2 (UNIVIEW) supports snapshots
-            })
 
     return {"cameras": cameras, "count": len(cameras), "camera_service_online": camera_service_online}
 
@@ -696,6 +714,264 @@ async def get_pass_image(pass_id: str, nvr: str, channel: int):
             return Response(content=b"", status_code=404)
 
         return Response(content=jpeg_bytes, media_type="image/jpeg")
+
+
+# =============================================================================
+# Scan API (continuous detection, camera-service paced)
+# =============================================================================
+
+SCAN_PULL_PORT = 5557
+SCAN_LOG_DIR = Path(__file__).parent / "logs"
+MAX_SCANS = 10
+
+scans = {}  # scanId -> {cameras, timeout, startTime, running, log_lines, counters, log_path}
+scans_lock = threading.Lock()
+
+# ZMQ PULL socket for receiving scan frames
+zmq_pull_socket = None
+zmq_pull_thread = None
+
+
+def _ensure_pull_socket():
+    """Start the ZMQ PULL socket and receiver thread if not running"""
+    global zmq_pull_socket, zmq_pull_thread, zmq_context
+    if zmq_pull_socket is not None:
+        return
+    if zmq_context is None:
+        zmq_context = zmq.Context()
+    zmq_pull_socket = zmq_context.socket(zmq.PULL)
+    zmq_pull_socket.bind(f"tcp://*:{SCAN_PULL_PORT}")
+    zmq_pull_thread = threading.Thread(target=_pull_receiver, daemon=True)
+    zmq_pull_thread.start()
+    print(f"PULL socket bound on port {SCAN_PULL_PORT}")
+
+
+def _pull_receiver():
+    """Background thread: receive frames from camera-service PUSH, run detection, log results"""
+    global zmq_pull_socket
+    while True:
+        try:
+            frames = zmq_pull_socket.recv_multipart()
+            if len(frames) < 4:
+                continue
+
+            nvr = frames[0].decode('utf-8')
+            channel = int(frames[1].decode('utf-8'))
+            jpeg_bytes = frames[2]
+            ts = float(frames[3].decode('utf-8'))
+
+            # Decode frame
+            arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+            frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                continue
+
+            # Run detection
+            detections, detect_ms, detect_info = run_detection(frame)
+
+            key = f"{nvr}/{channel}"
+
+            # Find which active scan owns this camera
+            with scans_lock:
+                active_scan_id = None
+                for sid, scan in scans.items():
+                    if scan["running"] and key in scan["camera_keys"]:
+                        active_scan_id = sid
+                        break
+
+                if active_scan_id is None:
+                    continue
+
+                scan = scans[active_scan_id]
+                scan["counters"][key]["frames"] += 1
+
+                # Log frame event (always, even with 0 tags)
+                frame_entry = {
+                    "ts": round(ts, 3),
+                    "nvr": nvr,
+                    "ch": channel,
+                    "type": "frame",
+                    "tags_found": len(detections),
+                    "detect_ms": round(detect_ms, 0),
+                    "res": f"{detect_info['capture_w']}x{detect_info['capture_h']}",
+                }
+                if detect_info.get("low_res"):
+                    frame_entry["low_res"] = True
+                scan["log_lines"].append(frame_entry)
+                try:
+                    with open(scan["log_path"], "a") as f:
+                        f.write(json.dumps(frame_entry) + "\n")
+                except Exception:
+                    pass
+
+                # Log each detected tag
+                for det in detections:
+                    size_px = compute_tag_size(det.corners)
+                    orient_deg = compute_tag_orientation(det.corners)
+
+                    log_entry = {
+                        "ts": round(ts, 3),
+                        "nvr": nvr,
+                        "ch": channel,
+                        "tag": det.tag_id,
+                        "family": det.asset_name,
+                        "margin": round(det.decision_margin, 1) if det.decision_margin >= 0 else "aruco",
+                        "size_px": round(size_px, 1),
+                        "orient_deg": round(orient_deg, 1),
+                    }
+                    scan["log_lines"].append(log_entry)
+                    scan["counters"][key]["tags"].add((det.asset_name, det.tag_id))
+
+                    # Append to log file
+                    try:
+                        with open(scan["log_path"], "a") as f:
+                            f.write(json.dumps(log_entry) + "\n")
+                    except Exception:
+                        pass
+
+        except Exception as e:
+            print(f"PULL receiver error: {e}")
+            time.sleep(0.1)
+
+
+class ScanCamera(BaseModel):
+    nvr: str
+    channel: int
+
+class ScanStartRequest(BaseModel):
+    cameras: list[ScanCamera]
+    timeout: int = 30
+
+
+@app.post("/scan/start")
+async def start_scan(request: ScanStartRequest):
+    """Start a continuous detection scan.
+
+    Camera-service controls frame pacing. Detection service processes
+    frames as they arrive via ZMQ PULL.
+    """
+    _ensure_pull_socket()
+
+    # Create log directory
+    SCAN_LOG_DIR.mkdir(exist_ok=True)
+
+    scan_id = uuid.uuid4().hex[:12]
+    camera_keys = set()
+    camera_list = []
+    for cam in request.cameras:
+        key = f"{cam.nvr}/{cam.channel}"
+        camera_keys.add(key)
+        camera_list.append({"nvr": cam.nvr, "channel": cam.channel})
+
+    log_path = SCAN_LOG_DIR / f"scan_{scan_id}.jsonl"
+
+    with scans_lock:
+        # Cleanup old scans
+        if len(scans) >= MAX_SCANS:
+            oldest = min(scans.keys(), key=lambda k: scans[k].get("startTime", 0))
+            del scans[oldest]
+
+        scans[scan_id] = {
+            "cameras": camera_list,
+            "camera_keys": camera_keys,
+            "timeout": request.timeout,
+            "startTime": time.time(),
+            "running": True,
+            "log_lines": [],
+            "counters": {k: {"frames": 0, "tags": set()} for k in camera_keys},
+            "log_path": str(log_path),
+        }
+
+    # Tell camera-service to start scanning
+    push_to = f"tcp://127.0.0.1:{SCAN_PULL_PORT}"
+    try:
+        resp = requests.post(
+            f"{CAMERA_SERVICE_URL}/api/tag-scan/start",
+            json={
+                "cameras": camera_list,
+                "timeout": request.timeout,
+                "push_to": push_to,
+            },
+            timeout=10,
+        )
+        if resp.status_code != 200:
+            with scans_lock:
+                scans[scan_id]["running"] = False
+            return {"error": f"Camera service returned {resp.status_code}", "detail": resp.text}
+        cs_data = resp.json()
+    except Exception as e:
+        with scans_lock:
+            scans[scan_id]["running"] = False
+        return {"error": f"Camera service unreachable: {e}"}
+
+    # Schedule auto-stop after timeout
+    async def _auto_stop():
+        await asyncio.sleep(request.timeout + 2)  # grace period
+        with scans_lock:
+            if scan_id in scans:
+                scans[scan_id]["running"] = False
+    asyncio.create_task(_auto_stop())
+
+    return {
+        "scanId": scan_id,
+        "timeout": request.timeout,
+        "cameras": camera_list,
+        "log_path": str(log_path),
+        "camera_service": cs_data,
+    }
+
+
+@app.get("/scan/{scan_id}/status")
+async def get_scan_status(scan_id: str):
+    """Get current scan state"""
+    with scans_lock:
+        if scan_id not in scans:
+            return Response(content=json.dumps({"error": "scan not found"}),
+                          media_type="application/json", status_code=404)
+
+        scan = scans[scan_id]
+        elapsed = time.time() - scan["startTime"]
+        cameras = {}
+        all_tags = set()
+        for key, c in scan["counters"].items():
+            cameras[key] = {"frames": c["frames"], "unique_tags": len(c["tags"])}
+            all_tags.update(c["tags"])
+
+        return {
+            "scanId": scan_id,
+            "running": scan["running"],
+            "elapsed_s": round(elapsed, 1),
+            "timeout": scan["timeout"],
+            "cameras": cameras,
+            "total_observations": len(scan["log_lines"]),
+            "unique_tags": len(all_tags),
+        }
+
+
+@app.get("/scan/{scan_id}/log")
+async def get_scan_log(scan_id: str, after: int = 0):
+    """Get log lines after a given offset (for polling)"""
+    with scans_lock:
+        if scan_id not in scans:
+            return Response(content=json.dumps({"error": "scan not found"}),
+                          media_type="application/json", status_code=404)
+
+        scan = scans[scan_id]
+        lines = scan["log_lines"][after:]
+        return {
+            "lines": lines,
+            "nextOffset": after + len(lines),
+            "running": scan["running"],
+        }
+
+
+@app.get("/scan", response_class=HTMLResponse)
+async def scan_page():
+    """Serve the scan log HTML page"""
+    html_path = Path(__file__).parent / "scan-log.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return "<h1>scan-log.html not found</h1>"
 
 
 if __name__ == "__main__":
