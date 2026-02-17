@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-02-17T11:13:18.109Z
+-- Generated: 2026-02-17T11:29:42.567Z
 
 BEGIN TRANSACTION;
 
@@ -58,36 +58,43 @@ CREATE TABLE channels (
     UNIQUE(nvr_id, channel_number)
 );
 
-INSERT INTO "channels" VALUES('nvr1_ch01','nvr1',1,'rtsp://admin:@192.168.0.199:554/ch01/0','active',NULL,'F0:00:00:77:2D:8D',1,'3072x2048');
-INSERT INTO "channels" VALUES('nvr1_ch02','nvr1',2,'rtsp://admin:@192.168.0.199:554/ch02/0','active',NULL,'F0:00:00:77:2E:EB',1,'3072x2048');
-INSERT INTO "channels" VALUES('nvr1_ch03','nvr1',3,'rtsp://admin:@192.168.0.199:554/ch03/0','active',NULL,'f4:00:00:01:a8:bb',1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch04','nvr1',4,'rtsp://admin:@192.168.0.199:554/ch04/0','active',NULL,'f4:00:00:01:a9:01',1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch05','nvr1',5,'rtsp://admin:@192.168.0.199:554/ch05/0','active',NULL,'f4:00:00:01:a8:ef',1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch06','nvr1',6,'rtsp://admin:@192.168.0.199:554/ch06/0','active',NULL,'F0:00:00:77:28:F4',1,'3072x2048');
-INSERT INTO "channels" VALUES('nvr1_ch07','nvr1',7,'rtsp://admin:@192.168.0.199:554/ch07/0','active',NULL,'38:24:f1:01:3c:c2',1,'4096x3072');
-INSERT INTO "channels" VALUES('nvr1_ch09','nvr1',9,'rtsp://admin:@192.168.0.199:554/ch09/0','active',NULL,'38:24:f1:01:3c:ad',1,'4096x3072');
-INSERT INTO "channels" VALUES('nvr1_ch10','nvr1',10,'rtsp://admin:@192.168.0.199:554/ch10/0','active',NULL,'38:24:f1:01:3c:ae',1,'4096x3072');
-INSERT INTO "channels" VALUES('nvr1_ch26','nvr1',26,'rtsp://admin:@192.168.0.199:554/ch26/0','active',NULL,'38:24:f1:01:14:b2',1,'2592x1944');
-INSERT INTO "channels" VALUES('nvr1_ch27','nvr1',27,'rtsp://admin:@192.168.0.199:554/ch27/0','active',NULL,NULL,1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch28','nvr1',28,'rtsp://admin:@192.168.0.199:554/ch28/0','active',NULL,NULL,1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch29','nvr1',29,'rtsp://admin:@192.168.0.199:554/ch29/0','active',NULL,'f4:00:00:01:a8:e2',1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch30','nvr1',30,'rtsp://admin:@192.168.0.199:554/ch30/0','active',NULL,'F0:00:00:C5:4C:B4',1,'3072x2048');
-INSERT INTO "channels" VALUES('nvr1_ch31','nvr1',31,'rtsp://admin:@192.168.0.199:554/ch31/0','active',NULL,'38:24:f1:01:3c:be',1,'4096x3072');
-INSERT INTO "channels" VALUES('nvr1_ch32','nvr1',32,'rtsp://admin:@192.168.0.199:554/ch32/0','active',NULL,NULL,1,'2880x1624');
-INSERT INTO "channels" VALUES('nvr2_ch01','nvr2',1,NULL,'active',NULL,'2C:6F:51:3B:71:A9',1,NULL);
+INSERT INTO "channels" VALUES('nvr1_ch01','nvr1',1,'rtsp://admin:@192.168.0.6:554/ch01/0','active',NULL,'F0:00:00:77:2D:8D',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch02','nvr1',2,'rtsp://admin:@192.168.0.6:554/ch02/0','active',NULL,'F0:00:00:77:2E:EB',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch03','nvr1',3,'rtsp://admin:@192.168.0.6:554/ch03/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch04','nvr1',4,'rtsp://admin:@192.168.0.6:554/ch04/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch05','nvr1',5,'rtsp://admin:@192.168.0.6:554/ch05/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch06','nvr1',6,'rtsp://admin:@192.168.0.6:554/ch06/0','active',NULL,'F0:00:00:77:28:F4',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch07','nvr1',7,'rtsp://admin:@192.168.0.6:554/ch07/0','active',NULL,'38:24:F1:01:3C:C2',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch09','nvr1',9,'rtsp://admin:@192.168.0.6:554/ch09/0','active',NULL,'38:24:F1:01:3C:AE',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch10','nvr1',10,'rtsp://admin:@192.168.0.6:554/ch10/0','active',NULL,'38:24:F1:01:3C:BE',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch26','nvr1',26,NULL,'stale',NULL,'38:24:f1:01:14:b2',1,'2592x1944');
+INSERT INTO "channels" VALUES('nvr1_ch27','nvr1',27,NULL,'stale',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch28','nvr1',28,NULL,'stale',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch29','nvr1',29,NULL,'stale',NULL,'f4:00:00:01:a8:e2',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch30','nvr1',30,NULL,'stale',NULL,'F0:00:00:C5:4C:B4',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch31','nvr1',31,NULL,'stale',NULL,'38:24:f1:01:3c:be',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch32','nvr1',32,NULL,'stale',NULL,NULL,1,'2880x1624');
+INSERT INTO "channels" VALUES('nvr2_ch01','nvr2',1,NULL,'active',NULL,'2C:6F:51:3B:71:A9',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch02','nvr2',2,NULL,'active',NULL,'2C:6F:51:3B:71:A4',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch03','nvr2',3,NULL,'active',NULL,'2C:6F:51:3B:71:58',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch04','nvr2',4,NULL,'active',NULL,'2C:6F:51:3B:71:2A',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch05','nvr2',5,NULL,'active',NULL,'2C:6F:51:3B:71:8D',1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr2_ch06','nvr2',6,NULL,'active',NULL,'38:24:F1:01:14:B2',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch07','nvr2',7,NULL,'active',NULL,'38:24:F1:05:19:D4',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch08','nvr2',8,NULL,'active',NULL,'F4:00:00:01:A8:E2',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch09','nvr2',9,NULL,'active',NULL,'F4:00:00:01:A9:01',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch10','nvr2',10,NULL,'active',NULL,'F4:00:00:01:A8:EF',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch11','nvr2',11,NULL,'active',NULL,'38:24:F1:01:3C:AE',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch12','nvr2',12,NULL,'active',NULL,'38:24:F1:01:3C:BE',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch13','nvr2',13,NULL,'active',NULL,'38:24:F1:01:3C:AD',1,NULL);
-INSERT INTO "channels" VALUES('nvr2_ch14','nvr2',14,NULL,'active',NULL,'38:24:F1:01:3C:C2',1,NULL);
+INSERT INTO "channels" VALUES('nvr2_ch06','nvr2',6,NULL,'active',NULL,'38:24:F1:01:14:B2',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch07','nvr2',7,NULL,'active',NULL,'38:24:F1:05:19:D4',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch08','nvr2',8,NULL,'active',NULL,'F4:00:00:01:A8:E2',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch09','nvr2',9,NULL,'active',NULL,'F4:00:00:01:A9:01',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch10','nvr2',10,NULL,'active',NULL,'F4:00:00:01:A8:EF',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch11','nvr2',11,NULL,'active',NULL,'38:24:F1:01:3C:AE',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr2_ch12','nvr2',12,NULL,'active',NULL,'38:24:F1:01:3C:BE',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr2_ch13','nvr2',13,NULL,'active',NULL,'38:24:F1:01:3C:AD',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr2_ch14','nvr2',14,NULL,'active',NULL,'38:24:F1:01:3C:C2',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch08','nvr1',8,NULL,'empty',NULL,NULL,0,NULL);
+INSERT INTO "channels" VALUES('nvr1_ch11','nvr1',11,NULL,'empty',NULL,NULL,0,NULL);
+INSERT INTO "channels" VALUES('nvr1_ch12','nvr1',12,'rtsp://admin:@192.168.0.6:554/ch12/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch13','nvr1',13,'rtsp://admin:@192.168.0.6:554/ch13/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch14','nvr1',14,'rtsp://admin:@192.168.0.6:554/ch14/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch15','nvr1',15,'rtsp://admin:@192.168.0.6:554/ch15/0','active',NULL,NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch16','nvr1',16,'rtsp://admin:@192.168.0.6:554/ch16/0','active',NULL,NULL,1,'3840x2160');
 
 CREATE TABLE fiducials (
     tag_id INTEGER PRIMARY KEY,       -- AprilTag ID (1, 2, 10, 20, etc.)
