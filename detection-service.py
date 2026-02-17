@@ -855,7 +855,10 @@ async def start_scan(request: ScanStartRequest):
     # Create log directory
     SCAN_LOG_DIR.mkdir(exist_ok=True)
 
-    scan_id = uuid.uuid4().hex[:12]
+    from datetime import datetime
+    ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    short_id = uuid.uuid4().hex[:4]
+    scan_id = f"{ts_str}_{short_id}"
     camera_keys = set()
     camera_list = []
     for cam in request.cameras:
