@@ -102,9 +102,9 @@ class CameraCapture:
                     result_queue.put(None)
                     return
 
-                # Read up to 3 frames - first frame from HEVC streams is often grey
+                # Read up to 5 frames - HEVC streams often start grey
                 frame = None
-                for _ in range(3):
+                for _ in range(5):
                     ret, f = cap.read()
                     if not ret or f is None:
                         continue
@@ -112,7 +112,6 @@ class CameraCapture:
                     if f.std() > 10:
                         frame = f
                         break
-                    frame = f  # Keep last frame even if grey
 
                 if frame is None:
                     result_queue.put(None)

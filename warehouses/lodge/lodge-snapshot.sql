@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-02-18T04:25:31.638Z
+-- Generated: 2026-02-18T07:46:37.080Z
 
 BEGIN TRANSACTION;
 
@@ -80,14 +80,14 @@ INSERT INTO "channels" VALUES('nvr2_ch03','nvr2',3,'rtsp://admin:Dad5eeeee%21@19
 INSERT INTO "channels" VALUES('nvr2_ch04','nvr2',4,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c4/s0','active',NULL,'2C:6F:51:3B:71:2A',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch05','nvr2',5,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c5/s0','active',NULL,'2C:6F:51:3B:71:8D',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch06','nvr2',6,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c6/s0','active',NULL,'38:24:F1:01:14:B2',1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr2_ch07','nvr2',7,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c7/s0','active',NULL,'38:24:F1:05:19:D4',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr2_ch07','nvr2',7,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c7/s0','inactive',NULL,'38:24:F1:05:19:D4',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch08','nvr2',8,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c8/s0','active',NULL,'F4:00:00:01:A8:E2',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch09','nvr2',9,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c9/s0','active',NULL,'F4:00:00:01:A9:01',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch10','nvr2',10,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c10/s0','active',NULL,'F4:00:00:01:A8:EF',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch11','nvr2',11,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c11/s0','active',NULL,'38:24:F1:01:3C:AE',1,'4096x3072');
 INSERT INTO "channels" VALUES('nvr2_ch12','nvr2',12,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c12/s0','active',NULL,'38:24:F1:01:3C:BE',1,'4096x3072');
-INSERT INTO "channels" VALUES('nvr2_ch13','nvr2',13,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c13/s0','active',NULL,'38:24:F1:01:3C:AD',1,'4096x3072');
-INSERT INTO "channels" VALUES('nvr2_ch14','nvr2',14,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c14/s0','active',NULL,'38:24:F1:01:3C:C2',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr2_ch13','nvr2',13,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c13/s0','inactive',NULL,'38:24:F1:01:3C:AD',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr2_ch14','nvr2',14,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c14/s0','inactive',NULL,'38:24:F1:01:3C:C2',1,'4096x3072');
 INSERT INTO "channels" VALUES('nvr1_ch08','nvr1',8,NULL,'empty',NULL,NULL,0,NULL);
 INSERT INTO "channels" VALUES('nvr1_ch11','nvr1',11,NULL,'empty',NULL,NULL,0,NULL);
 INSERT INTO "channels" VALUES('nvr1_ch12','nvr1',12,'rtsp://admin:@192.168.0.6:554/ch12/0','active',NULL,NULL,1,'3840x2160');
