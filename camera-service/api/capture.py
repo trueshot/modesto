@@ -215,16 +215,16 @@ class CameraCapture:
 
         cursor.execute("""
             SELECT
-                m.id,
-                m.id as name,
-                m.description as location,
+                COALESCE(m.id, 'camera_' || c.nvr_id || '_ch' || c.channel_number) as id,
+                COALESCE(m.id, 'camera_' || c.nvr_id || '_ch' || c.channel_number) as name,
+                COALESCE(m.description, 'Unmounted channel') as location,
                 c.channel_number as channel,
                 c.resolution,
                 c.rtsp_path as rtsp_url,
                 c.nvr_id
-            FROM mounts m
-            JOIN linkages l ON l.mount_id = m.id
-            JOIN channels c ON l.channel_id = c.id
+            FROM channels c
+            LEFT JOIN linkages l ON l.channel_id = c.id
+            LEFT JOIN mounts m ON l.mount_id = m.id
             ORDER BY c.nvr_id, c.channel_number
         """)
 
