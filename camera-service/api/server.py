@@ -1326,6 +1326,41 @@ def capture_snapshot(nvr: dict, channel: int) -> Optional[bytes]:
         logger.error(f"Snapshot error: {e}")
         return None
 
+def _capture_subprocess(nvr_id: str, channel: int, source: str, nvr_ip: str, timestamp=None, cooldown: float = 0.0) -> bytes:
+    """
+    Capture a frame in a separate process (own GIL, no contention).
+    Called via ProcessPoolExecutor from zmq_async_handler.
+    Returns JPEG bytes or empty bytes on failure.
+    """
+    nvr = get_nvr_info(nvr_id)
+    if not nvr:
+        return b""
+
+    image_data = None
+    if source == "playback":
+        if not timestamp or not nvr_supports_playback(nvr):
+            return b""
+        image_data = capture_playback_frame(
+            nvr_ip=nvr['ip'],
+            username=nvr['username'] or 'admin',
+            password=nvr['password'] or '',
+            channel=channel,
+            epoch_begin=timestamp,
+            epoch_end=timestamp + 60,
+            timeout=30
+        )
+    elif source == "snapshot":
+        image_data = capture_snapshot(nvr, channel)
+    else:
+        rtsp_url = build_rtsp_url(nvr, channel)
+        image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
+
+    if cooldown > 0:
+        _time.sleep(cooldown)
+
+    return image_data or b""
+
+
 def zmq_frame_handler():
     """ZMQ REP server for frame requests. Runs in background thread."""
     context = zmq.Context()
@@ -1432,7 +1467,7 @@ def zmq_async_handler():
 
     Client should use DEALER socket.
     """
-    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import ProcessPoolExecutor
     from collections import defaultdict
 
     context = zmq.Context()
@@ -1444,8 +1479,9 @@ def zmq_async_handler():
     poller = zmq.Poller()
     poller.register(socket, zmq.POLLIN)
 
-    # Thread pool for parallel captures
-    executor = ThreadPoolExecutor(max_workers=8)  # More workers since they don't block
+    # Process pool for parallel captures — each worker has its own GIL,
+    # so HEVC decode on NVR2 doesn't block H.264 decode on NVR1
+    executor = ProcessPoolExecutor(max_workers=8)
 
     # Pending queue: requests waiting for NVR capacity
     # {request_id -> {identity, nvr, channel, source, queued_at}}
@@ -1466,53 +1502,8 @@ def zmq_async_handler():
                 nvr_ip_cache[nvr_id] = nvr['ip']
         return nvr_ip_cache.get(nvr_id)
 
-    def process_request(identity: bytes, request_id: str, nvr_id: str, channel: int, source: str, nvr_ip: str, timestamp: Optional[int] = None):
-        """Process single frame request, return result tuple"""
-        try:
-            # Mark as actively processing
-            with worker_state_lock:
-                if request_id in worker_state["zmq_router"]["pending_requests"]:
-                    req_info = worker_state["zmq_router"]["pending_requests"].pop(request_id)
-                    req_info["processing_started_at"] = _time.time()
-                    worker_state["zmq_router"]["active_requests"][request_id] = req_info
-
-            nvr = get_nvr_info(nvr_id)
-            if not nvr:
-                return (identity, request_id, b"", True, nvr_ip)
-
-            if source == "playback":
-                if not timestamp or not nvr_supports_playback(nvr):
-                    return (identity, request_id, b"", True, nvr_ip)
-                image_data = capture_playback_frame(
-                    nvr_ip=nvr['ip'],
-                    username=nvr['username'] or 'admin',
-                    password=nvr['password'] or '',
-                    channel=channel,
-                    epoch_begin=timestamp,
-                    epoch_end=timestamp + 60,
-                    timeout=30
-                )
-            elif source == "snapshot":
-                image_data = capture_snapshot(nvr, channel)
-            else:
-                rtsp_url = build_rtsp_url(nvr, channel)
-                image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
-
-            # Inter-capture cooldown (tunable live via admin endpoint)
-            if CAPTURE_COOLDOWN > 0:
-                _time.sleep(CAPTURE_COOLDOWN)
-
-            if image_data:
-                return (identity, request_id, image_data, False, nvr_ip)
-            else:
-                mark_nvr_down_if_unreachable(nvr_ip)
-                return (identity, request_id, b"", True, nvr_ip)
-        except Exception as e:
-            logger.error(f"Async capture error: {e}")
-            mark_nvr_down_if_unreachable(nvr_ip)
-            return (identity, request_id, b"", True, nvr_ip)
-
     in_flight = {}  # request_id -> future
+    in_flight_meta = {}  # request_id -> {identity, nvr_ip, nvr_id, channel, source, recv_at, started_at}
     # Index: (nvr_id, channel) -> request_id for dedup
     pending_by_channel = {}  # (nvr, ch) -> req_id currently in pending_queue
 
@@ -1646,18 +1637,36 @@ def zmq_async_handler():
                     del pending_by_channel[ch_key]
                 response_id = req.get("response_id", req_id)
                 started_at = _time.time()
-                queue_time = round(started_at - req.get("recv_at", started_at), 3)
+                recv_at = req.get("recv_at", started_at)
+                queue_time = round(started_at - recv_at, 3)
                 logger.info(f"ZMQ async STARTED {response_id}: {req['nvr']} ch{req['channel']} (nvr_ip={nvr_ip}, queued={queue_time}s)")
                 log_event("START", response_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip, "queue_sec": queue_time})
 
-                # Store started_at in state for capture_time calculation
+                # Move from pending to active in worker_state
                 with worker_state_lock:
-                    if response_id in worker_state["zmq_router"]["pending_requests"]:
-                        worker_state["zmq_router"]["pending_requests"][response_id]["started_at"] = started_at
+                    req_info = worker_state["zmq_router"]["pending_requests"].pop(response_id, None)
+                    if req_info:
+                        req_info["processing_started_at"] = started_at
+                    else:
+                        req_info = {"nvr": req["nvr"], "channel": req["channel"], "source": req["source"]}
+                    req_info["started_at"] = started_at
+                    worker_state["zmq_router"]["active_requests"][response_id] = req_info
+
+                # Track metadata in main process (identity bytes can't cross process boundary)
+                in_flight_meta[response_id] = {
+                    "identity": req["identity"],
+                    "nvr_ip": nvr_ip,
+                    "nvr_id": req["nvr"],
+                    "channel": req["channel"],
+                    "source": req["source"],
+                    "recv_at": recv_at,
+                    "started_at": started_at,
+                }
+
                 future = executor.submit(
-                    process_request,
-                    req["identity"], response_id, req["nvr"], req["channel"], req["source"],
-                    nvr_ip or "", req.get("timestamp")
+                    _capture_subprocess,
+                    req["nvr"], req["channel"], req["source"],
+                    nvr_ip or "", req.get("timestamp"), CAPTURE_COOLDOWN
                 )
                 in_flight[response_id] = future
 
@@ -1665,19 +1674,27 @@ def zmq_async_handler():
             completed = []
             for req_id, future in in_flight.items():
                 if future.done():
-                    identity, request_id, image_data, is_error, nvr_ip = future.result()
+                    meta = in_flight_meta.get(req_id, {})
+                    identity = meta.get("identity", b"")
+                    nvr_ip = meta.get("nvr_ip", "")
+                    nvr_id = meta.get("nvr_id", "?")
+                    channel = meta.get("channel", 0)
+                    source = meta.get("source", "?")
+                    recv_at = meta.get("recv_at", _time.time())
+                    started_at = meta.get("started_at", recv_at)
                     done_at = _time.time()
 
-                    # Get timing info from active_requests (moved there by process_request)
-                    with worker_state_lock:
-                        req_info = worker_state["zmq_router"]["active_requests"].get(req_id, {})
-                        if not req_info:
-                            req_info = worker_state["zmq_router"]["pending_requests"].get(req_id, {})
-                        nvr_id = req_info.get("nvr", "?")
-                        channel = req_info.get("channel", 0)
-                        source = req_info.get("source", "?")
-                        recv_at = req_info.get("recv_at", done_at)
-                        started_at = req_info.get("started_at", recv_at)
+                    try:
+                        image_data = future.result()
+                    except Exception as e:
+                        logger.error(f"Capture subprocess error for {req_id}: {e}")
+                        image_data = b""
+
+                    is_error = len(image_data) == 0
+
+                    # Circuit breaker check (runs in main process)
+                    if is_error and nvr_ip:
+                        mark_nvr_down_if_unreachable(nvr_ip)
 
                     # Calculate timing breakdown (in ms for client convenience)
                     queue_ms = int((started_at - recv_at) * 1000)
@@ -1694,8 +1711,8 @@ def zmq_async_handler():
                     }).encode('utf-8')
 
                     # Send response: [identity, empty, request_id, jpeg_bytes, metadata_json]
-                    socket.send_multipart([identity, b"", request_id.encode('utf-8'), image_data, metadata])
-                    logger.info(f"ZMQ async response {request_id}: {len(image_data)} bytes (q:{queue_ms}ms cap:{capture_ms}ms)")
+                    socket.send_multipart([identity, b"", req_id.encode('utf-8'), image_data, metadata])
+                    logger.info(f"ZMQ async response {req_id}: {len(image_data)} bytes (q:{queue_ms}ms cap:{capture_ms}ms)")
                     completed.append((req_id, nvr_ip))
 
                     # Log event
@@ -1703,11 +1720,11 @@ def zmq_async_handler():
                     capture_sec = capture_ms / 1000
                     total_sec = total_ms / 1000
                     if is_error:
-                        log_event("ERROR", request_id, nvr_id, channel, source, {
+                        log_event("ERROR", req_id, nvr_id, channel, source, {
                             "queue_sec": queue_sec, "capture_sec": capture_sec, "total_sec": total_sec
                         })
                     else:
-                        log_event("DONE", request_id, nvr_id, channel, source, {
+                        log_event("DONE", req_id, nvr_id, channel, source, {
                             "bytes": len(image_data), "queue_sec": queue_sec, "capture_sec": capture_sec, "total_sec": total_sec
                         })
 
@@ -1724,6 +1741,7 @@ def zmq_async_handler():
             # Release NVR slots and remove from in_flight
             for req_id, nvr_ip in completed:
                 del in_flight[req_id]
+                in_flight_meta.pop(req_id, None)
                 if nvr_ip:
                     with nvr_active_lock:
                         nvr_active_count[nvr_ip] = max(0, nvr_active_count[nvr_ip] - 1)
