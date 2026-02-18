@@ -759,12 +759,11 @@
         }
 
         async function loadThumbnails() {
-            // Fetch thumbnails from Express server, filtered to nvr1 (GW Security) only
+            // Fetch thumbnails from Express server
             const baseUrl = 'http://localhost:5173';
             console.log('loadThumbnails called, currentWarehouseId:', currentWarehouseId);
             try {
-                // Filter to nvr1 (GW Security at 192.168.0.165) - our cameras
-                const resp = await fetch(`${baseUrl}/api/warehouses/${currentWarehouseId}/thumbnails?nvr=nvr1`);
+                const resp = await fetch(`${baseUrl}/api/warehouses/${currentWarehouseId}/thumbnails`);
                 const data = await resp.json();
                 console.log('Thumbnails API response:', data.count, 'thumbnails (nvr filter:', data.nvrFilter, ')');
                 availableThumbnails = (data.thumbnails || []).map(t => ({
