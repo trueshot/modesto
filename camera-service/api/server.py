@@ -955,6 +955,38 @@ def clear_circuit_breaker(nvr_ip: str):
     clear_nvr_down(nvr_ip)
     return {"message": f"Circuit breaker cleared for {nvr_ip}"}
 
+@app.get("/api/admin/concurrency")
+def get_concurrency():
+    """Get current NVR max concurrent connections"""
+    return {"nvr_max_concurrent": NVR_MAX_CONCURRENT}
+
+@app.put("/api/admin/concurrency/{value}")
+def set_concurrency(value: int):
+    """Set NVR max concurrent connections (live, no restart needed)"""
+    global NVR_MAX_CONCURRENT
+    if value < 1 or value > 16:
+        raise HTTPException(status_code=400, detail="Value must be 1-16")
+    old = NVR_MAX_CONCURRENT
+    NVR_MAX_CONCURRENT = value
+    logger.info(f"NVR_MAX_CONCURRENT changed: {old} -> {value}")
+    return {"nvr_max_concurrent": value, "previous": old}
+
+@app.get("/api/admin/cooldown")
+def get_cooldown():
+    """Get inter-capture cooldown in seconds"""
+    return {"capture_cooldown": CAPTURE_COOLDOWN}
+
+@app.put("/api/admin/cooldown/{value}")
+def set_cooldown(value: float):
+    """Set inter-capture cooldown in seconds (live, no restart needed)"""
+    global CAPTURE_COOLDOWN
+    if value < 0 or value > 5:
+        raise HTTPException(status_code=400, detail="Value must be 0-5")
+    old = CAPTURE_COOLDOWN
+    CAPTURE_COOLDOWN = value
+    logger.info(f"CAPTURE_COOLDOWN changed: {old} -> {value}")
+    return {"capture_cooldown": value, "previous": old}
+
 # ============================================================================
 # NVR DIRECT ACCESS (queries lodge.db)
 # ============================================================================
@@ -1225,7 +1257,7 @@ worker_state = {
     }
 }
 worker_state_lock = threading.Lock()
-EVENT_LOG_MAX = 200  # Keep last 200 events
+EVENT_LOG_MAX = 1000  # Keep last 1000 events
 event_seq = 0  # Global sequence number for event ordering
 
 def log_event(event_type: str, request_id: str, nvr: str, channel: int, source: str, extra: dict = None):
@@ -1249,8 +1281,10 @@ def log_event(event_type: str, request_id: str, nvr: str, channel: int, source: 
         if len(log) > EVENT_LOG_MAX:
             worker_state["zmq_router"]["event_log"] = log[-EVENT_LOG_MAX:]
 
-# Per-NVR connection throttling (NVRs typically handle max 2 concurrent RTSP)
-NVR_MAX_CONCURRENT = 2
+# Per-NVR connection throttling (sequential is faster than parallel for request/response captures)
+NVR_MAX_CONCURRENT = 1
+# Inter-capture cooldown (seconds). Gives NVR time to clean up between connections.
+CAPTURE_COOLDOWN = 0.75
 nvr_semaphores = {}  # nvr_ip -> threading.Semaphore
 nvr_semaphores_lock = threading.Lock()
 
@@ -1495,6 +1529,10 @@ def zmq_async_handler():
                 rtsp_url = build_rtsp_url(nvr, channel)
                 image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
 
+            # Inter-capture cooldown
+            if CAPTURE_COOLDOWN > 0:
+                _time.sleep(CAPTURE_COOLDOWN)
+
             if image_data:
                 return (identity, request_id, image_data, False, nvr_ip)
             else:
@@ -1506,6 +1544,8 @@ def zmq_async_handler():
             return (identity, request_id, b"", True, nvr_ip)
 
     in_flight = {}  # request_id -> future
+    # Index: (nvr_id, channel) -> request_id for dedup
+    pending_by_channel = {}  # (nvr, ch) -> req_id currently in pending_queue
 
     while True:
         try:
@@ -1536,6 +1576,24 @@ def zmq_async_handler():
                 recv_at = _time.time()
                 log_event("RECV", request_id, nvr_id, channel, source)
 
+                # Dedup: if there's already a PENDING request for same NVR+channel, cancel the old one
+                ch_key = (nvr_id, channel)
+                old_req_id = pending_by_channel.get(ch_key)
+                if old_req_id and old_req_id in pending_queue:
+                    old_req = pending_queue.pop(old_req_id)
+                    # Send empty response to old request (superseded)
+                    metadata = json.dumps({
+                        "queue_ms": 0, "capture_ms": 0,
+                        "total_ms": int((recv_at - old_req.get("recv_at", recv_at)) * 1000),
+                        "bytes": 0, "error": True, "superseded": True
+                    }).encode('utf-8')
+                    socket.send_multipart([old_req["identity"], b"", old_req_id.encode('utf-8'), b"", metadata])
+                    log_event("SUPERSEDED", old_req_id, nvr_id, channel, source)
+                    logger.info(f"ZMQ async SUPERSEDED {old_req_id}: replaced by {request_id}")
+                    with worker_state_lock:
+                        worker_state["zmq_router"]["pending_requests"].pop(old_req_id, None)
+                        worker_state["zmq_router"]["errors"] += 1
+
                 # Add to pending queue
                 pending_queue[request_id] = {
                     "identity": identity,
@@ -1546,6 +1604,7 @@ def zmq_async_handler():
                     "recv_at": recv_at,
                     "queued_at": recv_at  # Alias for backward compat
                 }
+                pending_by_channel[ch_key] = request_id
 
                 # Track in state
                 with worker_state_lock:
@@ -1581,6 +1640,9 @@ def zmq_async_handler():
             # Reject circuit-breaker'd requests immediately
             for req_id, req, nvr_ip in to_reject:
                 del pending_queue[req_id]
+                ch_key = (req["nvr"], req["channel"])
+                if pending_by_channel.get(ch_key) == req_id:
+                    del pending_by_channel[ch_key]
                 now = _time.time()
                 log_event("CIRCUIT_BREAK", req_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip})
                 logger.info(f"ZMQ async CIRCUIT_BREAK {req_id}: {req['nvr']} ch{req['channel']} — NVR {nvr_ip} down")
@@ -1598,6 +1660,9 @@ def zmq_async_handler():
             # Submit scheduled requests
             for req_id, req, nvr_ip in to_submit:
                 del pending_queue[req_id]
+                ch_key = (req["nvr"], req["channel"])
+                if pending_by_channel.get(ch_key) == req_id:
+                    del pending_by_channel[ch_key]
                 started_at = _time.time()
                 queue_time = round(started_at - req.get("recv_at", started_at), 3)
                 logger.info(f"ZMQ async STARTED {req_id}: {req['nvr']} ch{req['channel']} (nvr_ip={nvr_ip}, queued={queue_time}s)")
@@ -1707,6 +1772,7 @@ class TagScanRequest(BaseModel):
     timeout: int = 30
     push_to: str = "tcp://127.0.0.1:5557"
     scan_id: Optional[str] = None  # Client-provided ID; server generates if omitted
+    concurrency: Optional[int] = None  # Per-scan override; uses NVR_MAX_CONCURRENT if omitted
 
 def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_lock: threading.Lock, stop_event: threading.Event):
     """
@@ -1753,6 +1819,10 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_l
 
             cap_sec = round(_time.time() - cap_start, 3)
 
+            # Inter-capture cooldown — let NVR clean up before next connection
+            if CAPTURE_COOLDOWN > 0:
+                _time.sleep(CAPTURE_COOLDOWN)
+
             # Re-enqueue channel for next round
             ch_queue.put(channel)
 
@@ -1789,7 +1859,8 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_l
                 with tag_scan_lock:
                     scan["stats"]["frames_failed"] += 1
 
-    n_workers = min(NVR_MAX_CONCURRENT, len(channels))
+    max_conc = scan.get("concurrency", NVR_MAX_CONCURRENT)
+    n_workers = min(max_conc, len(channels))
     threads = []
     for _ in range(n_workers):
         t = threading.Thread(target=worker, daemon=True)
@@ -1905,11 +1976,13 @@ def start_tag_scan(request: TagScanRequest):
 
     # Build scan state
     stop_event = threading.Event()
+    effective_concurrency = request.concurrency or NVR_MAX_CONCURRENT
     scan = {
         "scan_id": scan_id,
         "cameras": [{"nvr": c.nvr, "channel": c.channel} for c in request.cameras],
         "timeout": request.timeout,
         "push_to": request.push_to,
+        "concurrency": effective_concurrency,
         "started_at": _time.time(),
         "finished_at": None,
         "stop_event": stop_event,
@@ -1931,13 +2004,14 @@ def start_tag_scan(request: TagScanRequest):
     coord = threading.Thread(target=_tag_scan_coordinator, args=(scan,), daemon=True)
     coord.start()
 
-    logger.info(f"Tag scan {scan_id} started: {len(request.cameras)} cameras, {request.timeout}s, push_to={request.push_to}")
+    logger.info(f"Tag scan {scan_id} started: {len(request.cameras)} cameras, {request.timeout}s, concurrency={effective_concurrency}, push_to={request.push_to}")
 
     return {
         "scan_id": scan_id,
         "status": "starting",
         "cameras": len(request.cameras),
         "timeout": request.timeout,
+        "concurrency": effective_concurrency,
         "push_to": request.push_to
     }
 
@@ -2226,7 +2300,7 @@ def monitor_page():
             }
         }
 
-        let lastLogLength = 0;
+        let lastLogSeq = 0;
         function renderEventLog(events) {
             const logEl = document.getElementById('event-log');
             const countEl = document.getElementById('log-count');
@@ -2234,9 +2308,10 @@ def monitor_page():
 
             countEl.textContent = `(${events.length})`;
 
-            // Only re-render if log changed
-            if (events.length === lastLogLength) return;
-            lastLogLength = events.length;
+            // Only re-render if log changed (check last seq, not length — length caps at EVENT_LOG_MAX)
+            const lastSeq = events.length > 0 ? events[events.length - 1].seq : 0;
+            if (lastSeq === lastLogSeq) return;
+            lastLogSeq = lastSeq;
 
             const typeColors = {
                 'RECV': '#888',
@@ -2281,7 +2356,7 @@ def monitor_page():
         async function clearLog() {
             await fetch('/api/monitor/reset?clear_log=true', {method: 'POST'});
             document.getElementById('event-log').innerHTML = '';
-            lastLogLength = 0;
+            lastLogSeq = 0;
         }
 
         async function resetStats() {

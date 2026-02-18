@@ -88,11 +88,13 @@ class CameraCapture:
         import queue
 
         result_queue = queue.Queue()
+        # Shared ref so we can force-release on timeout
+        cap_holder = [None]
 
         def _capture():
-            cap = None
             try:
                 cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+                cap_holder[0] = cap
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
                 if not cap.isOpened():
@@ -130,6 +132,7 @@ class CameraCapture:
                 result_queue.put(None)
 
             finally:
+                cap = cap_holder[0]
                 if cap is not None:
                     cap.release()
 
@@ -139,8 +142,14 @@ class CameraCapture:
         thread.join(timeout=timeout)
 
         if thread.is_alive():
-            # Timeout - thread still running, return None
+            # Timeout — force-release the RTSP connection so NVR doesn't see a ghost
             logger.warning(f"Timeout ({timeout}s) capturing from: {rtsp_url}")
+            cap = cap_holder[0]
+            if cap is not None:
+                try:
+                    cap.release()
+                except Exception:
+                    pass
             return None
 
         try:
