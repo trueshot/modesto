@@ -225,6 +225,7 @@ class CameraCapture:
             FROM channels c
             LEFT JOIN linkages l ON l.channel_id = c.id
             LEFT JOIN mounts m ON l.mount_id = m.id
+            WHERE c.status = 'active'
             ORDER BY c.nvr_id, c.channel_number
         """)
 
