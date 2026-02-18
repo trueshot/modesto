@@ -226,37 +226,6 @@ def get_monitor_status():
         # Include event log (last N events)
         state["zmq_router"]["event_log"] = list(worker_state["zmq_router"]["event_log"])
 
-    # Tag scan status (separate lock)
-    with tag_scan_lock:
-        active = tag_scan_state["active_scan"]
-        if active:
-            elapsed = now - active["started_at"]
-            state["tag_scan"] = {
-                "active": True,
-                "scan_id": active["scan_id"],
-                "status": active["status"],
-                "cameras": len(active["cameras"]),
-                "elapsed_sec": round(elapsed, 1),
-                "remaining_sec": round(max(0, active["timeout"] - elapsed), 1),
-                "stats": active["stats"]
-            }
-        else:
-            # Show last completed scan stats until next scan or manual clear
-            if tag_scan_state["history"]:
-                last = tag_scan_state["history"][-1]
-                elapsed = round(last["finished_at"] - last["started_at"], 1)
-                fps = round(last["stats"]["frames_pushed"] / elapsed, 2) if elapsed > 0 else 0
-                state["tag_scan"] = {
-                    "active": False,
-                    "scan_id": last["scan_id"],
-                    "status": last["status"],
-                    "elapsed_sec": elapsed,
-                    "remaining_sec": 0,
-                    "stats": last["stats"]
-                }
-            else:
-                state["tag_scan"] = {"active": False}
-
     return state
 
 @app.post("/api/monitor/reset")
@@ -1281,10 +1250,10 @@ def log_event(event_type: str, request_id: str, nvr: str, channel: int, source: 
         if len(log) > EVENT_LOG_MAX:
             worker_state["zmq_router"]["event_log"] = log[-EVENT_LOG_MAX:]
 
-# Per-NVR connection throttling (sequential is faster than parallel for request/response captures)
-NVR_MAX_CONCURRENT = 1
-# Inter-capture cooldown (seconds). Gives NVR time to clean up between connections.
-CAPTURE_COOLDOWN = 0.75
+# Per-NVR connection throttling
+NVR_MAX_CONCURRENT = 2
+# Inter-capture cooldown (seconds). 0 = no delay. Tunable live via PUT /api/admin/cooldown/{value}
+CAPTURE_COOLDOWN = 0.0
 nvr_semaphores = {}  # nvr_ip -> threading.Semaphore
 nvr_semaphores_lock = threading.Lock()
 
@@ -1529,7 +1498,7 @@ def zmq_async_handler():
                 rtsp_url = build_rtsp_url(nvr, channel)
                 image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
 
-            # Inter-capture cooldown
+            # Inter-capture cooldown (tunable live via admin endpoint)
             if CAPTURE_COOLDOWN > 0:
                 _time.sleep(CAPTURE_COOLDOWN)
 
@@ -1576,12 +1545,13 @@ def zmq_async_handler():
                 recv_at = _time.time()
                 log_event("RECV", request_id, nvr_id, channel, source)
 
-                # Dedup: if there's already a PENDING request for same NVR+channel, cancel the old one
+                # Dedup: if there's already a PENDING request for same NVR+channel,
+                # keep queue position but update to respond to the new requester
                 ch_key = (nvr_id, channel)
                 old_req_id = pending_by_channel.get(ch_key)
                 if old_req_id and old_req_id in pending_queue:
-                    old_req = pending_queue.pop(old_req_id)
-                    # Send empty response to old request (superseded)
+                    old_req = pending_queue[old_req_id]  # don't pop — keep queue position
+                    # Send SUPERSEDED to old requester (frontend already gave up on that pass)
                     metadata = json.dumps({
                         "queue_ms": 0, "capture_ms": 0,
                         "total_ms": int((recv_at - old_req.get("recv_at", recv_at)) * 1000),
@@ -1589,32 +1559,42 @@ def zmq_async_handler():
                     }).encode('utf-8')
                     socket.send_multipart([old_req["identity"], b"", old_req_id.encode('utf-8'), b"", metadata])
                     log_event("SUPERSEDED", old_req_id, nvr_id, channel, source)
-                    logger.info(f"ZMQ async SUPERSEDED {old_req_id}: replaced by {request_id}")
+                    logger.info(f"ZMQ async SUPERSEDED {old_req_id}: replaced by {request_id} (kept queue position)")
+                    # Update entry in place — new requester takes this queue slot
+                    old_req["identity"] = identity
+                    old_req["response_id"] = request_id
+                    old_req["recv_at"] = recv_at
+                    old_req["timestamp"] = req_timestamp
                     with worker_state_lock:
                         worker_state["zmq_router"]["pending_requests"].pop(old_req_id, None)
+                        worker_state["zmq_router"]["pending_requests"][request_id] = {
+                            "nvr": nvr_id, "channel": channel, "source": source,
+                            "recv_at": recv_at, "queued_at": old_req["queued_at"]
+                        }
                         worker_state["zmq_router"]["errors"] += 1
-
-                # Add to pending queue
-                pending_queue[request_id] = {
-                    "identity": identity,
-                    "nvr": nvr_id,
-                    "channel": channel,
-                    "source": source,
-                    "timestamp": req_timestamp,
-                    "recv_at": recv_at,
-                    "queued_at": recv_at  # Alias for backward compat
-                }
-                pending_by_channel[ch_key] = request_id
-
-                # Track in state
-                with worker_state_lock:
-                    worker_state["zmq_router"]["pending_requests"][request_id] = {
+                    # pending_by_channel stays pointing to old_req_id (the pending_queue key)
+                else:
+                    # Add to pending queue
+                    pending_queue[request_id] = {
+                        "identity": identity,
                         "nvr": nvr_id,
                         "channel": channel,
                         "source": source,
+                        "timestamp": req_timestamp,
                         "recv_at": recv_at,
                         "queued_at": recv_at
                     }
+                    pending_by_channel[ch_key] = request_id
+
+                    # Track in state
+                    with worker_state_lock:
+                        worker_state["zmq_router"]["pending_requests"][request_id] = {
+                            "nvr": nvr_id,
+                            "channel": channel,
+                            "source": source,
+                            "recv_at": recv_at,
+                            "queued_at": recv_at
+                        }
 
             # Schedule: find requests for NVRs with available capacity
             to_submit = []
@@ -1643,18 +1623,19 @@ def zmq_async_handler():
                 ch_key = (req["nvr"], req["channel"])
                 if pending_by_channel.get(ch_key) == req_id:
                     del pending_by_channel[ch_key]
+                response_id = req.get("response_id", req_id)
                 now = _time.time()
-                log_event("CIRCUIT_BREAK", req_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip})
-                logger.info(f"ZMQ async CIRCUIT_BREAK {req_id}: {req['nvr']} ch{req['channel']} — NVR {nvr_ip} down")
+                log_event("CIRCUIT_BREAK", response_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip})
+                logger.info(f"ZMQ async CIRCUIT_BREAK {response_id}: {req['nvr']} ch{req['channel']} — NVR {nvr_ip} down")
 
                 metadata = json.dumps({
                     "queue_ms": 0, "capture_ms": 0, "total_ms": int((now - req.get("recv_at", now)) * 1000),
                     "bytes": 0, "error": True, "circuit_breaker": True
                 }).encode('utf-8')
-                socket.send_multipart([req["identity"], b"", req_id.encode('utf-8'), b"", metadata])
+                socket.send_multipart([req["identity"], b"", response_id.encode('utf-8'), b"", metadata])
 
                 with worker_state_lock:
-                    worker_state["zmq_router"]["pending_requests"].pop(req_id, None)
+                    worker_state["zmq_router"]["pending_requests"].pop(response_id, None)
                     worker_state["zmq_router"]["errors"] += 1
 
             # Submit scheduled requests
@@ -1663,21 +1644,22 @@ def zmq_async_handler():
                 ch_key = (req["nvr"], req["channel"])
                 if pending_by_channel.get(ch_key) == req_id:
                     del pending_by_channel[ch_key]
+                response_id = req.get("response_id", req_id)
                 started_at = _time.time()
                 queue_time = round(started_at - req.get("recv_at", started_at), 3)
-                logger.info(f"ZMQ async STARTED {req_id}: {req['nvr']} ch{req['channel']} (nvr_ip={nvr_ip}, queued={queue_time}s)")
-                log_event("START", req_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip, "queue_sec": queue_time})
+                logger.info(f"ZMQ async STARTED {response_id}: {req['nvr']} ch{req['channel']} (nvr_ip={nvr_ip}, queued={queue_time}s)")
+                log_event("START", response_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip, "queue_sec": queue_time})
 
                 # Store started_at in state for capture_time calculation
                 with worker_state_lock:
-                    if req_id in worker_state["zmq_router"]["pending_requests"]:
-                        worker_state["zmq_router"]["pending_requests"][req_id]["started_at"] = started_at
+                    if response_id in worker_state["zmq_router"]["pending_requests"]:
+                        worker_state["zmq_router"]["pending_requests"][response_id]["started_at"] = started_at
                 future = executor.submit(
                     process_request,
-                    req["identity"], req_id, req["nvr"], req["channel"], req["source"],
+                    req["identity"], response_id, req["nvr"], req["channel"], req["source"],
                     nvr_ip or "", req.get("timestamp")
                 )
-                in_flight[req_id] = future
+                in_flight[response_id] = future
 
             # Check for completed futures
             completed = []
@@ -1751,313 +1733,6 @@ def zmq_async_handler():
         except Exception as e:
             logger.error(f"ZMQ async handler error: {e}")
 
-# ============================================================================
-# TAG SCAN (continuous frame push for AprilTag detection)
-# ============================================================================
-
-# State tracking — one scan at a time
-tag_scan_state = {
-    "active_scan": None,
-    "history": []
-}
-tag_scan_lock = threading.Lock()
-TAG_SCAN_HISTORY_MAX = 10
-
-class TagScanCamera(BaseModel):
-    nvr: str
-    channel: int
-
-class TagScanRequest(BaseModel):
-    cameras: List[TagScanCamera]
-    timeout: int = 30
-    push_to: str = "tcp://127.0.0.1:5557"
-    scan_id: Optional[str] = None  # Client-provided ID; server generates if omitted
-    concurrency: Optional[int] = None  # Per-scan override; uses NVR_MAX_CONCURRENT if omitted
-
-def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_lock: threading.Lock, stop_event: threading.Event):
-    """
-    N worker threads per NVR, round-robining channels from a shared queue.
-    N = NVR_MAX_CONCURRENT (request/response model chokes beyond that).
-    """
-    import queue
-
-    nvr = get_nvr_info(nvr_id)
-    if not nvr:
-        logger.error(f"Tag scan: NVR '{nvr_id}' not found")
-        return
-
-    nvr_ip = nvr['ip']
-    started_at = scan["started_at"]
-    timeout = scan["timeout"]
-
-    # Channel queue — workers pull next channel, capture, re-enqueue
-    ch_queue = queue.Queue()
-    for ch in channels:
-        ch_queue.put(ch)
-
-    def worker():
-        import uuid
-        while not stop_event.is_set():
-            if _time.time() - started_at >= timeout:
-                break
-
-            if is_nvr_down(nvr_ip):
-                _time.sleep(5)
-                continue
-
-            try:
-                channel = ch_queue.get(timeout=0.5)
-            except queue.Empty:
-                continue
-
-            req_id = f"ts-{uuid.uuid4().hex[:8]}"
-            log_event("START", req_id, nvr_id, channel, "tagscan")
-            cap_start = _time.time()
-
-            rtsp_url = build_rtsp_url(nvr, channel)
-            jpeg = camera_capture.capture_frame(rtsp_url, timeout=8)
-
-            cap_sec = round(_time.time() - cap_start, 3)
-
-            # Inter-capture cooldown — let NVR clean up before next connection
-            if CAPTURE_COOLDOWN > 0:
-                _time.sleep(CAPTURE_COOLDOWN)
-
-            # Re-enqueue channel for next round
-            ch_queue.put(channel)
-
-            if not jpeg:
-                mark_nvr_down_if_unreachable(nvr_ip)
-                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec})
-                with tag_scan_lock:
-                    scan["stats"]["frames_failed"] += 1
-                if is_nvr_down(nvr_ip):
-                    _time.sleep(5)
-                continue
-
-            try:
-                ts = str(_time.time()).encode('utf-8')
-                with push_lock:
-                    push_socket.send_multipart([
-                        nvr_id.encode('utf-8'),
-                        str(channel).encode('utf-8'),
-                        jpeg,
-                        ts
-                    ], zmq.NOBLOCK)
-                log_event("DONE", req_id, nvr_id, channel, "tagscan", {"bytes": len(jpeg), "capture_sec": cap_sec})
-                with tag_scan_lock:
-                    scan["stats"]["frames_pushed"] += 1
-                    scan["stats"]["bytes_pushed"] += len(jpeg)
-            except zmq.Again:
-                logger.warning(f"Tag scan: ZMQ send buffer full, dropping {nvr_id} ch{channel}")
-                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec, "drop": True})
-                with tag_scan_lock:
-                    scan["stats"]["frames_failed"] += 1
-            except Exception as e:
-                logger.error(f"Tag scan: ZMQ send error: {e}")
-                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec})
-                with tag_scan_lock:
-                    scan["stats"]["frames_failed"] += 1
-
-    max_conc = scan.get("concurrency", NVR_MAX_CONCURRENT)
-    n_workers = min(max_conc, len(channels))
-    threads = []
-    for _ in range(n_workers):
-        t = threading.Thread(target=worker, daemon=True)
-        threads.append(t)
-        t.start()
-
-    for t in threads:
-        t.join()
-
-def _tag_scan_coordinator(scan):
-    """Spawns one worker thread per NVR, waits for all to finish, cleans up."""
-    try:
-        stop_event = scan["stop_event"]
-        push_socket = scan["push_socket"]
-        push_lock = threading.Lock()  # ZMQ socket not thread-safe
-
-        # Group cameras by NVR
-        from collections import defaultdict
-        cameras_by_nvr = defaultdict(list)
-        for cam in scan["cameras"]:
-            cameras_by_nvr[cam["nvr"]].append(cam["channel"])
-
-        with tag_scan_lock:
-            scan["status"] = "running"
-
-        # One thread per NVR (each spawns per-channel threads internally)
-        threads = []
-        for nvr_id, channels in cameras_by_nvr.items():
-            t = threading.Thread(
-                target=_nvr_scan_worker,
-                args=(scan, nvr_id, channels, push_socket, push_lock, stop_event),
-                daemon=True
-            )
-            threads.append(t)
-            t.start()
-            logger.info(f"Tag scan {scan['scan_id']}: started worker for {nvr_id} ({len(channels)} channels, 1 thread/channel)")
-
-        # Wait for all workers
-        for t in threads:
-            t.join()
-
-        with tag_scan_lock:
-            if scan["status"] != "error":
-                scan["status"] = "stopped" if stop_event.is_set() else "completed"
-
-    except Exception as e:
-        logger.error(f"Tag scan coordinator error: {e}")
-        with tag_scan_lock:
-            scan["status"] = "error"
-            scan["stats"]["error"] = str(e)
-
-    finally:
-        # Cleanup
-        try:
-            scan["push_socket"].close()
-        except:
-            pass
-        scan["finished_at"] = _time.time()
-        logger.info(f"Tag scan {scan['scan_id']} {scan['status']}: {scan['stats']}")
-
-        # Move to history
-        with tag_scan_lock:
-            tag_scan_state["active_scan"] = None
-            tag_scan_state["history"].append({
-                "scan_id": scan["scan_id"],
-                "status": scan["status"],
-                "started_at": scan["started_at"],
-                "finished_at": scan["finished_at"],
-                "stats": scan["stats"]
-            })
-            if len(tag_scan_state["history"]) > TAG_SCAN_HISTORY_MAX:
-                tag_scan_state["history"] = tag_scan_state["history"][-TAG_SCAN_HISTORY_MAX:]
-
-@app.post("/api/tag-scan/start")
-def start_tag_scan(request: TagScanRequest):
-    """
-    Start continuous tag scan. Pushes frames via ZMQ PUSH to the given endpoint.
-    One scan at a time. Each NVR's cameras are round-robined independently.
-    """
-    # Validate
-    if not request.cameras:
-        raise HTTPException(status_code=400, detail="No cameras specified")
-    if request.timeout <= 0:
-        raise HTTPException(status_code=400, detail="Timeout must be positive")
-
-    # Check no scan already active
-    with tag_scan_lock:
-        if tag_scan_state["active_scan"] is not None:
-            active = tag_scan_state["active_scan"]
-            raise HTTPException(
-                status_code=409,
-                detail=f"Scan '{active['scan_id']}' already active ({active['status']})"
-            )
-
-    # Validate NVRs exist
-    for cam in request.cameras:
-        nvr = get_nvr_info(cam.nvr)
-        if not nvr:
-            raise HTTPException(status_code=400, detail=f"NVR '{cam.nvr}' not found")
-
-    # Create ZMQ PUSH socket
-    import uuid
-    scan_id = request.scan_id or str(uuid.uuid4())[:8]
-    ctx = zmq.Context()
-    push_socket = ctx.socket(zmq.PUSH)
-    push_socket.setsockopt(zmq.SNDTIMEO, 1000)  # 1s send timeout
-    push_socket.setsockopt(zmq.SNDHWM, 100)  # Buffer up to 100 frames
-    try:
-        push_socket.connect(request.push_to)
-    except Exception as e:
-        push_socket.close()
-        raise HTTPException(status_code=400, detail=f"Cannot connect to {request.push_to}: {e}")
-
-    # Build scan state
-    stop_event = threading.Event()
-    effective_concurrency = request.concurrency or NVR_MAX_CONCURRENT
-    scan = {
-        "scan_id": scan_id,
-        "cameras": [{"nvr": c.nvr, "channel": c.channel} for c in request.cameras],
-        "timeout": request.timeout,
-        "push_to": request.push_to,
-        "concurrency": effective_concurrency,
-        "started_at": _time.time(),
-        "finished_at": None,
-        "stop_event": stop_event,
-        "push_socket": push_socket,
-        "status": "starting",
-        "stats": {
-            "frames_pushed": 0,
-            "frames_failed": 0,
-            "bytes_pushed": 0,
-            "cycles_completed": 0,
-            "error": None
-        }
-    }
-
-    with tag_scan_lock:
-        tag_scan_state["active_scan"] = scan
-
-    # Start coordinator thread
-    coord = threading.Thread(target=_tag_scan_coordinator, args=(scan,), daemon=True)
-    coord.start()
-
-    logger.info(f"Tag scan {scan_id} started: {len(request.cameras)} cameras, {request.timeout}s, concurrency={effective_concurrency}, push_to={request.push_to}")
-
-    return {
-        "scan_id": scan_id,
-        "status": "starting",
-        "cameras": len(request.cameras),
-        "timeout": request.timeout,
-        "concurrency": effective_concurrency,
-        "push_to": request.push_to
-    }
-
-@app.get("/api/tag-scan/{scan_id}/status")
-def get_tag_scan_status(scan_id: str):
-    """Get status of a tag scan (active or recently completed)."""
-    now = _time.time()
-
-    with tag_scan_lock:
-        # Check active scan
-        active = tag_scan_state["active_scan"]
-        if active and active["scan_id"] == scan_id:
-            elapsed = now - active["started_at"]
-            return {
-                "scan_id": scan_id,
-                "status": active["status"],
-                "elapsed_sec": round(elapsed, 1),
-                "remaining_sec": round(max(0, active["timeout"] - elapsed), 1),
-                "stats": active["stats"]
-            }
-
-        # Check history
-        for entry in reversed(tag_scan_state["history"]):
-            if entry["scan_id"] == scan_id:
-                return {
-                    "scan_id": scan_id,
-                    "status": entry["status"],
-                    "elapsed_sec": round(entry["finished_at"] - entry["started_at"], 1),
-                    "remaining_sec": 0,
-                    "stats": entry["stats"]
-                }
-
-    raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' not found")
-
-@app.post("/api/tag-scan/{scan_id}/stop")
-def stop_tag_scan(scan_id: str):
-    """Stop an active tag scan early."""
-    with tag_scan_lock:
-        active = tag_scan_state["active_scan"]
-        if not active or active["scan_id"] != scan_id:
-            raise HTTPException(status_code=404, detail=f"No active scan '{scan_id}'")
-        active["stop_event"].set()
-        active["status"] = "stopping"
-
-    return {"scan_id": scan_id, "message": "Stop requested"}
-
 def start_zmq_server():
     """Start ZMQ servers in background threads"""
     # REP server (backward compatible, serial)
@@ -2104,7 +1779,7 @@ def monitor_page():
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #1a1a2e; color: #eee; padding: 20px; }
         h1 { color: #00d4ff; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .panel { background: #16213e; border-radius: 8px; padding: 20px; }
         .panel h2 { color: #00d4ff; font-size: 14px; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px solid #0f3460; padding-bottom: 10px; }
         .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #0f3460; }
@@ -2169,33 +1844,6 @@ def monitor_page():
                 <span class="stat-value" id="router-bytes">-</span>
             </div>
             <div class="active-list" id="router-requests"></div>
-        </div>
-        <div class="panel" id="push-panel">
-            <h2>PUSH :5557 (Tag Scan)</h2>
-            <div class="stat">
-                <span class="stat-label">Status</span>
-                <span class="stat-value" id="push-status">-</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Scan ID</span>
-                <span class="stat-value" id="push-scan-id">-</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Pushed / Failed</span>
-                <span class="stat-value"><span id="push-pushed" style="color:#00ff88">-</span> / <span id="push-failed" style="color:#ff6b6b">-</span></span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Throughput</span>
-                <span class="stat-value" id="push-fps">-</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Data</span>
-                <span class="stat-value" id="push-bytes">-</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Elapsed / Remaining</span>
-                <span class="stat-value" id="push-time">-</span>
-            </div>
         </div>
     </div>
     <div class="panel" style="margin-top: 20px;">
@@ -2266,33 +1914,6 @@ def monitor_page():
                     listEl.innerHTML = pending + active;
                 }
 
-                // PUSH :5557 (Tag Scan)
-                const ts = data.tag_scan;
-                const pushStatus = document.getElementById('push-status');
-                if (ts && ts.scan_id) {
-                    const fps = ts.elapsed_sec > 0 ? (ts.stats.frames_pushed / ts.elapsed_sec).toFixed(2) : '0';
-                    const mb = (ts.stats.bytes_pushed / (1024*1024)).toFixed(1);
-                    pushStatus.textContent = ts.status;
-                    pushStatus.className = 'stat-value status-' + (ts.active ? ts.status : 'idle');
-                    document.getElementById('push-scan-id').textContent = ts.scan_id;
-                    document.getElementById('push-pushed').textContent = ts.stats.frames_pushed;
-                    document.getElementById('push-failed').textContent = ts.stats.frames_failed;
-                    document.getElementById('push-fps').textContent = fps + ' fps';
-                    document.getElementById('push-bytes').textContent = mb + ' MB';
-                    document.getElementById('push-time').textContent = ts.active
-                        ? ts.elapsed_sec + 's / ' + ts.remaining_sec + 's'
-                        : ts.elapsed_sec + 's (done)';
-                } else {
-                    pushStatus.textContent = 'idle';
-                    pushStatus.className = 'stat-value status-idle';
-                    document.getElementById('push-scan-id').textContent = '-';
-                    document.getElementById('push-pushed').textContent = '-';
-                    document.getElementById('push-failed').textContent = '-';
-                    document.getElementById('push-fps').textContent = '-';
-                    document.getElementById('push-bytes').textContent = '-';
-                    document.getElementById('push-time').textContent = '-';
-                }
-
                 // Event log
                 renderEventLog(data.zmq_router.event_log || []);
             } catch (e) {
@@ -2317,7 +1938,9 @@ def monitor_page():
                 'RECV': '#888',
                 'START': '#00d4ff',
                 'DONE': '#00ff88',
-                'ERROR': '#ff6b6b'
+                'ERROR': '#ff6b6b',
+                'SUPERSEDED': '#ffa500',
+                'CIRCUIT_BREAK': '#ff6b6b'
             };
 
             const lines = events.map(e => {
@@ -2325,22 +1948,14 @@ def monitor_page():
                 const color = typeColors[e.type] || '#888';
                 let extra = '';
                 if (e.type === 'DONE') {
-                    const kb = Math.round((e.bytes || 0) / 1024);
-                    if (e.queue_sec != null) {
-                        extra = ` <span style="color:#666">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s, ${kb}KB]</span>`;
-                    } else {
-                        extra = ` <span style="color:#666">[cap:${e.capture_sec}s, ${kb}KB]</span>`;
-                    }
+                    const kb = Math.round(e.bytes / 1024);
+                    extra = ` <span style="color:#666">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s, ${kb}KB]</span>`;
                 }
                 if (e.type === 'ERROR') {
-                    if (e.queue_sec != null) {
-                        extra = ` <span style="color:#ff6b6b">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s]</span>`;
-                    } else {
-                        extra = ` <span style="color:#ff6b6b">[cap:${e.capture_sec || '?'}s]</span>`;
-                    }
+                    extra = ` <span style="color:#ff6b6b">[q:${e.queue_sec}s cap:${e.capture_sec}s = ${e.total_sec}s]</span>`;
                 }
                 if (e.type === 'START') {
-                    extra = (e.queue_sec && e.queue_sec > 0.1) ? ` <span style="color:#ffd700">[queued ${e.queue_sec}s]</span>` : '';
+                    extra = e.queue_sec > 0.1 ? ` <span style="color:#ffd700">[queued ${e.queue_sec}s]</span>` : '';
                 }
                 const seq = e.seq ? `#${e.seq}` : '';
                 return `<div><span style="color:#444">${seq.padStart(5)}</span> <span style="color:#555">${time}</span> <span style="color:${color};font-weight:bold;">${e.type.padEnd(5)}</span> <span style="color:#00d4ff">${e.id}</span> ${e.nvr} ch${e.ch} ${e.src}${extra}</div>`;
