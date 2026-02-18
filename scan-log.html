@@ -425,27 +425,27 @@ async function pollScan() {
                 } else {
                     ts = Number(entry.ts).toFixed(1) + 's';
                 }
-                if (entry.type === 'frame') {
-                    // Frame event — show even with 0 tags
-                    const lowRes = entry.low_res ? ' <span style="color:#ff4757;">LOW RES</span>' : '';
-                    div.style.color = entry.tags_found > 0 ? '#00d46a' : '#555';
-                    div.innerHTML = `<span class="ts">${ts}</span> ` +
-                        `<span class="cam">${entry.nvr}/ch${entry.ch}</span> ` +
-                        `<span style="color:#666;">${entry.res || '?'}</span> ` +
-                        `<span style="color:#888;">${entry.detect_ms}ms</span> ` +
-                        `<span>${entry.tags_found > 0 ? entry.tags_found + ' tags' : 'no tags'}</span>` +
-                        lowRes;
+                const tags = entry.tags_found || [];
+                const lowRes = entry.low_res ? ' <span style="color:#ff4757;">LOW RES</span>' : '';
+                div.style.color = tags.length > 0 ? '#00d46a' : '#555';
+                let tagStr = '';
+                if (tags.length > 0) {
+                    tagStr = tags.map(t => {
+                        const margin = t.margin === 'aruco' ? 'aruco' : t.margin;
+                        return ` <span class="family">${t.family}</span>` +
+                            ` <span class="tag">#${t.tag}</span>` +
+                            ` <span class="size">${t.size_px}px</span>` +
+                            ` <span class="orient">${t.orient_deg}&deg;</span>` +
+                            ` <span class="margin">m:${margin}</span>`;
+                    }).join(' | ');
                 } else {
-                    // Tag detection event
-                    const margin = entry.margin === 'aruco' ? 'aruco' : entry.margin;
-                    div.innerHTML = `<span class="ts">${ts}</span> ` +
-                        `<span class="cam">${entry.nvr}/ch${entry.ch}</span> ` +
-                        `<span class="family">${entry.family}</span> ` +
-                        `<span class="tag">#${entry.tag}</span> ` +
-                        `<span class="size">${entry.size_px}px</span> ` +
-                        `<span class="orient">${entry.orient_deg}&deg;</span> ` +
-                        `<span class="margin">m:${margin}</span>`;
+                    tagStr = '<span>no tags</span>';
                 }
+                div.innerHTML = `<span class="ts">${ts}</span> ` +
+                    `<span class="cam">${entry.nvr}/ch${entry.ch}</span> ` +
+                    `<span style="color:#666;">${entry.res || '?'}</span> ` +
+                    `<span style="color:#888;">${entry.detect_ms}ms</span> ` +
+                    tagStr + lowRes;
                 container.appendChild(div);
             }
             // Raw JSONL

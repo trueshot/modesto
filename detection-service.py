@@ -785,49 +785,38 @@ def _pull_receiver():
                 scan = scans[active_scan_id]
                 scan["counters"][key]["frames"] += 1
 
-                # Log frame event (always, even with 0 tags)
+                # Build tags array
+                tags = []
+                for det in detections:
+                    size_px = compute_tag_size(det.corners)
+                    orient_deg = compute_tag_orientation(det.corners)
+                    tags.append({
+                        "tag": det.tag_id,
+                        "family": det.asset_name,
+                        "margin": round(det.decision_margin, 1) if det.decision_margin >= 0 else "aruco",
+                        "size_px": round(size_px, 1),
+                        "orient_deg": round(orient_deg, 1),
+                    })
+                    scan["counters"][key]["tags"].add((det.asset_name, det.tag_id))
+
+                # Log frame event with embedded tags (tags_found last for readability)
                 frame_entry = {
                     "ts": round(ts, 3),
                     "nvr": nvr,
                     "ch": channel,
                     "type": "frame",
-                    "tags_found": len(detections),
                     "detect_ms": round(detect_ms, 0),
                     "res": f"{detect_info['capture_w']}x{detect_info['capture_h']}",
                 }
                 if detect_info.get("low_res"):
                     frame_entry["low_res"] = True
+                frame_entry["tags_found"] = tags
                 scan["log_lines"].append(frame_entry)
                 try:
                     with open(scan["log_path"], "a") as f:
                         f.write(json.dumps(frame_entry) + "\n")
                 except Exception:
                     pass
-
-                # Log each detected tag
-                for det in detections:
-                    size_px = compute_tag_size(det.corners)
-                    orient_deg = compute_tag_orientation(det.corners)
-
-                    log_entry = {
-                        "ts": round(ts, 3),
-                        "nvr": nvr,
-                        "ch": channel,
-                        "tag": det.tag_id,
-                        "family": det.asset_name,
-                        "margin": round(det.decision_margin, 1) if det.decision_margin >= 0 else "aruco",
-                        "size_px": round(size_px, 1),
-                        "orient_deg": round(orient_deg, 1),
-                    }
-                    scan["log_lines"].append(log_entry)
-                    scan["counters"][key]["tags"].add((det.asset_name, det.tag_id))
-
-                    # Append to log file
-                    try:
-                        with open(scan["log_path"], "a") as f:
-                            f.write(json.dumps(log_entry) + "\n")
-                    except Exception:
-                        pass
 
         except Exception as e:
             print(f"PULL receiver error: {e}")
