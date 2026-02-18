@@ -73,16 +73,17 @@ class CameraCapture:
             return dict(row)
         return None
 
-    def capture_frame(self, rtsp_url: str, timeout: int = 5) -> Optional[bytes]:
+    def capture_frame(self, rtsp_url: str, timeout: int = 5, fmt: str = "jpeg") -> Optional[bytes]:
         """
         Capture single frame from RTSP stream with hard timeout
 
         Args:
             rtsp_url: RTSP URL
             timeout: Timeout in seconds (enforced via threading)
+            fmt: Output format — "jpeg" (lossy, smaller) or "png" (lossless, larger)
 
         Returns:
-            JPEG bytes or None on failure
+            Encoded image bytes or None on failure
         """
         import threading
         import queue
@@ -117,9 +118,12 @@ class CameraCapture:
                     result_queue.put(None)
                     return
 
-                # Encode as JPEG
-                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
-                ret, buffer = cv2.imencode('.jpg', frame, encode_param)
+                # Encode frame
+                if fmt == "png":
+                    ret, buffer = cv2.imencode('.png', frame)
+                else:
+                    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 95]
+                    ret, buffer = cv2.imencode('.jpg', frame, encode_param)
 
                 if not ret:
                     result_queue.put(None)

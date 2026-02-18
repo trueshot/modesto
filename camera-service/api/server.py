@@ -134,6 +134,7 @@ class TagScanRequest(BaseModel):
     timeout: int = 30
     push_to: str = "tcp://127.0.0.1:5557"
     scan_id: Optional[str] = None  # Client-provided ID; server generates if omitted
+    encoding: str = "jpeg"  # "jpeg" or "png" (lossless, no compression artifacts)
 
 # ============================================================================
 # ENDPOINTS
@@ -1053,6 +1054,7 @@ def get_nvr_channel_frame(
     channel: int,
     source: str = Query("rtsp", description="Capture source: 'rtsp', 'snapshot', or 'playback'"),
     format: str = Query("image", description="Response format: 'image' or 'base64'"),
+    encoding: str = Query("jpeg", description="Image encoding: 'jpeg' (lossy, ~2MB) or 'png' (lossless, ~5MB)"),
     timeout: int = Query(8, description="Capture timeout in seconds"),
     timestamp: Optional[int] = Query(None, description="Unix epoch for playback source (required when source=playback)")
 ):
@@ -1063,7 +1065,8 @@ def get_nvr_channel_frame(
         nvr_id: NVR ID (e.g., "nvr1", "nvr2")
         channel: Channel number (1-32)
         source: 'rtsp' (decode stream), 'snapshot' (HTTP snapshot, UNIVIEW only), or 'playback' (historic, UNIVIEW only)
-        format: 'image' returns JPEG, 'base64' returns JSON with base64 string
+        format: 'image' returns raw bytes, 'base64' returns JSON with base64 string
+        encoding: 'jpeg' (lossy) or 'png' (lossless, no compression artifacts)
         timeout: Capture timeout in seconds
         timestamp: Unix epoch seconds for playback source
     """
@@ -1118,7 +1121,7 @@ def get_nvr_channel_frame(
     else:
         rtsp_url = build_rtsp_url(nvr, channel)
         logger.info(f"RTSP capture from {nvr_id} ch{channel}: {nvr['ip']}")
-        image_data = camera_capture.capture_frame(rtsp_url, timeout=timeout)
+        image_data = camera_capture.capture_frame(rtsp_url, timeout=timeout, fmt=encoding)
 
     if not image_data:
         mark_nvr_down_if_unreachable(nvr['ip'])
@@ -1127,16 +1130,17 @@ def get_nvr_channel_frame(
             detail += f" — NVR marked unreachable for {NVR_DOWN_COOLDOWN}s"
         raise HTTPException(status_code=503, detail=detail)
 
+    media_type = "image/png" if encoding == "png" else "image/jpeg"
     if format == "base64":
         return {
             "nvr_id": nvr_id,
             "channel": channel,
             "source": source,
             "image": base64.b64encode(image_data).decode('utf-8'),
-            "format": "jpeg"
+            "format": encoding
         }
     else:
-        return Response(content=image_data, media_type="image/jpeg")
+        return Response(content=image_data, media_type=media_type)
 
 @app.get("/api/nvr/{nvr_id}/channel/{channel}/info")
 def get_nvr_channel_info(
@@ -1373,11 +1377,11 @@ def capture_snapshot(nvr: dict, channel: int) -> Optional[bytes]:
         logger.error(f"Snapshot error: {e}")
         return None
 
-def _capture_subprocess(nvr_id: str, channel: int, source: str, nvr_ip: str, timestamp=None, cooldown: float = 0.0) -> bytes:
+def _capture_subprocess(nvr_id: str, channel: int, source: str, nvr_ip: str, timestamp=None, cooldown: float = 0.0, fmt: str = "jpeg") -> bytes:
     """
     Capture a frame in a separate process (own GIL, no contention).
     Called via ProcessPoolExecutor from zmq_async_handler.
-    Returns JPEG bytes or empty bytes on failure.
+    Returns encoded image bytes or empty bytes on failure.
     """
     nvr = get_nvr_info(nvr_id)
     if not nvr:
@@ -1400,7 +1404,7 @@ def _capture_subprocess(nvr_id: str, channel: int, source: str, nvr_ip: str, tim
         image_data = capture_snapshot(nvr, channel)
     else:
         rtsp_url = build_rtsp_url(nvr, channel)
-        image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
+        image_data = camera_capture.capture_frame(rtsp_url, timeout=8, fmt=fmt)
 
     if cooldown > 0:
         _time.sleep(cooldown)
@@ -1844,7 +1848,7 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_l
 
             # Submit to ProcessPoolExecutor — no GIL contention across NVRs
             future = executor.submit(
-                _capture_subprocess, nvr_id, channel, "rtsp", nvr_ip, None, 0.0
+                _capture_subprocess, nvr_id, channel, "rtsp", nvr_ip, None, 0.0, scan.get("encoding", "jpeg")
             )
             try:
                 jpeg = future.result(timeout=10)
@@ -2014,6 +2018,7 @@ def start_tag_scan(request: TagScanRequest):
         "cameras": [{"nvr": c.nvr, "channel": c.channel} for c in request.cameras],
         "timeout": request.timeout,
         "push_to": request.push_to,
+        "encoding": request.encoding,
         "started_at": _time.time(),
         "finished_at": None,
         "stop_event": stop_event,
