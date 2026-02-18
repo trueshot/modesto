@@ -85,6 +85,11 @@ detectors = {
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (255, 255, 0)  # Cyan
     },
+    'Custom48h12': {
+        'detector': Detector(families='tagCustom48h12', nthreads=4, quad_decimate=1.0,
+                            quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
+        'color': (0, 200, 200)  # Teal
+    },
 }
 print("Detectors ready.")
 
