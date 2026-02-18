@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-02-18T08:51:52.828Z
+-- Generated: 2026-02-18T09:22:59.705Z
 
 BEGIN TRANSACTION;
 
@@ -21,18 +21,10 @@ INSERT INTO "cameras" VALUES('F0:00:00:77:2D:8D','YM600F_AF','A_ONVIF_CAMERA','E
 ',NULL,NULL,NULL,'2026-01-22 12:23:18');
 INSERT INTO "cameras" VALUES('F0:00:00:77:2E:EB','YM600F_AF','A_ONVIF_CAMERA','EF00000000772EEB','3072x2048','192.168.0.152','V3.0.2.5 build 2020-09-24 17:00:10 
 ',NULL,NULL,NULL,'2026-01-22 12:23:18');
-INSERT INTO "cameras" VALUES('f4:00:00:01:a8:bb','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb','3840x2160','192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
-INSERT INTO "cameras" VALUES('f4:00:00:01:a9:01','N802-IRC-GW','A_ONVIF_CAMERA','01a901','3840x2160','192.168.0.185','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
-INSERT INTO "cameras" VALUES('f4:00:00:01:a8:ef','N802-IRC-GW','A_ONVIF_CAMERA','01a8ef','3840x2160','192.168.0.224','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
+INSERT INTO "cameras" VALUES('F4:00:00:01:A8:BB','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb','3840x2160','192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
 INSERT INTO "cameras" VALUES('F0:00:00:77:28:F4','YM600F_AF','A_ONVIF_CAMERA','EF000000007728F4','3072x2048','192.168.0.156','V3.0.2.5 build 2020-09-24',NULL,NULL,NULL,'2026-01-22 12:23:18');
-INSERT INTO "cameras" VALUES('f4:00:00:01:a8:e2','N802-IRC-GW','A_ONVIF_CAMERA','01a8e2','3840x2160','192.168.0.170','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18');
 INSERT INTO "cameras" VALUES('F0:00:00:C5:4C:B4','YMF52_STARIR_GW_AF','A_ONVIF_CAMERA','EF00000000C54CB4','3072x2048','192.168.0.66','V3.0.7.5 build 2022-04-22 18:50:44 
 ',NULL,NULL,NULL,'2026-01-22 12:23:18');
-INSERT INTO "cameras" VALUES('38:24:f1:01:3c:c2','GW12577MIC','GW','10001',NULL,'192.168.0.128','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
-INSERT INTO "cameras" VALUES('38:24:f1:01:3c:ad','GW12577MIC','GW','10001',NULL,'192.168.0.209','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
-INSERT INTO "cameras" VALUES('38:24:f1:01:3c:ae','GW12577MIC','GW','10001',NULL,'192.168.0.223','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
-INSERT INTO "cameras" VALUES('38:24:f1:01:3c:be','GW12577MIC','GW','10001',NULL,'192.168.0.238','V30.85.8.2.4_231130',NULL,NULL,NULL,'2026-01-24 13:37:47');
-INSERT INTO "cameras" VALUES('38:24:f1:01:14:b2','GWIP85BF','GW','10001',NULL,'192.168.0.245','V26.34.8.2.3.5_230831',NULL,NULL,NULL,'2026-01-24 13:37:47');
 INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A9','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.172',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50');
 INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A4','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.59',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50');
 INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:58','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.183',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50');
@@ -60,19 +52,19 @@ CREATE TABLE channels (
 
 INSERT INTO "channels" VALUES('nvr1_ch01','nvr1',1,'rtsp://admin:@192.168.0.6:554/ch01/0','active','2026-02-18 03:51:52','F0:00:00:77:2D:8D',1,'3072x2048');
 INSERT INTO "channels" VALUES('nvr1_ch02','nvr1',2,'rtsp://admin:@192.168.0.6:554/ch02/0','active','2026-02-18 03:51:52','F0:00:00:77:2E:EB',1,'3072x2048');
-INSERT INTO "channels" VALUES('nvr1_ch03','nvr1',3,'rtsp://admin:@192.168.0.6:554/ch03/0','active','2026-02-18 03:51:52',NULL,1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch04','nvr1',4,'rtsp://admin:@192.168.0.6:554/ch04/0','active','2026-02-18 03:51:52',NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch03','nvr1',3,'rtsp://admin:@192.168.0.6:554/ch03/0','active','2026-02-18 03:51:52','F4:00:00:01:A8:BB',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch04','nvr1',4,'rtsp://admin:@192.168.0.6:554/ch04/0','active','2026-02-18 03:51:52','F4:00:00:01:A9:01',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr1_ch05','nvr1',5,'rtsp://admin:@192.168.0.6:554/ch05/0','active','2026-02-18 03:51:52','F4:00:00:01:A8:EF',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr1_ch06','nvr1',6,'rtsp://admin:@192.168.0.6:554/ch06/0','active','2026-02-18 03:51:52','F0:00:00:77:28:F4',1,'3072x2048');
 INSERT INTO "channels" VALUES('nvr1_ch07','nvr1',7,'rtsp://admin:@192.168.0.6:554/ch07/0','active','2026-02-18 03:51:52','38:24:F1:01:3C:C2',1,'4096x3072');
 INSERT INTO "channels" VALUES('nvr1_ch09','nvr1',9,'rtsp://admin:@192.168.0.6:554/ch09/0','active','2026-02-18 03:51:52','38:24:F1:01:3C:AE',1,'4096x3072');
 INSERT INTO "channels" VALUES('nvr1_ch10','nvr1',10,'rtsp://admin:@192.168.0.6:554/ch10/0','active','2026-02-18 03:51:52','38:24:F1:01:3C:BE',1,'4096x3072');
-INSERT INTO "channels" VALUES('nvr1_ch26','nvr1',26,NULL,'stale',NULL,'38:24:f1:01:14:b2',1,'2592x1944');
+INSERT INTO "channels" VALUES('nvr1_ch26','nvr1',26,NULL,'stale',NULL,'38:24:F1:01:14:B2',1,'2592x1944');
 INSERT INTO "channels" VALUES('nvr1_ch27','nvr1',27,NULL,'stale',NULL,NULL,1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr1_ch28','nvr1',28,NULL,'stale',NULL,NULL,1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch29','nvr1',29,NULL,'stale',NULL,'f4:00:00:01:a8:e2',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch29','nvr1',29,NULL,'stale',NULL,'F4:00:00:01:A8:E2',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr1_ch30','nvr1',30,NULL,'stale',NULL,'F0:00:00:C5:4C:B4',1,'3072x2048');
-INSERT INTO "channels" VALUES('nvr1_ch31','nvr1',31,NULL,'stale',NULL,'38:24:f1:01:3c:be',1,'4096x3072');
+INSERT INTO "channels" VALUES('nvr1_ch31','nvr1',31,NULL,'stale',NULL,'38:24:F1:01:3C:BE',1,'4096x3072');
 INSERT INTO "channels" VALUES('nvr1_ch32','nvr1',32,NULL,'stale',NULL,NULL,1,'2880x1624');
 INSERT INTO "channels" VALUES('nvr2_ch01','nvr2',1,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c1/s0','active','2026-02-18 03:49:47','2C:6F:51:3B:71:A9',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch02','nvr2',2,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c2/s0','inactive','2026-02-18 03:49:47','2C:6F:51:3B:71:A4',1,'3840x2160');
@@ -90,10 +82,10 @@ INSERT INTO "channels" VALUES('nvr2_ch13','nvr2',13,'rtsp://admin:Dad5eeeee%21@1
 INSERT INTO "channels" VALUES('nvr2_ch14','nvr2',14,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c14/s0','active','2026-02-18 03:49:47','38:24:F1:01:3C:C2',1,'4096x3072');
 INSERT INTO "channels" VALUES('nvr1_ch08','nvr1',8,NULL,'inactive','2026-02-18 03:51:52',NULL,0,NULL);
 INSERT INTO "channels" VALUES('nvr1_ch11','nvr1',11,NULL,'inactive','2026-02-18 03:51:52',NULL,0,NULL);
-INSERT INTO "channels" VALUES('nvr1_ch12','nvr1',12,'rtsp://admin:@192.168.0.6:554/ch12/0','active','2026-02-18 03:51:52',NULL,1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch13','nvr1',13,'rtsp://admin:@192.168.0.6:554/ch13/0','active','2026-02-18 03:51:52',NULL,1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch14','nvr1',14,'rtsp://admin:@192.168.0.6:554/ch14/0','active','2026-02-18 03:51:52',NULL,1,'3840x2160');
-INSERT INTO "channels" VALUES('nvr1_ch15','nvr1',15,'rtsp://admin:@192.168.0.6:554/ch15/0','active','2026-02-18 03:51:52',NULL,1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch12','nvr1',12,'rtsp://admin:@192.168.0.6:554/ch12/0','active','2026-02-18 03:51:52','2C:6F:51:3B:71:58',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch13','nvr1',13,'rtsp://admin:@192.168.0.6:554/ch13/0','active','2026-02-18 03:51:52','2C:6F:51:3B:71:A4',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch14','nvr1',14,'rtsp://admin:@192.168.0.6:554/ch14/0','active','2026-02-18 03:51:52','2C:6F:51:3B:71:8D',1,'3840x2160');
+INSERT INTO "channels" VALUES('nvr1_ch15','nvr1',15,'rtsp://admin:@192.168.0.6:554/ch15/0','active','2026-02-18 03:51:52','2C:6F:51:3B:71:2A',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr1_ch16','nvr1',16,'rtsp://admin:@192.168.0.6:554/ch16/0','active','2026-02-18 03:51:52',NULL,1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr2_ch16','nvr2',16,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c16/s0','inactive','2026-02-18 03:49:47',NULL,0,NULL);
 INSERT INTO "channels" VALUES('nvr2_ch17','nvr2',17,'rtsp://admin:Dad5eeeee%21@192.168.0.134:554/unicast/c17/s0','inactive','2026-02-18 03:49:47',NULL,0,NULL);
@@ -173,18 +165,18 @@ CREATE TABLE linkages (
 );
 
 INSERT INTO "linkages" VALUES(2,'bacon','F0:00:00:77:2E:EB','nvr1_ch02','2026-01-17','novicat','verified',NULL,'2026-01-22 12:23:18');
-INSERT INTO "linkages" VALUES(5,'cinnamonroll','f4:00:00:01:a8:ef','nvr1_ch05','2026-01-17','gemcat','MEDIUM','gemcat vision match - needs verification | camera_ip=192.168.0.224 (UNIVIEW, ONVIF confirmed, rtsp path=/media/live/1/1, pw=nvr2 creds) — modeltcamerascat gen-17','2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(5,'cinnamonroll','F4:00:00:01:A8:EF','nvr1_ch05','2026-01-17','gemcat','MEDIUM','gemcat vision match - needs verification | camera_ip=192.168.0.224 (UNIVIEW, ONVIF confirmed, rtsp path=/media/live/1/1, pw=nvr2 creds) — modeltcamerascat gen-17','2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(6,'bread','F0:00:00:77:28:F4','nvr1_ch06','2026-01-17','novicat','verified',NULL,'2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(8,'butter',NULL,'nvr1_ch09',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(9,'cake',NULL,'nvr1_ch10',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(10,'candy',NULL,'nvr1_ch26',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(11,'cheese',NULL,'nvr1_ch27',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(12,'chicken',NULL,'nvr1_ch28',NULL,NULL,'assumed',NULL,'2026-01-22 12:23:18');
-INSERT INTO "linkages" VALUES(13,'beef','f4:00:00:01:a8:e2','nvr1_ch29','2026-01-17','gemcat','LOW','gemcat vision match - needs verification','2026-01-22 12:23:18');
+INSERT INTO "linkages" VALUES(13,'beef','F4:00:00:01:A8:E2','nvr1_ch29','2026-01-17','gemcat','LOW','gemcat vision match - needs verification','2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(14,'bagel','F0:00:00:C5:4C:B4','nvr1_ch30','2026-01-17','gemcat','MEDIUM','gemcat vision match - needs verification','2026-01-22 12:23:18');
 INSERT INTO "linkages" VALUES(17,'biscuit','F0:00:00:77:2D:8D','nvr1_ch01',NULL,'gemcat','HIGH','gemcat vision match','2026-01-31 20:45:15');
-INSERT INTO "linkages" VALUES(18,'coffee','f4:00:00:01:a8:bb','nvr1_ch03',NULL,'gemcat','MEDIUM','gemcat vision match - needs verification','2026-01-31 20:45:15');
-INSERT INTO "linkages" VALUES(19,'burger','f4:00:00:01:a9:01','nvr1_ch04',NULL,'gemcat','HIGH','gemcat vision match','2026-01-31 20:45:15');
+INSERT INTO "linkages" VALUES(18,'coffee','F4:00:00:01:A8:BB','nvr1_ch03',NULL,'gemcat','MEDIUM','gemcat vision match - needs verification','2026-01-31 20:45:15');
+INSERT INTO "linkages" VALUES(19,'burger','F4:00:00:01:A9:01','nvr1_ch04',NULL,'gemcat','HIGH','gemcat vision match','2026-01-31 20:45:15');
 
 CREATE TABLE mount_fiducial_visibility (
     mount_id TEXT REFERENCES mounts(id),

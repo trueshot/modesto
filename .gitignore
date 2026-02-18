@@ -12,3 +12,4 @@ tmpclaude-*-cwd
 /zpl_output/
 /test-output/
 /logs/
+.env
