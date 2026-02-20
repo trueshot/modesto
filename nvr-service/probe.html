@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NVR Channel Probe</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: #1a1a2e; color: #eee; padding: 20px; }
+        h1 { color: #00d4ff; margin-bottom: 20px; }
+        .controls { display: flex; gap: 15px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+        select, button { padding: 8px 16px; border-radius: 4px; border: 1px solid #0f3460; background: #16213e; color: #eee; font-size: 14px; cursor: pointer; }
+        button:hover { background: #0f3460; }
+        button.start { border-color: #00ff88; color: #00ff88; }
+        button.stop { border-color: #ff6b6b; color: #ff6b6b; }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        .progress { background: #0f3460; border-radius: 4px; height: 24px; margin-bottom: 20px; overflow: hidden; position: relative; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #00d4ff, #00ff88); transition: width 0.3s; }
+        .progress-text { position: absolute; top: 0; left: 0; right: 0; text-align: center; line-height: 24px; font-size: 12px; color: #fff; }
+        .stats { display: flex; gap: 20px; margin-bottom: 20px; font-size: 13px; flex-wrap: wrap; }
+        .stats span { color: #888; }
+        .stats .val { color: #eee; font-weight: bold; }
+        .stats .active { color: #00ff88; }
+        .stats .inactive { color: #ff6b6b; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+        .card { background: #16213e; border-radius: 8px; overflow: hidden; border: 2px solid transparent; }
+        .card.active { border-color: #00ff88; }
+        .card.inactive { border-color: #ff6b6b; }
+        .card.pending { border-color: #444; }
+        .card.testing { border-color: #ffd700; animation: pulse 1s infinite; }
+        @keyframes pulse { 50% { border-color: #886600; } }
+        .card img { width: 100%; height: 120px; object-fit: cover; background: #0a0a1a; }
+        .card .placeholder { width: 100%; height: 120px; background: #0a0a1a; display: flex; align-items: center; justify-content: center; color: #333; font-size: 40px; }
+        .card .info { padding: 8px 10px; }
+        .card .ch { font-weight: bold; color: #00d4ff; }
+        .badge { font-size: 10px; padding: 2px 6px; border-radius: 3px; margin-left: 4px; }
+        .badge.active { background: #00ff8833; color: #00ff88; }
+        .badge.inactive { background: #ff6b6b33; color: #ff6b6b; }
+        .badge.nvr_only { background: #ffa50033; color: #ffa500; }
+        .badge.direct_only { background: #ffa50033; color: #ffa500; }
+        .card .attempts { font-size: 11px; color: #888; margin-top: 4px; }
+        .card .attempts .ok { color: #00ff88; }
+        .card .attempts .fail { color: #ff6b6b; }
+        .card .meta { font-size: 10px; color: #555; margin-top: 2px; }
+        .status-msg { color: #888; font-style: italic; margin: 20px 0; }
+        .dry-run-banner { background: #2a2a00; border: 1px solid #ffd700; border-radius: 8px; padding: 12px 15px; margin-bottom: 20px; display: none; color: #ffd700; font-size: 13px; }
+        .db-changes { background: #0f3460; border-radius: 8px; padding: 15px; margin-bottom: 20px; display: none; }
+        .db-changes h3 { color: #00d4ff; font-size: 13px; margin-bottom: 8px; }
+        .db-changes .item { font-size: 12px; color: #ddd; padding: 3px 0; }
+        .db-changes .new { color: #00ff88; }
+        .db-changes .changed { color: #ffa500; }
+        .mismatches { background: #2a1a00; border: 1px solid #ffa500; border-radius: 8px; padding: 15px; margin-bottom: 20px; display: none; }
+        .mismatches h3 { color: #ffa500; font-size: 13px; margin-bottom: 8px; }
+        .mismatches .item { font-size: 12px; color: #ddd; padding: 3px 0; }
+        label.checkbox { display: flex; align-items: center; gap: 6px; color: #ffd700; font-size: 13px; cursor: pointer; }
+        label.checkbox input { cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>NVR Channel Probe</h1>
+    <div class="controls">
+        <select id="nvr-select"></select>
+        <label style="color:#888; font-size:13px;">Attempts: <input type="number" id="attempts" value="3" min="1" max="10" style="width:50px; padding:6px; background:#16213e; border:1px solid #0f3460; color:#eee; border-radius:4px;"></label>
+        <label class="checkbox"><input type="checkbox" id="dry-run"> Dry run</label>
+        <button class="start" id="start-btn" onclick="startProbe()">Start Probe</button>
+        <button class="stop" id="stop-btn" onclick="stopProbe()" disabled>Stop</button>
+    </div>
+    <div class="dry-run-banner" id="dry-run-banner">Dry run &mdash; no database changes will be made. Results show what <em>would</em> change.</div>
+    <div class="progress" id="progress-wrap" style="display:none;">
+        <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+        <div class="progress-text" id="progress-text">0 / 0</div>
+    </div>
+    <div class="stats" id="stats" style="display:none;">
+        <div><span>Status:</span> <span class="val" id="s-status">-</span></div>
+        <div><span>Elapsed:</span> <span class="val" id="s-elapsed">-</span></div>
+        <div><span>Active:</span> <span class="val active" id="s-active">0</span></div>
+        <div><span>Inactive:</span> <span class="val inactive" id="s-inactive">0</span></div>
+        <div><span>Attempt:</span> <span class="val" id="s-attempt">-</span></div>
+    </div>
+    <div class="db-changes" id="db-changes">
+        <h3>Database Changes</h3>
+        <div id="db-changes-list"></div>
+    </div>
+    <div class="mismatches" id="mismatches">
+        <h3>Path Mismatches</h3>
+        <div id="mismatch-list"></div>
+    </div>
+    <div id="status-msg" class="status-msg">Select an NVR and click Start Probe.</div>
+    <div class="grid" id="channel-grid"></div>
+    <script>
+        let currentProbeId = null;
+        let currentNvrId = null;
+        let refreshInterval = null;
+
+        async function loadNVRs() {
+            const resp = await fetch('/api/nvrs');
+            const data = await resp.json();
+            const sel = document.getElementById('nvr-select');
+            sel.innerHTML = data.nvrs.map(n => `<option value="${n.id}">${n.id} (${n.ip}) &mdash; ${n.brand}</option>`).join('');
+        }
+
+        async function startProbe() {
+            const nvrId = document.getElementById('nvr-select').value;
+            const attempts = parseInt(document.getElementById('attempts').value) || 3;
+            const dryRun = document.getElementById('dry-run').checked;
+            document.getElementById('start-btn').disabled = true;
+
+            try {
+                const resp = await fetch(`/api/nvr/${nvrId}/probe`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({attempts, dry_run: dryRun})
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    alert(err.detail || 'Failed to start probe');
+                    document.getElementById('start-btn').disabled = false;
+                    return;
+                }
+                const data = await resp.json();
+                currentProbeId = data.probe_id;
+                currentNvrId = nvrId;
+
+                document.getElementById('stop-btn').disabled = false;
+                document.getElementById('progress-wrap').style.display = '';
+                document.getElementById('stats').style.display = '';
+                document.getElementById('status-msg').textContent = '';
+                document.getElementById('channel-grid').innerHTML = '';
+                document.getElementById('mismatches').style.display = 'none';
+                document.getElementById('db-changes').style.display = 'none';
+                document.getElementById('dry-run-banner').style.display = dryRun ? '' : 'none';
+
+                const grid = document.getElementById('channel-grid');
+                for (let ch = 1; ch <= data.channels; ch++) {
+                    grid.innerHTML += `<div class="card pending" id="card-${ch}">
+                        <div class="placeholder">ch${ch}</div>
+                        <div class="info">
+                            <span class="ch">ch${ch}</span>
+                            <span id="badges-${ch}"></span>
+                            <div class="attempts" id="attempts-${ch}"></div>
+                            <div class="meta" id="meta-${ch}"></div>
+                        </div>
+                    </div>`;
+                }
+
+                if (refreshInterval) clearInterval(refreshInterval);
+                refreshInterval = setInterval(pollProbe, 1000);
+            } catch (e) {
+                alert('Error: ' + e.message);
+                document.getElementById('start-btn').disabled = false;
+            }
+        }
+
+        async function stopProbe() {
+            if (!currentProbeId || !currentNvrId) return;
+            await fetch(`/api/nvr/${currentNvrId}/probe/${currentProbeId}/stop`, {method: 'POST'});
+        }
+
+        function fmtBytes(b) {
+            if (b > 1024) return (b / 1024).toFixed(0) + 'K';
+            return b + 'B';
+        }
+
+        async function pollProbe() {
+            if (!currentProbeId || !currentNvrId) return;
+            try {
+                const resp = await fetch(`/api/nvr/${currentNvrId}/probe/${currentProbeId}`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+
+                const stats = data.stats;
+                const pct = stats.total > 0 ? Math.round(stats.tested / stats.total * 100) : 0;
+                document.getElementById('progress-bar').style.width = pct + '%';
+                document.getElementById('progress-text').textContent = `${stats.tested} / ${stats.total}`;
+                document.getElementById('s-status').textContent = data.status;
+                document.getElementById('s-elapsed').textContent = data.elapsed_sec + 's';
+                document.getElementById('s-active').textContent = stats.active;
+                document.getElementById('s-inactive').textContent = stats.inactive;
+                document.getElementById('s-attempt').textContent = `${stats.attempts_completed || 0}`;
+
+                for (const [chKey, r] of Object.entries(data.results)) {
+                    const ch = r.channel;
+                    const card = document.getElementById(`card-${ch}`);
+                    if (!card) continue;
+
+                    card.className = 'card ' + (r.verdict || 'testing');
+
+                    const badgesEl = document.getElementById(`badges-${ch}`);
+                    let badges = '';
+                    if (r.nvr_verdict) {
+                        badges += `<span class="badge ${r.nvr_verdict}">nvr:${r.nvr_verdict}</span>`;
+                    }
+                    if (r.direct_verdict) {
+                        badges += `<span class="badge ${r.direct_verdict}">direct:${r.direct_verdict}</span>`;
+                    }
+                    if (r.mismatch) {
+                        badges += `<span class="badge ${r.mismatch}">${r.mismatch}</span>`;
+                    }
+                    badgesEl.innerHTML = badges;
+
+                    if (r.thumbnail) {
+                        const existing = card.querySelector('img');
+                        if (!existing) {
+                            const placeholder = card.querySelector('.placeholder');
+                            if (placeholder) {
+                                const img = document.createElement('img');
+                                img.src = 'data:image/jpeg;base64,' + r.thumbnail;
+                                placeholder.replaceWith(img);
+                            }
+                        }
+                    }
+
+                    const aEl = document.getElementById(`attempts-${ch}`);
+                    aEl.innerHTML = r.attempts.map(a => {
+                        const nok = a.nvr_success ? `<span class="ok">N:${fmtBytes(a.nvr_bytes)}</span>` : `<span class="fail">N:x</span>`;
+                        const dok = a.direct_success ? `<span class="ok">D:${fmtBytes(a.direct_bytes)}</span>` : (a.direct_error === 'no_direct_path' ? '' : `<span class="fail">D:x</span>`);
+                        return `#${a.attempt}: ${nok} ${dok}`;
+                    }).join(' &nbsp; ');
+
+                    const metaEl = document.getElementById(`meta-${ch}`);
+                    let metaParts = [];
+                    if (r.resolution) metaParts.push(r.resolution);
+                    if (r.direct_ip) metaParts.push(r.direct_ip);
+                    if (r.direct_model) metaParts.push(r.direct_model);
+                    metaEl.textContent = metaParts.join(' | ');
+                }
+
+                // Mismatches panel
+                if (stats.mismatches && stats.mismatches.length > 0) {
+                    document.getElementById('mismatches').style.display = '';
+                    document.getElementById('mismatch-list').innerHTML = stats.mismatches.map(m =>
+                        `<div class="item">ch${m.channel}: <b>${m.type}</b>${m.direct_ip ? ' (' + m.direct_ip + ')' : ''} ${m.direct_error ? '&mdash; ' + m.direct_error : ''}</div>`
+                    ).join('');
+                }
+
+                // DB changes panel — always show when probe is done
+                if (['completed', 'stopped', 'error'].includes(data.status)) {
+                    const changes = stats.status_changes || [];
+                    const newChs = stats.new_channels || [];
+                    const touched = stats.touched || 0;
+
+                    document.getElementById('db-changes').style.display = '';
+                    let html = '';
+                    if (touched > 0 && changes.length === 0 && newChs.length === 0) {
+                        html += `<div class="item">${touched} channel(s) updated (last_probed timestamp), no status changes.</div>`;
+                    } else {
+                        if (touched > 0) {
+                            html += `<div class="item">${touched} existing channel(s) &mdash; last_probed updated.</div>`;
+                        }
+                        for (const c of changes) {
+                            html += `<div class="item changed">ch${c.channel}: ${c.old} &rarr; ${c.new}</div>`;
+                        }
+                        for (const ch of newChs) {
+                            html += `<div class="item new">ch${ch}: new channel row</div>`;
+                        }
+                    }
+                    if (data.dry_run) {
+                        html += `<div class="item" style="color:#ffd700; margin-top:8px;">Dry run &mdash; no changes written.</div>`;
+                    }
+                    document.getElementById('db-changes-list').innerHTML = html;
+
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                    document.getElementById('start-btn').disabled = false;
+                    document.getElementById('stop-btn').disabled = true;
+                    const mm = stats.mismatches ? stats.mismatches.length : 0;
+                    document.getElementById('status-msg').textContent =
+                        `Probe ${data.status}. ${stats.active} active, ${stats.inactive} inactive.${mm ? ' ' + mm + ' path mismatch(es)!' : ''}`;
+                }
+            } catch (e) {
+                console.error('Poll error:', e);
+            }
+        }
+
+        loadNVRs();
+    </script>
+</body>
+</html>
