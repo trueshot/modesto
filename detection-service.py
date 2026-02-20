@@ -557,6 +557,9 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
             cv2.putText(annotated, f"Detect: {detect_info['detect_w']}x{detect_info['detect_h']}", (10, 118),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
 
+        # Encode full-res annotated JPEG
+        _, jpeg_full = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
+
         # Resize for web (max 800px wide)
         if w > 800:
             scale = 800 / w
@@ -597,6 +600,7 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
                     result["overhead_ms"] = overhead_ms
                 passes[pass_id]["results"][key] = result
                 passes[pass_id]["images"][key] = jpeg.tobytes()
+                passes[pass_id]["images_full"][key] = jpeg_full.tobytes()
 
     except Exception as e:
         with passes_lock:
@@ -659,7 +663,7 @@ async def start_pass(request: PassStartRequest = None):
         cameras = all_cameras
 
     # Generate pass ID
-    pass_id = uuid.uuid4().hex[:12]
+    pass_id = time.strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:4]
 
     # Initialize pass storage
     with passes_lock:
@@ -672,6 +676,7 @@ async def start_pass(request: PassStartRequest = None):
             "cameras": cameras,
             "results": {f"{c['nvr']}/{c['channel']}": {"nvr": c["nvr"], "channel": c["channel"], "status": "pending"} for c in cameras},
             "images": {},
+            "images_full": {},
             "startTime": time.time(),
             "done": False
         }
@@ -720,6 +725,27 @@ async def get_pass_image(pass_id: str, nvr: str, channel: int):
             return Response(content=b"", status_code=404)
 
         return Response(content=jpeg_bytes, media_type="image/jpeg")
+
+
+@app.get("/pass/{pass_id}/image/{nvr}/{channel}/full")
+async def get_pass_image_full(pass_id: str, nvr: str, channel: int):
+    """Get the full-res annotated image for download"""
+    key = f"{nvr}/{channel}"
+
+    with passes_lock:
+        if pass_id not in passes:
+            return Response(content=b"", status_code=404)
+
+        jpeg_bytes = passes[pass_id]["images_full"].get(key)
+        if not jpeg_bytes:
+            return Response(content=b"", status_code=404)
+
+        filename = f"{nvr}_ch{channel}_{pass_id}.jpg"
+        return Response(
+            content=jpeg_bytes,
+            media_type="image/jpeg",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
 
 
 # =============================================================================

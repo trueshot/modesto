@@ -477,7 +477,7 @@
                         <span class="resolution" id="res-${idx}">--</span>
                         <span class="timing" id="timing-${idx}">--</span>
                     </div>
-                    <img id="img-${idx}" src="" alt="Camera ${idx}">
+                    <img id="img-${idx}" src="" alt="Camera ${idx}" style="cursor:pointer" onclick="downloadFull(${idx})">
                     <div class="pass-results" id="passes-${idx}">${passSlots}</div>
                     <div class="tag-details" id="tags-${idx}"></div>
                 `;
@@ -656,6 +656,18 @@
             } catch (e) {
                 console.error('Start pass error:', e);
             }
+        }
+
+        // Download full-res annotated image for a camera tile
+        function downloadFull(idx) {
+            if (!currentPassId) return;
+            const cam = getEnabledCameras()[idx];
+            if (!cam) return;
+            const url = `${DETECTION_SERVICE}/pass/${currentPassId}/image/${cam.nvr}/${cam.channel}/full`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${cam.nvr}_ch${cam.channel}_${currentPassId}.jpg`;
+            a.click();
         }
 
         // Update tag details display for a camera
