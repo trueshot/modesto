@@ -65,17 +65,17 @@ MAX_PASSES = 10  # Keep last N passes in memory
 # Initialize detectors
 print("Initializing AprilTag detectors...")
 detectors = {
-    'Fiducial': {
+    'Fiducial36h11': {
         'detector': Detector(families='tag36h11', nthreads=4, quad_decimate=1.0,
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (0, 255, 0)  # Green
     },
-    'Forklift': {
+    'Forklift25h9': {
         'detector': Detector(families='tag25h9', nthreads=4, quad_decimate=1.0,
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (0, 165, 255)  # Orange
     },
-    'Pallet': {
+    'Pallet41h12': {
         'detector': Detector(families='tagStandard41h12', nthreads=4, quad_decimate=1.0,
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (255, 0, 255)  # Magenta
@@ -85,7 +85,7 @@ detectors = {
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (255, 255, 0)  # Cyan
     },
-    'Custom48h12': {
+    'Pallet48h12': {
         'detector': Detector(families='tagCustom48h12', nthreads=4, quad_decimate=1.0,
                             quad_sigma=0.0, refine_edges=1, decode_sharpening=0.25),
         'color': (0, 200, 200)  # Teal
@@ -96,12 +96,12 @@ print("Detectors ready.")
 # OpenCV ArUco fallback detectors (better perspective tolerance)
 print("Initializing ArUco fallback detectors...")
 aruco_detectors = {
-    'Fiducial': {
+    'Fiducial36h11': {
         'dictionary': cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_36h11),
         'params': cv2.aruco.DetectorParameters(),
         'color': (0, 255, 0),
     },
-    'Forklift': {
+    'Forklift25h9': {
         'dictionary': cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_APRILTAG_25h9),
         'params': cv2.aruco.DetectorParameters(),
         'color': (0, 165, 255),
