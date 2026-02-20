@@ -237,6 +237,9 @@ def get_monitor_status():
         # Include event log (last N events)
         state["zmq_router"]["event_log"] = list(worker_state["zmq_router"]["event_log"])
 
+    # NVR gate status (covers all subsystems)
+    state["nvr_gate"] = nvr_gate.status()
+
     # Tag scan status (separate lock)
     with tag_scan_lock:
         active = tag_scan_state["active_scan"]
@@ -977,6 +980,7 @@ def set_concurrency(value: int):
         raise HTTPException(status_code=400, detail="Value must be 1-16")
     old = NVR_MAX_CONCURRENT
     NVR_MAX_CONCURRENT = value
+    nvr_gate.set_limit(value)
     logger.info(f"NVR_MAX_CONCURRENT changed: {old} -> {value}")
     return {"nvr_max_concurrent": value, "previous": old}
 
@@ -1305,15 +1309,66 @@ def log_event(event_type: str, request_id: str, nvr: str, channel: int, source: 
 NVR_MAX_CONCURRENT = 2
 # Inter-capture cooldown (seconds). 0 = no delay. Tunable live via PUT /api/admin/cooldown/{value}
 CAPTURE_COOLDOWN = 0.0
-nvr_semaphores = {}  # nvr_ip -> threading.Semaphore
-nvr_semaphores_lock = threading.Lock()
+# Max age for pending ROUTER requests before reaping (seconds)
+PENDING_MAX_AGE = 300
 
-def get_nvr_semaphore(nvr_ip: str) -> threading.Semaphore:
-    """Get or create semaphore for an NVR IP"""
-    with nvr_semaphores_lock:
-        if nvr_ip not in nvr_semaphores:
-            nvr_semaphores[nvr_ip] = threading.Semaphore(NVR_MAX_CONCURRENT)
-        return nvr_semaphores[nvr_ip]
+class NvrGate:
+    """
+    Global per-NVR slot manager. Shared by ROUTER, tag scan, and probe.
+    All acquire/release calls run in the main process — only the actual
+    capture is dispatched to subprocesses.
+    """
+
+    def __init__(self, default_limit: int = 2):
+        self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock)
+        self._limit = default_limit
+        self._slots = {}  # nvr_ip -> count of slots currently held
+
+    def set_limit(self, limit: int):
+        with self._cond:
+            self._limit = limit
+            self._cond.notify_all()
+
+    def try_acquire(self, nvr_ip: str) -> bool:
+        """Non-blocking. Returns True if slot acquired."""
+        with self._lock:
+            held = self._slots.get(nvr_ip, 0)
+            if held < self._limit:
+                self._slots[nvr_ip] = held + 1
+                return True
+            return False
+
+    def acquire(self, nvr_ip: str, timeout: float = 30.0) -> bool:
+        """Blocking with timeout. Returns True when slot acquired."""
+        deadline = _time.monotonic() + timeout
+        with self._cond:
+            while self._slots.get(nvr_ip, 0) >= self._limit:
+                remaining = deadline - _time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._cond.wait(timeout=remaining)
+            self._slots[nvr_ip] = self._slots.get(nvr_ip, 0) + 1
+            return True
+
+    def release(self, nvr_ip: str):
+        with self._cond:
+            held = self._slots.get(nvr_ip, 0)
+            self._slots[nvr_ip] = max(0, held - 1)
+            self._cond.notify_all()
+
+    def status(self) -> dict:
+        with self._lock:
+            return {
+                "limit": self._limit,
+                "nvrs": {
+                    ip: {"held": count, "available": max(0, self._limit - count)}
+                    for ip, count in self._slots.items()
+                    if count > 0
+                }
+            }
+
+nvr_gate = NvrGate(default_limit=NVR_MAX_CONCURRENT)
 
 def is_nvr_reachable(nvr_ip: str, port: int = 554, timeout: float = 2) -> bool:
     """Quick TCP probe to NVR RTSP port. Used after capture failure to distinguish NVR-down from channel-dead."""
@@ -1538,10 +1593,6 @@ def zmq_async_handler():
     # {request_id -> {identity, nvr, channel, source, queued_at}}
     pending_queue = {}
 
-    # Track active connections per NVR IP
-    nvr_active_count = defaultdict(int)  # nvr_ip -> count
-    nvr_active_lock = threading.Lock()
-
     # Map nvr_id -> nvr_ip for tracking
     nvr_ip_cache = {}
 
@@ -1638,6 +1689,31 @@ def zmq_async_handler():
                             "queued_at": recv_at
                         }
 
+            # Reap stale pending requests (orphaned by dedup or abandoned clients)
+            now_t = _time.time()
+            stale = [
+                rid for rid, rq in pending_queue.items()
+                if now_t - rq.get("queued_at", now_t) > PENDING_MAX_AGE
+            ]
+            for rid in stale:
+                rq = pending_queue.pop(rid)
+                ck = (rq["nvr"], rq["channel"])
+                if pending_by_channel.get(ck) == rid:
+                    del pending_by_channel[ck]
+                resp_id = rq.get("response_id", rid)
+                age = round(now_t - rq.get("queued_at", now_t), 1)
+                log_event("STALE", resp_id, rq["nvr"], rq["channel"], rq["source"], {"age_sec": age})
+                logger.warning(f"ZMQ async STALE {resp_id}: reaped after {age}s")
+                metadata = json.dumps({
+                    "queue_ms": int((now_t - rq.get("recv_at", now_t)) * 1000),
+                    "capture_ms": 0, "total_ms": int((now_t - rq.get("recv_at", now_t)) * 1000),
+                    "bytes": 0, "error": True, "stale": True
+                }).encode('utf-8')
+                socket.send_multipart([rq["identity"], b"", resp_id.encode('utf-8'), b"", metadata])
+                with worker_state_lock:
+                    worker_state["zmq_router"]["pending_requests"].pop(resp_id, None)
+                    worker_state["zmq_router"]["errors"] += 1
+
             # Schedule: find requests for NVRs with available capacity
             to_submit = []
             to_reject = []  # Requests to NVRs with tripped circuit breaker
@@ -1654,10 +1730,8 @@ def zmq_async_handler():
                     to_reject.append((req_id, req, nvr_ip))
                     continue
 
-                with nvr_active_lock:
-                    if nvr_active_count[nvr_ip] < NVR_MAX_CONCURRENT:
-                        nvr_active_count[nvr_ip] += 1
-                        to_submit.append((req_id, req, nvr_ip))
+                if nvr_gate.try_acquire(nvr_ip):
+                    to_submit.append((req_id, req, nvr_ip))
 
             # Reject circuit-breaker'd requests immediately
             for req_id, req, nvr_ip in to_reject:
@@ -1794,8 +1868,7 @@ def zmq_async_handler():
                 del in_flight[req_id]
                 in_flight_meta.pop(req_id, None)
                 if nvr_ip:
-                    with nvr_active_lock:
-                        nvr_active_count[nvr_ip] = max(0, nvr_active_count[nvr_ip] - 1)
+                    nvr_gate.release(nvr_ip)
 
             # Poller handles sleep — no busy-spin needed
 
@@ -1842,19 +1915,27 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_l
             except queue.Empty:
                 continue
 
+            # Acquire NVR slot before dispatching
+            if not nvr_gate.acquire(nvr_ip, timeout=30.0):
+                logger.warning(f"Tag scan: gate timeout for {nvr_ip} ch{channel}")
+                ch_queue.put(channel)
+                continue
+
             req_id = f"ts-{uuid.uuid4().hex[:8]}"
             log_event("START", req_id, nvr_id, channel, "tagscan")
             cap_start = _time.time()
 
-            # Submit to ProcessPoolExecutor — no GIL contention across NVRs
-            future = executor.submit(
-                _capture_subprocess, nvr_id, channel, "rtsp", nvr_ip, None, 0.0, scan.get("encoding", "jpeg")
-            )
             try:
-                jpeg = future.result(timeout=10)
-            except Exception as e:
-                logger.error(f"Tag scan capture error {nvr_id} ch{channel}: {e}")
-                jpeg = b""
+                future = executor.submit(
+                    _capture_subprocess, nvr_id, channel, "rtsp", nvr_ip, None, 0.0, scan.get("encoding", "jpeg")
+                )
+                try:
+                    jpeg = future.result(timeout=10)
+                except Exception as e:
+                    logger.error(f"Tag scan capture error {nvr_id} ch{channel}: {e}")
+                    jpeg = b""
+            finally:
+                nvr_gate.release(nvr_ip)
 
             cap_sec = round(_time.time() - cap_start, 3)
 
@@ -1993,6 +2074,13 @@ def start_tag_scan(request: TagScanRequest):
             raise HTTPException(
                 status_code=409,
                 detail=f"Scan '{active['scan_id']}' already active ({active['status']})"
+            )
+
+    with probe_lock:
+        if probe_state:
+            raise HTTPException(
+                status_code=409,
+                detail="Probe active — tag scan needs exclusive NVR access"
             )
 
     for cam in request.cameras:
@@ -2179,6 +2267,8 @@ def _probe_coordinator(probe: dict):
     stop_event = probe["stop_event"]
 
     executor = None
+    slots_held = 0
+    nvr_ip = ""
     try:
         with probe_lock:
             probe["status"] = "running"
@@ -2186,6 +2276,18 @@ def _probe_coordinator(probe: dict):
         executor = ProcessPoolExecutor(max_workers=NVR_MAX_CONCURRENT)
         nvr = get_nvr_info(nvr_id)
         nvr_ip = nvr["ip"] if nvr else ""
+
+        # Acquire all NVR slots upfront — probe needs exclusive access
+        for _ in range(NVR_MAX_CONCURRENT):
+            if nvr_gate.acquire(nvr_ip, timeout=60.0):
+                slots_held += 1
+
+        if slots_held == 0:
+            logger.error(f"Probe: could not acquire any gate slots for {nvr_ip}")
+            with probe_lock:
+                probe["status"] = "error"
+                probe["stats"]["error"] = "gate_timeout"
+            return
 
         # Round-robin: attempt 1 for all channels, then attempt 2, etc.
         for attempt_num in range(1, attempts + 1):
@@ -2258,6 +2360,9 @@ def _probe_coordinator(probe: dict):
             probe["status"] = "error"
             probe["stats"]["error"] = str(e)
     finally:
+        # Release gate slots
+        for _ in range(slots_held):
+            nvr_gate.release(nvr_ip)
         if executor:
             executor.shutdown(wait=False)
         probe["finished_at"] = _time.time()
@@ -2932,7 +3037,8 @@ def monitor_page():
                 'DONE': '#00ff88',
                 'ERROR': '#ff6b6b',
                 'SUPERSEDED': '#ffa500',
-                'CIRCUIT_BREAK': '#ff6b6b'
+                'CIRCUIT_BREAK': '#ff6b6b',
+                'STALE': '#ff8c00'
             };
 
             const lines = events.map(e => {
