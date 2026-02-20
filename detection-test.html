@@ -292,8 +292,17 @@
             color: #888;
             font-size: 10px;
         }
+        .camera-tile .tag-details .tag-margins {
+            display: flex;
+            gap: 4px;
+        }
         .camera-tile .tag-details .tag-margin {
             color: #00d4ff;
+            min-width: 32px;
+            text-align: right;
+        }
+        .camera-tile .tag-details .tag-margin.miss {
+            color: #ff4757;
         }
         .camera-tile .tag-details .no-tags {
             color: #666;
@@ -374,8 +383,9 @@
         let totalTags = 0;
         let startTime = null;
         let cameraPassResults = {};  // idx -> [tags per pass]
-        let cameraTagDetails = {};  // idx -> [{id, family, confidence}, ...] from latest successful pass
+        let cameraTagDetails = {};  // idx -> { "family:id": {id, family, margins: [m1, m2, m3]} }
         let loadedImages = {};  // passId/nvr/channel -> true (track which images we've loaded)
+        let cameraImagePass = {};  // idx -> passId of currently displayed image
 
         // Build NVR control panel
         function buildNvrControls() {
@@ -482,7 +492,7 @@
                     <div class="tag-details" id="tags-${idx}"></div>
                 `;
                 cameraPassResults[idx] = [];
-                cameraTagDetails[idx] = [];
+                cameraTagDetails[idx] = {};
                 grid.appendChild(tile);
             });
         }
@@ -503,6 +513,7 @@
                     // Load image once
                     loadedImages[imageKey] = true;
                     img.src = `${DETECTION_SERVICE}/pass/${passId}/image/${r.nvr}/${r.channel}`;
+                    cameraImagePass[idx] = passId;
 
                     // Update resolution (with low-res warning and detect dimensions)
                     const resEl = document.getElementById(`res-${idx}`);
@@ -539,9 +550,21 @@
                         updatePassDisplay(idx);
                     }
 
-                    // Store tag details from this successful pass
+                    // Merge tag details into cumulative map
                     if (r.tag_details) {
-                        cameraTagDetails[idx] = r.tag_details;
+                        if (!cameraTagDetails[idx]) cameraTagDetails[idx] = {};
+                        const passIdx = currentPassNum - 1;
+                        for (const t of r.tag_details) {
+                            const key = `${t.family}:${t.id}`;
+                            if (!cameraTagDetails[idx][key]) {
+                                cameraTagDetails[idx][key] = { id: t.id, family: t.family, margins: [] };
+                            }
+                            // Pad margins array to current pass
+                            while (cameraTagDetails[idx][key].margins.length < passIdx) {
+                                cameraTagDetails[idx][key].margins.push(null);
+                            }
+                            cameraTagDetails[idx][key].margins[passIdx] = t.margin;
+                        }
                         updateTagDetails(idx);
                     }
 
@@ -660,13 +683,14 @@
 
         // Download full-res annotated image for a camera tile
         function downloadFull(idx) {
-            if (!currentPassId) return;
+            const passId = cameraImagePass[idx];
+            if (!passId) return;
             const cam = getEnabledCameras()[idx];
             if (!cam) return;
-            const url = `${DETECTION_SERVICE}/pass/${currentPassId}/image/${cam.nvr}/${cam.channel}/full`;
+            const url = `${DETECTION_SERVICE}/pass/${passId}/image/${cam.nvr}/${cam.channel}/full`;
             const a = document.createElement('a');
             a.href = url;
-            a.download = `${cam.nvr}_ch${cam.channel}_${currentPassId}.jpg`;
+            a.download = `${cam.nvr}_ch${cam.channel}_${passId}.jpg`;
             a.click();
         }
 
@@ -675,24 +699,31 @@
             const tagsEl = document.getElementById(`tags-${idx}`);
             if (!tagsEl) return;
 
-            const details = cameraTagDetails[idx] || [];
-            if (details.length === 0) {
+            const details = cameraTagDetails[idx] || {};
+            const entries = Object.values(details);
+            if (entries.length === 0) {
                 tagsEl.innerHTML = '<div class="no-tags">No tags detected</div>';
                 return;
             }
 
             // Sort by family then id
-            const sorted = [...details].sort((a, b) => {
+            const sorted = entries.sort((a, b) => {
                 if (a.family !== b.family) return a.family.localeCompare(b.family);
                 return a.id - b.id;
             });
 
-            const html = sorted.map(t => `
-                <div class="tag-item ${t.family}">
-                    <span><span class="tag-id">#${t.id}</span> <span class="tag-family">${t.family}</span></span>
-                    <span class="tag-margin">${t.margin}</span>
-                </div>
-            `).join('');
+            const html = sorted.map(t => {
+                const marginCells = Array.from({length: NUM_PASSES}, (_, i) => {
+                    const m = t.margins[i];
+                    if (m == null) return '<span class="tag-margin miss">-</span>';
+                    return `<span class="tag-margin">${m}</span>`;
+                }).join('');
+                return `
+                    <div class="tag-item ${t.family}">
+                        <span><span class="tag-id">#${t.id}</span> <span class="tag-family">${t.family}</span></span>
+                        <span class="tag-margins">${marginCells}</span>
+                    </div>`;
+            }).join('');
 
             tagsEl.innerHTML = html;
         }
@@ -768,6 +799,7 @@
             totalTags = 0;
             startTime = Date.now();
             loadedImages = {};
+            cameraImagePass = {};
 
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
@@ -836,6 +868,7 @@
             currentPassNum = 0;
             startTime = null;
             loadedImages = {};
+            cameraImagePass = {};
             cameraTagDetails = {};
 
             document.getElementById('statFrames').textContent = '0';
@@ -855,7 +888,7 @@
             // Reset camera tiles
             cameras.forEach((_, idx) => {
                 cameraPassResults[idx] = [];
-                cameraTagDetails[idx] = [];
+                cameraTagDetails[idx] = {};
                 const passesEl = document.getElementById(`passes-${idx}`);
                 if (passesEl) {
                     passesEl.innerHTML = Array(NUM_PASSES).fill('<span>-</span>').join('');
