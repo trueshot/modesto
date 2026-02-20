@@ -6,6 +6,13 @@ services:
     port: 5173
     autostart: true
 
+  nvr-service:
+    name: NVR Probe
+    command: python server.py
+    cwd: nvr-service
+    port: 7999
+    autostart: false
+
   asksam:
     name: AskSAM
     command: docker-compose up

@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-02-20T09:33:50.118Z
+-- Generated: 2026-02-20T11:19:49.657Z
 
 BEGIN TRANSACTION;
 
@@ -50,7 +50,7 @@ CREATE TABLE channels (
     UNIQUE(nvr_id, channel_number)
 );
 
-INSERT INTO "channels" VALUES('nvr1_ch01','nvr1',1,'rtsp://admin:@192.168.0.6:554/ch01/0','active','2026-02-19 23:20:56','F0:00:00:77:2D:8D',1,'3072x2048');
+INSERT INTO "channels" VALUES('nvr1_ch01','nvr1',1,'rtsp://admin:@192.168.0.6:554/ch01/0','active','2026-02-20 06:19:49','F0:00:00:77:2D:8D',1,'3072x2048');
 INSERT INTO "channels" VALUES('nvr1_ch02','nvr1',2,'rtsp://admin:@192.168.0.6:554/ch02/0','active','2026-02-19 23:20:56','F0:00:00:77:2E:EB',1,'3072x2048');
 INSERT INTO "channels" VALUES('nvr1_ch03','nvr1',3,'rtsp://admin:@192.168.0.6:554/ch03/0','active','2026-02-19 23:20:56','F4:00:00:01:A8:BB',1,'3840x2160');
 INSERT INTO "channels" VALUES('nvr1_ch04','nvr1',4,'rtsp://admin:@192.168.0.6:554/ch04/0','active','2026-02-19 23:20:56','F4:00:00:01:A9:01',1,'3840x2160');

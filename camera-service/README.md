@@ -1,338 +1,143 @@
 # Camera Capture Service
 
-FastAPI microservice for warehouse camera access and image delivery.
+FastAPI + ZMQ service for warehouse camera access. Port 8001.
 
-## Overview
-
-This service provides REST API access to warehouse cameras connected through NVR systems. It handles:
-- Live frame capture from NVR cameras
-- In-memory image caching (30 sec TTL)
-- Camera metadata from ModelT configurations
-- Batch capture operations
-- Health monitoring
-
-## Architecture
-
-```
-Camera Service (Python FastAPI, port 8001)
-├── Reads: warehouses/{facility}/cameras/config.json
-├── Captures: RTSP streams from NVR via OpenCV
-├── Caches: Recent frames in memory
-└── Serves: REST API for image delivery
-
-Consumers:
-├── Web App (3D Digital Twin)
-├── SAM3 (Visual Segmentation)
-├── OpenCV Scripts (AprilTag Detection)
-└── AI Agents (Inventory Tracking)
-```
-
-## Installation
+## Running
 
 ```bash
 cd c:\clients\modesto\camera-service
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-## Running the Service
-
-```bash
-# Start server on port 8001
 python api/server.py
 ```
 
-Server will be available at:
-- API: http://localhost:8001
-- Docs: http://localhost:8001/docs
+- API docs: http://localhost:8001/docs
+- Monitor UI: http://localhost:8001/monitor
+- Camera viewer: http://localhost:8001/camera-viewer
 - Health: http://localhost:8001/api/health
 
-## API Endpoints
+## Data Source
 
-### Discovery
+All camera/NVR config comes from `lodge.db` (SQLite):
 
-**POST /api/scan**
-Scan NVR for available camera channels
-
-Modes:
-- `"quick": true` - Fast scan using common pattern (ch01/0, ch02/0, etc.)
-- `"quick": false` - Full scan testing all NVR patterns (Hikvision, Dahua, generic)
-
-```bash
-curl -X POST http://localhost:8001/api/scan \
-  -H "Content-Type: application/json" \
-  -d '{
-    "nvr_ip": "192.168.0.165",
-    "username": "admin",
-    "password": "",
-    "port": 554,
-    "max_channels": 16,
-    "quick": true
-  }'
+```
+../warehouses/lodge/lodge.db
 ```
 
-Response:
-```json
-{
-  "nvr_ip": "192.168.0.165",
-  "channels_found": 14,
-  "channels": [
-    {
-      "path": "ch01/0",
-      "channel": 1,
-      "width": 3072,
-      "height": 2048,
-      "resolution": "3072x2048",
-      "url": "rtsp://admin:@192.168.0.165:554/ch01/0"
-    }
-  ]
-}
+Tables: `nvrs`, `channels`, `cameras`. No config.json.
+
+## Interfaces
+
+### REST API (port 8001)
+
+**Health & discovery**
+```
+GET  /api/health                              # Service health + NVR connectivity
+GET  /api/cameras/{facility}                  # List cameras (joined with channels)
+GET  /api/cameras/{facility}/status           # Live status for all cameras
+GET  /api/cameras/{facility}/unconfigured     # Channels without camera assignments
+GET  /api/cameras/{facility}/thumbnails       # Cached thumbnails grid
+GET  /api/nvrs                                # NVR list from DB
+GET  /api/nvrs/{nvr_id}/channels              # Channel list for NVR
 ```
 
-### Health & Info
-
-**GET /api/health**
-```bash
-curl http://localhost:8001/api/health?facility=lodge
+**Frame capture**
+```
+GET  /api/cameras/{facility}/{camera_id}/latest    # Cached frame (<30s, fast)
+GET  /api/cameras/{facility}/{camera_id}/capture   # Live frame (always fresh)
+POST /api/cameras/{facility}/batch                 # Batch capture (body: {camera_ids, use_cache})
+POST /api/cameras/{facility}/capture-all           # Capture every camera
+GET  /api/nvr/{nvr_id}/channel/{ch}/frame          # Raw NVR channel frame
+GET  /api/nvr/{nvr_id}/channel/{ch}/info           # Channel resolution/codec info
 ```
 
-**GET /api/cameras/{facility}**
-List all cameras
-```bash
-curl http://localhost:8001/api/cameras/lodge
+**NVR scan**
+```
+POST /api/scan       # Scan NVR for channels (body: {nvr_ip, username, password, quick})
 ```
 
-**GET /api/cameras/{facility}/{camera_id}/info**
-Get camera metadata
-```bash
-curl http://localhost:8001/api/cameras/lodge/bagel/info
+**Tag scan** (AprilTag detection across cameras)
+```
+POST /api/tag-scan/start              # Start scan (body: {cameras, scan_id, push_to})
+GET  /api/tag-scan/{scan_id}/status   # Scan progress
+POST /api/tag-scan/{scan_id}/stop     # Stop scan
 ```
 
-### Image Capture
-
-**GET /api/cameras/{facility}/{camera_id}/latest**
-Get cached frame (fast, <30s old)
-```bash
-# As JPEG image
-curl http://localhost:8001/api/cameras/lodge/bagel/latest > bagel.jpg
-
-# As base64 JSON
-curl "http://localhost:8001/api/cameras/lodge/bagel/latest?format=base64"
+**Cache**
+```
+DELETE /api/cache/{facility}/{camera_id}   # Invalidate one
+DELETE /api/cache                          # Clear all
 ```
 
-**GET /api/cameras/{facility}/{camera_id}/capture**
-Capture live frame (always fresh)
-```bash
-curl http://localhost:8001/api/cameras/lodge/bacon/capture > bacon.jpg
+**Admin**
+```
+POST   /api/admin/restart                    # Restart service
+POST   /api/admin/reload-config              # Reload lodge.db
+GET    /api/admin/circuit-breaker            # View circuit breaker state
+DELETE /api/admin/circuit-breaker/{nvr_ip}   # Reset breaker for NVR
+GET    /api/admin/concurrency                # Current NVR concurrency limit
+PUT    /api/admin/concurrency/{value}        # Set concurrency limit
+GET    /api/admin/cooldown                   # Circuit breaker cooldown
+PUT    /api/admin/cooldown/{value}           # Set cooldown seconds
 ```
 
-**POST /api/cameras/{facility}/batch**
-Batch capture multiple cameras
-```bash
-curl -X POST http://localhost:8001/api/cameras/lodge/batch \
-  -H "Content-Type: application/json" \
-  -d '{
-    "camera_ids": ["bagel", "bacon", "beef"],
-    "use_cache": true
-  }'
+**UI pages**
+```
+GET /monitor         # Live monitor dashboard
+GET /camera-viewer   # Camera image viewer
+GET /probe           # Redirects to nvr-service (port 7999)
 ```
 
-**POST /api/cameras/{facility}/capture-all**
-Capture all cameras in facility
-```bash
-curl -X POST http://localhost:8001/api/cameras/lodge/capture-all
-```
+### ZMQ Endpoints
 
-### Cache Management
-
-**DELETE /api/cache/{facility}/{camera_id}**
-Invalidate specific camera cache
-```bash
-curl -X DELETE http://localhost:8001/api/cache/lodge/bagel
-```
-
-**DELETE /api/cache**
-Clear entire cache
-```bash
-curl -X DELETE http://localhost:8001/api/cache
-```
-
-## Usage Examples
-
-### Python Agent Tool
+**REP :5555** — Serial request/reply. One frame at a time. Simple but blocks on slow cameras.
 
 ```python
-import requests
-import base64
-from PIL import Image
-from io import BytesIO
-
-# Get latest frame (cached)
-response = requests.get('http://localhost:8001/api/cameras/lodge/bagel/latest')
-image = Image.open(BytesIO(response.content))
-
-# Get live frame
-response = requests.get('http://localhost:8001/api/cameras/lodge/bagel/capture')
-image = Image.open(BytesIO(response.content))
-
-# Batch capture with base64 encoding
-response = requests.post(
-    'http://localhost:8001/api/cameras/lodge/batch',
-    json={'camera_ids': ['bagel', 'bacon'], 'use_cache': True}
-)
-data = response.json()
-for camera_id, result in data['results'].items():
-    if result['success']:
-        image_data = base64.b64decode(result['image'])
-        image = Image.open(BytesIO(image_data))
+import zmq
+ctx = zmq.Context()
+sock = ctx.socket(zmq.REQ)
+sock.connect("tcp://127.0.0.1:5555")
+sock.send_json({"nvr": "nvr1", "channel": 1})
+result = sock.recv_json()  # {success, image_base64, width, height, ...}
 ```
 
-### JavaScript/Web App
-
-```javascript
-// Get latest frame as image
-const img = document.createElement('img');
-img.src = 'http://localhost:8001/api/cameras/lodge/bagel/latest';
-document.body.appendChild(img);
-
-// Get frame as base64
-const response = await fetch(
-  'http://localhost:8001/api/cameras/lodge/bagel/latest?format=base64'
-);
-const data = await response.json();
-const imgElement = document.createElement('img');
-imgElement.src = `data:image/jpeg;base64,${data.image}`;
-```
-
-### OpenCV Script
+**ROUTER :5556** — Async with dedup and supersede. Multiple in-flight requests. If a new request arrives for the same camera while one is pending, the old one is superseded.
 
 ```python
-import cv2
-import requests
-import numpy as np
-
-# Get frame from camera service
-response = requests.get('http://localhost:8001/api/cameras/lodge/bagel/latest')
-
-# Convert to OpenCV image
-nparr = np.frombuffer(response.content, np.uint8)
-image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-# Process with OpenCV
-gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-# ... AprilTag detection, etc.
+sock = ctx.socket(zmq.DEALER)
+sock.connect("tcp://127.0.0.1:5556")
+sock.send_json({"nvr": "nvr1", "channel": 1, "request_id": "abc"})
+# Non-blocking, can send more requests
+result = sock.recv_json()  # includes request_id for correlation
 ```
 
-## Configuration
+**PUSH :5557** — Tag scan output. When a tag scan runs with `push_to: "tcp://127.0.0.1:5557"`, each frame result is pushed here for downstream consumers.
 
-Camera configurations are read from:
-```
-warehouses/{facility}/cameras/config.json
-```
+## Key Features
 
-Example: `warehouses/lodge/cameras/config.json`
+### Direct-to-Camera Auto-Upgrade
 
-The service automatically loads camera configurations including:
-- NVR connection details (IP, credentials, RTSP URLs)
-- ModelT camera IDs and names
-- Camera locations and metadata
+`resolve_capture_url()` checks if a channel has a linked camera with a direct IP. If so, it captures directly from the camera instead of routing through the NVR. Falls back to NVR path on failure.
 
-## Caching Behavior
+### NvrGate (Concurrency Control)
 
-- **Default TTL:** 30 seconds
-- **Strategy:** Write-through cache
-- **Invalidation:** Automatic on expiry, manual via DELETE endpoints
-- **Memory:** Images stored as JPEG bytes in memory
+Per-NVR semaphore limiting concurrent RTSP connections. Default 2 per NVR. Prevents overwhelming NVRs with simultaneous requests.
 
-When to use:
-- **`/latest`** - For dashboards, monitoring (uses cache)
-- **`/capture`** - For analysis, ground truth (always fresh)
-- **`/batch`** - For processing multiple cameras efficiently
+### Circuit Breaker
 
-## Service Management
+If an NVR is unreachable (TCP probe fails), it's marked down for a cooldown period. Subsequent requests skip the NVR and fail fast instead of timing out.
 
-### Check if running
-```bash
-curl http://localhost:8001/api/health
-```
+### Monitor Event Log
 
-### Stop service
-Press `Ctrl+C` in terminal
+The `/monitor` UI and `/api/monitor` endpoint track every capture attempt with timing, source (NVR vs direct), resolution, and errors.
 
-### Restart service
-```bash
-python api/server.py
-```
+## NVRs
 
-## Integration with Other Services
+| NVR | IP | Credentials | RTSP Pattern |
+|-----|-----|-------------|-------------|
+| nvr1 | 192.168.0.165 | admin / (empty) | ch{nn}/0 |
+| nvr2 | 192.168.0.75 | admin / Dad5eeeee! | unicast/c{n}/s0/live |
 
-### SAM3 (Port 8000)
-```python
-# Get image from camera service
-cam_response = requests.get('http://localhost:8001/api/cameras/lodge/bagel/latest')
+## Related Services
 
-# Send to SAM3 for segmentation
-files = {'image': cam_response.content}
-sam_response = requests.post(
-    'http://localhost:8000/detect',
-    files=files,
-    data={'prompt': 'boxes on pallet'}
-)
-```
-
-### Node.js 3D Viewer (Port 5173)
-```javascript
-// In viewer, fetch camera image for ground truth overlay
-fetch('http://localhost:8001/api/cameras/lodge/bagel/latest')
-  .then(r => r.blob())
-  .then(blob => {
-    // Display in 3D viewer at camera position
-  });
-```
-
-## Architecture Benefits
-
-✅ **Independent** - Doesn't affect SAM3 or other services
-✅ **Cacheable** - Reduces NVR load, improves response time
-✅ **Tool-friendly** - Simple REST API for AI agents
-✅ **Scalable** - Can run multiple instances
-✅ **Observable** - Health checks, cache stats
-
-## Troubleshooting
-
-### Cannot connect to NVR
-- Check NVR is reachable: `ping 192.168.0.165`
-- Verify RTSP credentials in config.json
-- Check firewall settings
-
-### Camera not found
-- Verify camera exists: `GET /api/cameras/{facility}`
-- Check ModelT camera ID spelling
-- Ensure config.json is loaded
-
-### Slow responses
-- Use `/latest` instead of `/capture` for cached access
-- Check NVR network latency
-- Consider reducing image quality in capture.py
-
-## Development
-
-Run with auto-reload:
-```bash
-uvicorn api.server:app --reload --port 8001
-```
-
-View interactive API docs:
-```
-http://localhost:8001/docs
-```
-
-## Next Steps
-
-Future enhancements:
-- AprilTag detection endpoint
-- Image preprocessing (resize, crop, enhance)
-- Streaming endpoints (MJPEG, WebRTC)
-- Prometheus metrics
-- Background polling mode
+- **nvr-service** (port 7999) — Standalone NVR probe/validation tool. Run during maintenance to verify camera setup. See `../nvr-service/README.md`.
+- **SAM3** (port 8000) — Visual segmentation
+- **3D Viewer** (port 5173) — Digital twin with camera overlays
