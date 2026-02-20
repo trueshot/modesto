@@ -8,6 +8,7 @@ Provides camera images to agents, web apps, and other services
 """
 
 import sys
+import os
 import logging
 import sqlite3
 import threading
@@ -37,6 +38,38 @@ from capture import CameraCapture
 from cache import ImageCache
 from scanner import NVRScanner
 from playback import capture_playback_frame
+
+# ============================================================================
+# CAMERA CREDENTIALS (.env)
+# ============================================================================
+
+ENV_PATH = Path(__file__).parent.parent.parent / ".env"
+if ENV_PATH.exists():
+    for _line in ENV_PATH.read_text().splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith('#') and '=' in _line:
+            _k, _v = _line.split('=', 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+
+CAM_CRED_GROUPS = {
+    "IPCamera": "CAM_UNIVIEW",
+    "N802-IRC-GW": "CAM_N802",
+    "YM600F_AF": "CAM_YM600F",
+    "YMF52_STARIR_GW_AF": "CAM_066",
+}
+
+def get_camera_credentials(model: str, ip: str) -> tuple:
+    """Resolve camera credentials. IP-specific override > model group > default."""
+    ip_suffix = ip.split('.')[-1]
+    ip_user = os.environ.get(f"CAM_{ip_suffix}_USER")
+    ip_pass = os.environ.get(f"CAM_{ip_suffix}_PASS")
+    if ip_user is not None:
+        return (ip_user, ip_pass or "")
+    prefix = CAM_CRED_GROUPS.get(model)
+    if prefix:
+        return (os.environ.get(f"{prefix}_USER", "admin"),
+                os.environ.get(f"{prefix}_PASS", ""))
+    return ("admin", "")
 
 # Configure logging - console + file
 LOG_FILE = Path(__file__).parent / "camera-service.log"
@@ -1040,6 +1073,50 @@ def build_rtsp_url(nvr: dict, channel: int) -> str:
     # Always include colon - some NVRs require admin:@ even with empty password
     return f"rtsp://{username}:{password_encoded}@{ip}:554/{path}"
 
+def get_direct_camera_info(nvr_id: str, channel: int) -> Optional[dict]:
+    """Get camera IP, rtsp_path, model for direct access. Returns None if not available."""
+    if not DB_PATH.exists():
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT cam.ip, cam.rtsp_path, cam.model
+        FROM channels ch
+        JOIN cameras cam ON ch.camera_id = cam.mac
+        WHERE ch.nvr_id = ? AND ch.channel_number = ?
+          AND cam.ip IS NOT NULL AND cam.rtsp_path IS NOT NULL
+    """, (nvr_id, channel))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def build_direct_rtsp_url(camera: dict) -> str:
+    """Build RTSP URL directly to camera IP, bypassing NVR."""
+    ip = camera['ip']
+    path = camera['rtsp_path']
+    user, passwd = get_camera_credentials(camera['model'], ip)
+    passwd_enc = quote(passwd, safe='')
+    return f"rtsp://{user}:{passwd_enc}@{ip}:554{path}"
+
+def resolve_capture_url(nvr_id: str, channel: int, requested_source: str) -> tuple:
+    """
+    Resolve the actual RTSP URL and source for a capture request.
+    Auto-upgrades 'rtsp' to 'direct' when direct camera access is available.
+
+    Returns: (rtsp_url, actual_source, target_ip)
+      - actual_source: "direct" or "rtsp"
+      - target_ip: camera IP (direct) or NVR IP (rtsp)
+    """
+    if requested_source in ("rtsp", "direct"):
+        cam = get_direct_camera_info(nvr_id, channel)
+        if cam:
+            return (build_direct_rtsp_url(cam), "direct", cam['ip'])
+    nvr = get_nvr_info(nvr_id)
+    if not nvr:
+        return (None, "rtsp", None)
+    return (build_rtsp_url(nvr, channel), "rtsp", nvr['ip'])
+
 def nvr_supports_snapshot(nvr: dict) -> bool:
     """Check if NVR supports HTTP snapshot (LAPI)"""
     # Currently only UNIVIEW NVRs support LAPI snapshot
@@ -1093,14 +1170,12 @@ def get_nvr_channel_frame(
     if not nvr:
         raise HTTPException(status_code=404, detail=f"NVR '{nvr_id}' not found in lodge.db")
 
-    # Circuit breaker check
-    if is_nvr_down(nvr['ip']):
-        raise HTTPException(
-            status_code=503,
-            detail=f"NVR '{nvr_id}' ({nvr['ip']}) is unreachable (circuit breaker tripped)"
-        )
+    actual_source = source  # may be overridden to "direct" below
 
     if source == "playback":
+        # Circuit breaker — playback always goes through NVR
+        if is_nvr_down(nvr['ip']):
+            raise HTTPException(status_code=503, detail=f"NVR '{nvr_id}' ({nvr['ip']}) is unreachable (circuit breaker tripped)")
         if not nvr_supports_playback(nvr):
             raise HTTPException(
                 status_code=400,
@@ -1130,6 +1205,9 @@ def get_nvr_channel_frame(
             if image_data:
                 image_cache.set(playback_cache_key, image_data, ttl=300)
     elif source == "snapshot":
+        # Circuit breaker — snapshot always goes through NVR
+        if is_nvr_down(nvr['ip']):
+            raise HTTPException(status_code=503, detail=f"NVR '{nvr_id}' ({nvr['ip']}) is unreachable (circuit breaker tripped)")
         if not nvr_supports_snapshot(nvr):
             raise HTTPException(
                 status_code=400,
@@ -1138,13 +1216,23 @@ def get_nvr_channel_frame(
         logger.info(f"Snapshot from {nvr_id} ch{channel}: {nvr['ip']}")
         image_data = capture_snapshot(nvr, channel)
     else:
-        rtsp_url = build_rtsp_url(nvr, channel)
-        logger.info(f"RTSP capture from {nvr_id} ch{channel}: {nvr['ip']}")
+        # RTSP / direct — resolve URL (auto-upgrades to direct when available)
+        rtsp_url, actual_source, target_ip = resolve_capture_url(nvr_id, channel, source)
+        if not rtsp_url:
+            raise HTTPException(status_code=404, detail=f"Could not resolve capture URL for {nvr_id} ch{channel}")
+        # Circuit breaker only for NVR path
+        if actual_source == "rtsp" and is_nvr_down(target_ip):
+            raise HTTPException(status_code=503, detail=f"NVR '{nvr_id}' ({target_ip}) is unreachable (circuit breaker tripped)")
+        logger.info(f"{actual_source.upper()} capture from {nvr_id} ch{channel}: {target_ip}")
         image_data = camera_capture.capture_frame(rtsp_url, timeout=timeout, fmt=encoding)
 
     if not image_data:
-        mark_nvr_down_if_unreachable(nvr['ip'])
-        detail = f"Failed to capture from {nvr_id} channel {channel} via {source}"
+        # Determine actual source for error reporting
+        used_source = actual_source if source in ("rtsp", "direct") else source
+        # Only trip circuit breaker for NVR-path failures
+        if used_source != "direct":
+            mark_nvr_down_if_unreachable(nvr['ip'])
+        detail = f"Failed to capture from {nvr_id} channel {channel} via {used_source}"
         if is_nvr_down(nvr['ip']):
             detail += f" — NVR marked unreachable for {NVR_DOWN_COOLDOWN}s"
         raise HTTPException(status_code=503, detail=detail)
@@ -1203,6 +1291,28 @@ def get_nvr_channel_info(
             "notes": "Direct JPEG from NVR, no transcoding. Auth: Digest. ~60KB, ~150ms" if supports_snapshot else f"{nvr.get('brand')} does not support HTTP snapshot"
         }
     else:
+        # Check for direct camera access
+        cam_direct = get_direct_camera_info(nvr_id, channel)
+        if cam_direct:
+            direct_url = build_direct_rtsp_url(cam_direct)
+            # Mask password
+            creds = get_camera_credentials(cam_direct['model'], cam_direct['ip'])
+            display_url = direct_url.replace(quote(creds[1], safe=''), '***') if creds[1] else direct_url
+            return {
+                "nvr_id": nvr_id,
+                "channel": channel,
+                "nvr_ip": nvr['ip'],
+                "nvr_brand": nvr['brand'],
+                "source": "direct",
+                "camera_ip": cam_direct['ip'],
+                "camera_model": cam_direct['model'],
+                "supports_snapshot": supports_snapshot,
+                "supports_playback": supports_playback,
+                "capture_url": display_url,
+                "method": "Direct RTSP to camera IP (bypasses NVR)",
+                "notes": f"Auto-upgraded from rtsp. Camera at {cam_direct['ip']}, model {cam_direct['model']}. No NVR gate slot needed."
+            }
+
         rtsp_url = build_rtsp_url(nvr, channel)
         # Mask password in display URL
         display_url = rtsp_url
@@ -1218,7 +1328,7 @@ def get_nvr_channel_info(
             "supports_snapshot": supports_snapshot,
             "supports_playback": supports_playback,
             "capture_url": display_url,
-            "method": "RTSP stream capture via OpenCV/FFmpeg",
+            "method": "RTSP stream capture via OpenCV/FFmpeg (through NVR)",
             "notes": "Decodes H.264/HEVC stream, encodes to JPEG. Reads up to 3 frames, skips grey frames. ~1-2MB, ~1-2s"
         }
 
@@ -1447,38 +1557,39 @@ def capture_snapshot(nvr: dict, channel: int) -> Optional[bytes]:
         logger.error(f"Snapshot error: {e}")
         return None
 
-def _capture_subprocess(nvr_id: str, channel: int, source: str, nvr_ip: str, timestamp=None, cooldown: float = 0.0, fmt: str = "jpeg") -> bytes:
+def _capture_from_url(rtsp_url: str, timeout: int = 8, cooldown: float = 0.0, fmt: str = "jpeg") -> bytes:
     """
-    Capture a frame in a separate process (own GIL, no contention).
-    Called via ProcessPoolExecutor from zmq_async_handler.
+    Capture a frame from an RTSP URL in a subprocess (own GIL, no contention).
+    Called via ProcessPoolExecutor. URL resolved by caller in main process.
     Returns encoded image bytes or empty bytes on failure.
     """
+    image_data = camera_capture.capture_frame(rtsp_url, timeout=timeout, fmt=fmt)
+    if cooldown > 0:
+        _time.sleep(cooldown)
+    return image_data or b""
+
+def _capture_playback_subprocess(nvr_id: str, channel: int, timestamp: int) -> bytes:
+    """Capture a playback frame in a subprocess. NVR-specific (needs DB lookup)."""
+    nvr = get_nvr_info(nvr_id)
+    if not nvr or not nvr_supports_playback(nvr):
+        return b""
+    image_data = capture_playback_frame(
+        nvr_ip=nvr['ip'],
+        username=nvr['username'] or 'admin',
+        password=nvr['password'] or '',
+        channel=channel,
+        epoch_begin=timestamp,
+        epoch_end=timestamp + 60,
+        timeout=30
+    )
+    return image_data or b""
+
+def _capture_snapshot_subprocess(nvr_id: str, channel: int) -> bytes:
+    """Capture an HTTP snapshot in a subprocess. NVR-specific (needs DB lookup)."""
     nvr = get_nvr_info(nvr_id)
     if not nvr:
         return b""
-
-    image_data = None
-    if source == "playback":
-        if not timestamp or not nvr_supports_playback(nvr):
-            return b""
-        image_data = capture_playback_frame(
-            nvr_ip=nvr['ip'],
-            username=nvr['username'] or 'admin',
-            password=nvr['password'] or '',
-            channel=channel,
-            epoch_begin=timestamp,
-            epoch_end=timestamp + 60,
-            timeout=30
-        )
-    elif source == "snapshot":
-        image_data = capture_snapshot(nvr, channel)
-    else:
-        rtsp_url = build_rtsp_url(nvr, channel)
-        image_data = camera_capture.capture_frame(rtsp_url, timeout=8, fmt=fmt)
-
-    if cooldown > 0:
-        _time.sleep(cooldown)
-
+    image_data = capture_snapshot(nvr, channel)
     return image_data or b""
 
 
@@ -1522,16 +1633,15 @@ def zmq_frame_handler():
                 socket.send(b"")  # Empty response for error
                 continue
 
-            # Circuit breaker check
-            if is_nvr_down(nvr['ip']):
-                logger.info(f"ZMQ REP: circuit breaker skipping {nvr_id} ch{channel}")
-                with worker_state_lock:
-                    worker_state["zmq_rep"]["errors"] += 1
-                socket.send(b"")
-                continue
-
             # Capture based on source
             if source == "playback":
+                # Circuit breaker — playback always through NVR
+                if is_nvr_down(nvr['ip']):
+                    logger.info(f"ZMQ REP: circuit breaker skipping {nvr_id} ch{channel}")
+                    with worker_state_lock:
+                        worker_state["zmq_rep"]["errors"] += 1
+                    socket.send(b"")
+                    continue
                 timestamp = req.get("timestamp")
                 if not timestamp or not nvr_supports_playback(nvr):
                     with worker_state_lock:
@@ -1549,10 +1659,32 @@ def zmq_frame_handler():
                     epoch_end=epoch_end,
                     timeout=30
                 )
+                actual_source = "playback"
             elif source == "snapshot":
+                # Circuit breaker — snapshot always through NVR
+                if is_nvr_down(nvr['ip']):
+                    logger.info(f"ZMQ REP: circuit breaker skipping {nvr_id} ch{channel}")
+                    with worker_state_lock:
+                        worker_state["zmq_rep"]["errors"] += 1
+                    socket.send(b"")
+                    continue
                 image_data = capture_snapshot(nvr, channel)
-            else:  # rtsp
-                rtsp_url = build_rtsp_url(nvr, channel)
+                actual_source = "snapshot"
+            else:  # rtsp / direct — auto-upgrade
+                rtsp_url, actual_source, target_ip = resolve_capture_url(nvr_id, channel, source)
+                if not rtsp_url:
+                    with worker_state_lock:
+                        worker_state["zmq_rep"]["errors"] += 1
+                    socket.send(b"")
+                    continue
+                # Circuit breaker only for NVR path
+                if actual_source == "rtsp" and is_nvr_down(target_ip):
+                    logger.info(f"ZMQ REP: circuit breaker skipping {nvr_id} ch{channel}")
+                    with worker_state_lock:
+                        worker_state["zmq_rep"]["errors"] += 1
+                    socket.send(b"")
+                    continue
+                logger.info(f"ZMQ REP {actual_source}: {nvr_id} ch{channel} -> {target_ip}")
                 image_data = camera_capture.capture_frame(rtsp_url, timeout=8)
 
             if image_data:
@@ -1560,7 +1692,8 @@ def zmq_frame_handler():
                     worker_state["zmq_rep"]["completed"] += 1
                 socket.send(image_data)
             else:
-                mark_nvr_down_if_unreachable(nvr['ip'])
+                if actual_source != "direct":
+                    mark_nvr_down_if_unreachable(nvr['ip'])
                 with worker_state_lock:
                     worker_state["zmq_rep"]["errors"] += 1
                 socket.send(b"")  # Empty response for error
@@ -1603,7 +1736,8 @@ def zmq_async_handler():
 
     # Process pool for parallel captures — each worker has its own GIL,
     # so HEVC decode on NVR2 doesn't block H.264 decode on NVR1
-    executor = ProcessPoolExecutor(max_workers=8)
+    # 16 workers: direct captures bypass NVR gate, so many more can be in-flight
+    executor = ProcessPoolExecutor(max_workers=16)
 
     # Pending queue: requests waiting for NVR capacity
     # {request_id -> {identity, nvr, channel, source, queued_at}}
@@ -1733,24 +1867,45 @@ def zmq_async_handler():
                     worker_state["zmq_router"]["pending_requests"].pop(resp_id, None)
                     worker_state["zmq_router"]["errors"] += 1
 
-            # Schedule: find requests for NVRs with available capacity
+            # Schedule: resolve URLs and check NVR capacity
+            # to_submit tuples: (req_id, req, gate_nvr_ip, rtsp_url, actual_source, target_ip)
+            #   gate_nvr_ip: NVR IP if gate slot was acquired, None for direct captures
             to_submit = []
             to_reject = []  # Requests to NVRs with tripped circuit breaker
             for req_id, req in list(pending_queue.items()):
                 nvr_id = req["nvr"]
-                nvr_ip = get_nvr_ip(nvr_id)
-                if not nvr_ip:
-                    # Invalid NVR, submit anyway to return error
-                    to_submit.append((req_id, req, None))
-                    continue
+                source = req["source"]
 
-                # Circuit breaker: reject immediately if NVR is down
-                if is_nvr_down(nvr_ip):
-                    to_reject.append((req_id, req, nvr_ip))
-                    continue
+                if source in ("rtsp", "direct"):
+                    # Resolve URL: auto-upgrade to direct when available
+                    rtsp_url, actual_source, target_ip = resolve_capture_url(nvr_id, req["channel"], source)
+                    if not rtsp_url:
+                        # Can't resolve — submit with None URL to return error
+                        to_submit.append((req_id, req, None, None, "rtsp", None))
+                        continue
 
-                if nvr_gate.try_acquire(nvr_ip):
-                    to_submit.append((req_id, req, nvr_ip))
+                    if actual_source == "direct":
+                        # Direct capture — no gate needed, submit immediately
+                        to_submit.append((req_id, req, None, rtsp_url, "direct", target_ip))
+                    else:
+                        # NVR path — need gate
+                        nvr_ip = target_ip
+                        if is_nvr_down(nvr_ip):
+                            to_reject.append((req_id, req, nvr_ip))
+                            continue
+                        if nvr_gate.try_acquire(nvr_ip):
+                            to_submit.append((req_id, req, nvr_ip, rtsp_url, "rtsp", nvr_ip))
+                else:
+                    # playback/snapshot — always NVR, need gate
+                    nvr_ip = get_nvr_ip(nvr_id)
+                    if not nvr_ip:
+                        to_submit.append((req_id, req, None, None, source, None))
+                        continue
+                    if is_nvr_down(nvr_ip):
+                        to_reject.append((req_id, req, nvr_ip))
+                        continue
+                    if nvr_gate.try_acquire(nvr_ip):
+                        to_submit.append((req_id, req, nvr_ip, None, source, nvr_ip))
 
             # Reject circuit-breaker'd requests immediately
             for req_id, req, nvr_ip in to_reject:
@@ -1775,7 +1930,7 @@ def zmq_async_handler():
 
             # Submit scheduled requests
             pool_crashed = False
-            for i, (req_id, req, nvr_ip) in enumerate(to_submit):
+            for i, (req_id, req, gate_nvr_ip, rtsp_url, actual_source, target_ip) in enumerate(to_submit):
                 del pending_queue[req_id]
                 ch_key = (req["nvr"], req["channel"])
                 if pending_by_channel.get(ch_key) == req_id:
@@ -1784,8 +1939,8 @@ def zmq_async_handler():
                 started_at = _time.time()
                 recv_at = req.get("recv_at", started_at)
                 queue_time = round(started_at - recv_at, 3)
-                logger.info(f"ZMQ async STARTED {response_id}: {req['nvr']} ch{req['channel']} (nvr_ip={nvr_ip}, queued={queue_time}s)")
-                log_event("START", response_id, req["nvr"], req["channel"], req["source"], {"nvr_ip": nvr_ip, "queue_sec": queue_time})
+                logger.info(f"ZMQ async STARTED {response_id}: {req['nvr']} ch{req['channel']} via {actual_source} -> {target_ip} (queued={queue_time}s)")
+                log_event("START", response_id, req["nvr"], req["channel"], actual_source, {"target_ip": target_ip, "queue_sec": queue_time})
 
                 # Move from pending to active in worker_state
                 with worker_state_lock:
@@ -1793,27 +1948,45 @@ def zmq_async_handler():
                     if req_info:
                         req_info["processing_started_at"] = started_at
                     else:
-                        req_info = {"nvr": req["nvr"], "channel": req["channel"], "source": req["source"]}
+                        req_info = {"nvr": req["nvr"], "channel": req["channel"], "source": actual_source}
                     req_info["started_at"] = started_at
+                    req_info["source"] = actual_source
                     worker_state["zmq_router"]["active_requests"][response_id] = req_info
 
                 # Track metadata in main process (identity bytes can't cross process boundary)
                 in_flight_meta[response_id] = {
                     "identity": req["identity"],
-                    "nvr_ip": nvr_ip,
+                    "gate_nvr_ip": gate_nvr_ip,  # None for direct (no gate slot to release)
                     "nvr_id": req["nvr"],
                     "channel": req["channel"],
-                    "source": req["source"],
+                    "source": actual_source,
+                    "target_ip": target_ip,
                     "recv_at": recv_at,
                     "started_at": started_at,
                 }
 
                 try:
-                    future = executor.submit(
-                        _capture_subprocess,
-                        req["nvr"], req["channel"], req["source"],
-                        nvr_ip or "", req.get("timestamp"), CAPTURE_COOLDOWN
-                    )
+                    if actual_source in ("rtsp", "direct"):
+                        if not rtsp_url:
+                            # URL resolution failed — return error immediately
+                            raise ValueError(f"No capture URL for {req['nvr']} ch{req['channel']}")
+                        future = executor.submit(
+                            _capture_from_url,
+                            rtsp_url, 8, CAPTURE_COOLDOWN
+                        )
+                    elif actual_source == "playback":
+                        future = executor.submit(
+                            _capture_playback_subprocess,
+                            req["nvr"], req["channel"], req.get("timestamp")
+                        )
+                    elif actual_source == "snapshot":
+                        future = executor.submit(
+                            _capture_snapshot_subprocess,
+                            req["nvr"], req["channel"]
+                        )
+                    else:
+                        # Unknown source — should not happen
+                        raise ValueError(f"Unknown source: {actual_source}")
                     in_flight[response_id] = future
                 except BrokenProcessPool:
                     logger.error(f"ProcessPool dead, cannot submit {response_id} ({req['nvr']} ch{req['channel']})")
@@ -1824,26 +1997,44 @@ def zmq_async_handler():
                         "bytes": 0, "error": True, "pool_crash": True
                     }).encode('utf-8')
                     socket.send_multipart([req["identity"], b"", response_id.encode('utf-8'), b"", err_meta])
-                    log_event("ERROR", response_id, req["nvr"], req["channel"], req["source"], {"pool_crash": True})
-                    if nvr_ip:
-                        nvr_gate.release(nvr_ip)
+                    log_event("ERROR", response_id, req["nvr"], req["channel"], actual_source, {"pool_crash": True})
+                    if gate_nvr_ip:
+                        nvr_gate.release(gate_nvr_ip)
                     with worker_state_lock:
                         worker_state["zmq_router"]["active_requests"].pop(response_id, None)
                         worker_state["zmq_router"]["errors"] += 1
                     in_flight_meta.pop(response_id, None)
                     pool_crashed = True
                     break
+                except Exception as e:
+                    # URL resolution failure or unknown source
+                    logger.error(f"Submit error {response_id}: {e}")
+                    now = _time.time()
+                    err_meta = json.dumps({
+                        "queue_ms": int((now - recv_at) * 1000),
+                        "capture_ms": 0, "total_ms": int((now - recv_at) * 1000),
+                        "bytes": 0, "error": True
+                    }).encode('utf-8')
+                    socket.send_multipart([req["identity"], b"", response_id.encode('utf-8'), b"", err_meta])
+                    log_event("ERROR", response_id, req["nvr"], req["channel"], actual_source, {"error": str(e)})
+                    if gate_nvr_ip:
+                        nvr_gate.release(gate_nvr_ip)
+                    with worker_state_lock:
+                        worker_state["zmq_router"]["active_requests"].pop(response_id, None)
+                        worker_state["zmq_router"]["errors"] += 1
+                    in_flight_meta.pop(response_id, None)
+                    continue
 
             if pool_crashed:
                 # Release pre-acquired gate slots for remaining un-submitted items
-                for _, _, rem_ip in to_submit[i + 1:]:
-                    if rem_ip:
-                        nvr_gate.release(rem_ip)
+                for _, _, rem_gate_ip, _, _, _ in to_submit[i + 1:]:
+                    if rem_gate_ip:
+                        nvr_gate.release(rem_gate_ip)
                 # Fail all in-flight futures from the dead pool
                 for fid in list(in_flight.keys()):
                     fmeta = in_flight_meta.pop(fid, {})
                     fidentity = fmeta.get("identity", b"")
-                    fnvr_ip = fmeta.get("nvr_ip", "")
+                    fgate_ip = fmeta.get("gate_nvr_ip", "")
                     fnvr_id = fmeta.get("nvr_id", "?")
                     fchannel = fmeta.get("channel", 0)
                     fsource = fmeta.get("source", "?")
@@ -1869,8 +2060,8 @@ def zmq_async_handler():
                     except Exception:
                         pass
                     log_event("ERROR" if is_err else "DONE", fid, fnvr_id, fchannel, fsource, {"pool_crash": True})
-                    if fnvr_ip:
-                        nvr_gate.release(fnvr_ip)
+                    if fgate_ip:
+                        nvr_gate.release(fgate_ip)
                     with worker_state_lock:
                         worker_state["zmq_router"]["active_requests"].pop(fid, None)
                         if is_err:
@@ -1885,7 +2076,7 @@ def zmq_async_handler():
                     executor.shutdown(wait=False)
                 except Exception:
                     pass
-                executor = ProcessPoolExecutor(max_workers=8)
+                executor = ProcessPoolExecutor(max_workers=16)
 
             # Check for completed futures
             completed = []
@@ -1894,7 +2085,8 @@ def zmq_async_handler():
                 if future.done():
                     meta = in_flight_meta.get(req_id, {})
                     identity = meta.get("identity", b"")
-                    nvr_ip = meta.get("nvr_ip", "")
+                    gate_nvr_ip = meta.get("gate_nvr_ip", "")  # None for direct captures
+                    target_ip = meta.get("target_ip", "")
                     nvr_id = meta.get("nvr_id", "?")
                     channel = meta.get("channel", 0)
                     source = meta.get("source", "?")
@@ -1914,9 +2106,9 @@ def zmq_async_handler():
 
                     is_error = len(image_data) == 0
 
-                    # Circuit breaker check (runs in main process)
-                    if is_error and nvr_ip:
-                        mark_nvr_down_if_unreachable(nvr_ip)
+                    # Circuit breaker check — only for NVR-path failures (not direct)
+                    if is_error and source != "direct" and target_ip:
+                        mark_nvr_down_if_unreachable(target_ip)
 
                     # Calculate timing breakdown (in ms for client convenience)
                     queue_ms = int((started_at - recv_at) * 1000)
@@ -1929,7 +2121,8 @@ def zmq_async_handler():
                         "capture_ms": capture_ms,
                         "total_ms": total_ms,
                         "bytes": len(image_data),
-                        "error": is_error
+                        "error": is_error,
+                        "source": source  # actual source (direct/rtsp/playback/snapshot)
                     }
                     # Signal dead channels so client can stop requesting them
                     if is_error:
@@ -1940,8 +2133,8 @@ def zmq_async_handler():
 
                     # Send response: [identity, empty, request_id, jpeg_bytes, metadata_json]
                     socket.send_multipart([identity, b"", req_id.encode('utf-8'), image_data, metadata])
-                    logger.info(f"ZMQ async response {req_id}: {len(image_data)} bytes (q:{queue_ms}ms cap:{capture_ms}ms)")
-                    completed.append((req_id, nvr_ip))
+                    logger.info(f"ZMQ async response {req_id} ({source}): {len(image_data)} bytes (q:{queue_ms}ms cap:{capture_ms}ms)")
+                    completed.append((req_id, gate_nvr_ip))
 
                     # Log event
                     queue_sec = queue_ms / 1000
@@ -1966,12 +2159,12 @@ def zmq_async_handler():
                             worker_state["zmq_router"]["completed"] += 1
                             worker_state["zmq_router"]["total_bytes"] += len(image_data)
 
-            # Release NVR slots and remove from in_flight
-            for req_id, nvr_ip in completed:
+            # Release NVR gate slots and remove from in_flight
+            for req_id, gate_nvr_ip in completed:
                 del in_flight[req_id]
                 in_flight_meta.pop(req_id, None)
-                if nvr_ip:
-                    nvr_gate.release(nvr_ip)
+                if gate_nvr_ip:
+                    nvr_gate.release(gate_nvr_ip)
 
             # Recreate pool if crash detected via future.result()
             if needs_pool_recreate:
@@ -1980,7 +2173,7 @@ def zmq_async_handler():
                     executor.shutdown(wait=False)
                 except Exception:
                     pass
-                executor = ProcessPoolExecutor(max_workers=8)
+                executor = ProcessPoolExecutor(max_workers=16)
 
             # Poller handles sleep — no busy-spin needed
 
@@ -2027,27 +2220,35 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_l
             except queue.Empty:
                 continue
 
-            # Acquire NVR slot before dispatching
-            if not nvr_gate.acquire(nvr_ip, timeout=30.0):
-                logger.warning(f"Tag scan: gate timeout for {nvr_ip} ch{channel}")
-                ch_queue.put(channel)
-                continue
+            # Resolve URL: direct captures skip NVR gate
+            rtsp_url, actual_source, target_ip = resolve_capture_url(nvr_id, channel, "rtsp")
+            needs_gate = (actual_source != "direct")
+
+            if needs_gate:
+                if not nvr_gate.acquire(nvr_ip, timeout=30.0):
+                    logger.warning(f"Tag scan: gate timeout for {nvr_ip} ch{channel}")
+                    ch_queue.put(channel)
+                    continue
 
             req_id = f"ts-{uuid.uuid4().hex[:8]}"
-            log_event("START", req_id, nvr_id, channel, "tagscan")
+            log_event("START", req_id, nvr_id, channel, f"tagscan/{actual_source}")
             cap_start = _time.time()
 
             try:
-                future = executor.submit(
-                    _capture_subprocess, nvr_id, channel, "rtsp", nvr_ip, None, 0.0, scan.get("encoding", "jpeg")
-                )
-                try:
-                    jpeg = future.result(timeout=10)
-                except Exception as e:
-                    logger.error(f"Tag scan capture error {nvr_id} ch{channel}: {e}")
+                if rtsp_url:
+                    future = executor.submit(
+                        _capture_from_url, rtsp_url, 8, 0.0, scan.get("encoding", "jpeg")
+                    )
+                    try:
+                        jpeg = future.result(timeout=10)
+                    except Exception as e:
+                        logger.error(f"Tag scan capture error {nvr_id} ch{channel}: {e}")
+                        jpeg = b""
+                else:
                     jpeg = b""
             finally:
-                nvr_gate.release(nvr_ip)
+                if needs_gate:
+                    nvr_gate.release(nvr_ip)
 
             cap_sec = round(_time.time() - cap_start, 3)
 
@@ -2055,8 +2256,9 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_l
             ch_queue.put(channel)
 
             if not jpeg:
-                mark_nvr_down_if_unreachable(nvr_ip)
-                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec})
+                if actual_source != "direct":
+                    mark_nvr_down_if_unreachable(nvr_ip)
+                log_event("ERROR", req_id, nvr_id, channel, f"tagscan/{actual_source}", {"capture_sec": cap_sec})
                 with tag_scan_lock:
                     scan["stats"]["frames_failed"] += 1
                 if is_nvr_down(nvr_ip):
@@ -2072,18 +2274,18 @@ def _nvr_scan_worker(scan, nvr_id: str, channels: List[int], push_socket, push_l
                         jpeg,
                         ts
                     ], zmq.NOBLOCK)
-                log_event("DONE", req_id, nvr_id, channel, "tagscan", {"bytes": len(jpeg), "capture_sec": cap_sec})
+                log_event("DONE", req_id, nvr_id, channel, f"tagscan/{actual_source}", {"bytes": len(jpeg), "capture_sec": cap_sec})
                 with tag_scan_lock:
                     scan["stats"]["frames_pushed"] += 1
                     scan["stats"]["bytes_pushed"] += len(jpeg)
             except zmq.Again:
                 logger.warning(f"Tag scan: ZMQ send buffer full, dropping {nvr_id} ch{channel}")
-                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec, "drop": True})
+                log_event("ERROR", req_id, nvr_id, channel, f"tagscan/{actual_source}", {"capture_sec": cap_sec, "drop": True})
                 with tag_scan_lock:
                     scan["stats"]["frames_failed"] += 1
             except Exception as e:
                 logger.error(f"Tag scan: ZMQ send error: {e}")
-                log_event("ERROR", req_id, nvr_id, channel, "tagscan", {"capture_sec": cap_sec})
+                log_event("ERROR", req_id, nvr_id, channel, f"tagscan/{actual_source}", {"capture_sec": cap_sec})
                 with tag_scan_lock:
                     scan["stats"]["frames_failed"] += 1
 
