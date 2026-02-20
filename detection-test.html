@@ -568,13 +568,16 @@
             updateStats();
         }
 
-        // Poll for pass results
+        // Poll for pass results (self-scheduling via setTimeout to prevent overlap)
         async function pollPassResults() {
             if (!currentPassId || !running) return;
 
             try {
                 const response = await fetch(`${DETECTION_SERVICE}/pass/${currentPassId}/results`);
-                if (!response.ok) return;
+                if (!response.ok) {
+                    schedulePoll();
+                    return;
+                }
 
                 const data = await response.json();
                 processPassResults(currentPassId, data.results);
@@ -587,9 +590,6 @@
 
                 // Check if pass is done
                 if (data.done) {
-                    clearInterval(pollInterval);
-                    pollInterval = null;
-
                     // Start next pass or finish
                     if (currentPassNum < NUM_PASSES && running) {
                         document.getElementById('passIndicator').textContent = `Pass: ${currentPassNum} / ${NUM_PASSES}`;
@@ -602,10 +602,19 @@
                         document.querySelector('.progress-container').style.display = 'none';
                         stopTest();
                     }
+                } else {
+                    // Not done yet - schedule next poll
+                    schedulePoll();
                 }
             } catch (e) {
                 console.error('Poll error:', e);
+                schedulePoll();
             }
+        }
+
+        function schedulePoll() {
+            if (pollInterval) clearTimeout(pollInterval);
+            pollInterval = setTimeout(pollPassResults, 500);
         }
 
         // Start a single pass
@@ -640,8 +649,8 @@
 
                 document.getElementById('passIndicator').textContent = `Pass: ${currentPassNum} / ${NUM_PASSES} (running)`;
 
-                // Start polling
-                pollInterval = setInterval(pollPassResults, 500);
+                // Start polling (self-scheduling to prevent overlap)
+                schedulePoll();
 
             } catch (e) {
                 console.error('Start pass error:', e);
@@ -788,7 +797,7 @@
             document.getElementById('stopBtn').disabled = true;
 
             if (pollInterval) {
-                clearInterval(pollInterval);
+                clearTimeout(pollInterval);
                 pollInterval = null;
             }
 
