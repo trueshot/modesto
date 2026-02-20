@@ -1052,6 +1052,21 @@ def nvr_supports_playback(nvr: dict) -> bool:
     brand = (nvr.get('brand') or '').upper()
     return 'UNIVIEW' in brand
 
+def get_channel_status(nvr_id: str, channel: int) -> Optional[str]:
+    """Look up channel status from lodge.db. Returns 'active', 'inactive', etc."""
+    if not DB_PATH.exists():
+        return None
+    try:
+        channel_id = f"{nvr_id}_ch{channel:02d}"
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM channels WHERE id = ?", (channel_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
 @app.get("/api/nvr/{nvr_id}/channel/{channel}/frame")
 def get_nvr_channel_frame(
     nvr_id: str,
@@ -1574,6 +1589,7 @@ def zmq_async_handler():
     Client should use DEALER socket.
     """
     from concurrent.futures import ProcessPoolExecutor
+    from concurrent.futures.process import BrokenProcessPool
     from collections import defaultdict
 
     context = zmq.Context()
@@ -1644,22 +1660,25 @@ def zmq_async_handler():
                 old_req_id = pending_by_channel.get(ch_key)
                 if old_req_id and old_req_id in pending_queue:
                     old_req = pending_queue[old_req_id]  # don't pop — keep queue position
-                    # Send SUPERSEDED to old requester (frontend already gave up on that pass)
+                    # On chained supersedes (A→B→C), the worker_state key is the
+                    # CURRENT response_id, not the original pending_queue key.
+                    current_response_id = old_req.get("response_id", old_req_id)
+                    # Send SUPERSEDED to current requester with their expected ID
                     metadata = json.dumps({
                         "queue_ms": 0, "capture_ms": 0,
                         "total_ms": int((recv_at - old_req.get("recv_at", recv_at)) * 1000),
                         "bytes": 0, "error": True, "superseded": True
                     }).encode('utf-8')
-                    socket.send_multipart([old_req["identity"], b"", old_req_id.encode('utf-8'), b"", metadata])
-                    log_event("SUPERSEDED", old_req_id, nvr_id, channel, source)
-                    logger.info(f"ZMQ async SUPERSEDED {old_req_id}: replaced by {request_id} (kept queue position)")
+                    socket.send_multipart([old_req["identity"], b"", current_response_id.encode('utf-8'), b"", metadata])
+                    log_event("SUPERSEDED", current_response_id, nvr_id, channel, source)
+                    logger.info(f"ZMQ async SUPERSEDED {current_response_id}: replaced by {request_id} (kept queue position)")
                     # Update entry in place — new requester takes this queue slot
                     old_req["identity"] = identity
                     old_req["response_id"] = request_id
                     old_req["recv_at"] = recv_at
                     old_req["timestamp"] = req_timestamp
                     with worker_state_lock:
-                        worker_state["zmq_router"]["pending_requests"].pop(old_req_id, None)
+                        worker_state["zmq_router"]["pending_requests"].pop(current_response_id, None)
                         worker_state["zmq_router"]["pending_requests"][request_id] = {
                             "nvr": nvr_id, "channel": channel, "source": source,
                             "recv_at": recv_at, "queued_at": old_req["queued_at"]
@@ -1755,7 +1774,8 @@ def zmq_async_handler():
                     worker_state["zmq_router"]["errors"] += 1
 
             # Submit scheduled requests
-            for req_id, req, nvr_ip in to_submit:
+            pool_crashed = False
+            for i, (req_id, req, nvr_ip) in enumerate(to_submit):
                 del pending_queue[req_id]
                 ch_key = (req["nvr"], req["channel"])
                 if pending_by_channel.get(ch_key) == req_id:
@@ -1788,15 +1808,88 @@ def zmq_async_handler():
                     "started_at": started_at,
                 }
 
-                future = executor.submit(
-                    _capture_subprocess,
-                    req["nvr"], req["channel"], req["source"],
-                    nvr_ip or "", req.get("timestamp"), CAPTURE_COOLDOWN
-                )
-                in_flight[response_id] = future
+                try:
+                    future = executor.submit(
+                        _capture_subprocess,
+                        req["nvr"], req["channel"], req["source"],
+                        nvr_ip or "", req.get("timestamp"), CAPTURE_COOLDOWN
+                    )
+                    in_flight[response_id] = future
+                except BrokenProcessPool:
+                    logger.error(f"ProcessPool dead, cannot submit {response_id} ({req['nvr']} ch{req['channel']})")
+                    now = _time.time()
+                    err_meta = json.dumps({
+                        "queue_ms": int((now - recv_at) * 1000),
+                        "capture_ms": 0, "total_ms": int((now - recv_at) * 1000),
+                        "bytes": 0, "error": True, "pool_crash": True
+                    }).encode('utf-8')
+                    socket.send_multipart([req["identity"], b"", response_id.encode('utf-8'), b"", err_meta])
+                    log_event("ERROR", response_id, req["nvr"], req["channel"], req["source"], {"pool_crash": True})
+                    if nvr_ip:
+                        nvr_gate.release(nvr_ip)
+                    with worker_state_lock:
+                        worker_state["zmq_router"]["active_requests"].pop(response_id, None)
+                        worker_state["zmq_router"]["errors"] += 1
+                    in_flight_meta.pop(response_id, None)
+                    pool_crashed = True
+                    break
+
+            if pool_crashed:
+                # Release pre-acquired gate slots for remaining un-submitted items
+                for _, _, rem_ip in to_submit[i + 1:]:
+                    if rem_ip:
+                        nvr_gate.release(rem_ip)
+                # Fail all in-flight futures from the dead pool
+                for fid in list(in_flight.keys()):
+                    fmeta = in_flight_meta.pop(fid, {})
+                    fidentity = fmeta.get("identity", b"")
+                    fnvr_ip = fmeta.get("nvr_ip", "")
+                    fnvr_id = fmeta.get("nvr_id", "?")
+                    fchannel = fmeta.get("channel", 0)
+                    fsource = fmeta.get("source", "?")
+                    frecv = fmeta.get("recv_at", _time.time())
+                    now = _time.time()
+                    # Try to salvage completed results
+                    fdata = b""
+                    try:
+                        f = in_flight[fid]
+                        if f.done():
+                            fdata = f.result()
+                    except Exception:
+                        pass
+                    is_err = len(fdata) == 0
+                    flush_meta = json.dumps({
+                        "queue_ms": int((now - frecv) * 1000),
+                        "capture_ms": 0, "total_ms": int((now - frecv) * 1000),
+                        "bytes": len(fdata), "error": is_err,
+                        "pool_crash": True if is_err else False
+                    }).encode('utf-8')
+                    try:
+                        socket.send_multipart([fidentity, b"", fid.encode('utf-8'), fdata, flush_meta])
+                    except Exception:
+                        pass
+                    log_event("ERROR" if is_err else "DONE", fid, fnvr_id, fchannel, fsource, {"pool_crash": True})
+                    if fnvr_ip:
+                        nvr_gate.release(fnvr_ip)
+                    with worker_state_lock:
+                        worker_state["zmq_router"]["active_requests"].pop(fid, None)
+                        if is_err:
+                            worker_state["zmq_router"]["errors"] += 1
+                        else:
+                            worker_state["zmq_router"]["completed"] += 1
+                            worker_state["zmq_router"]["total_bytes"] += len(fdata)
+                in_flight.clear()
+                # Recreate executor
+                logger.warning("Recreating ProcessPoolExecutor after subprocess crash")
+                try:
+                    executor.shutdown(wait=False)
+                except Exception:
+                    pass
+                executor = ProcessPoolExecutor(max_workers=8)
 
             # Check for completed futures
             completed = []
+            needs_pool_recreate = False
             for req_id, future in in_flight.items():
                 if future.done():
                     meta = in_flight_meta.get(req_id, {})
@@ -1811,6 +1904,10 @@ def zmq_async_handler():
 
                     try:
                         image_data = future.result()
+                    except BrokenProcessPool as e:
+                        logger.error(f"Pool crash detected via future {req_id}: {e}")
+                        image_data = b""
+                        needs_pool_recreate = True
                     except Exception as e:
                         logger.error(f"Capture subprocess error for {req_id}: {e}")
                         image_data = b""
@@ -1826,14 +1923,20 @@ def zmq_async_handler():
                     capture_ms = int((done_at - started_at) * 1000)
                     total_ms = int((done_at - recv_at) * 1000)
 
-                    # Build metadata JSON for 5th frame
-                    metadata = json.dumps({
+                    # Build metadata JSON
+                    meta_dict = {
                         "queue_ms": queue_ms,
                         "capture_ms": capture_ms,
                         "total_ms": total_ms,
                         "bytes": len(image_data),
                         "error": is_error
-                    }).encode('utf-8')
+                    }
+                    # Signal dead channels so client can stop requesting them
+                    if is_error:
+                        ch_status = get_channel_status(nvr_id, channel)
+                        if ch_status == "inactive":
+                            meta_dict["dead"] = True
+                    metadata = json.dumps(meta_dict).encode('utf-8')
 
                     # Send response: [identity, empty, request_id, jpeg_bytes, metadata_json]
                     socket.send_multipart([identity, b"", req_id.encode('utf-8'), image_data, metadata])
@@ -1869,6 +1972,15 @@ def zmq_async_handler():
                 in_flight_meta.pop(req_id, None)
                 if nvr_ip:
                     nvr_gate.release(nvr_ip)
+
+            # Recreate pool if crash detected via future.result()
+            if needs_pool_recreate:
+                logger.warning("Recreating ProcessPoolExecutor (crash detected in completion loop)")
+                try:
+                    executor.shutdown(wait=False)
+                except Exception:
+                    pass
+                executor = ProcessPoolExecutor(max_workers=8)
 
             # Poller handles sleep — no busy-spin needed
 
