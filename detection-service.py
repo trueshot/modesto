@@ -533,11 +533,12 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
         if queue_ms is not None and capture_ms is not None:
             overhead_ms = max(0, int(fetch_ms) - queue_ms - capture_ms)
 
-        # Run detection
-        detections, detect_ms, detect_info = run_detection(frame)
+        # Run detection in thread pool so event loop stays free for poll responses
+        loop = asyncio.get_event_loop()
+        detections, detect_ms, detect_info = await loop.run_in_executor(None, run_detection, frame)
 
         # Draw overlays
-        annotated = draw_detections(frame.copy(), detections)
+        annotated = await loop.run_in_executor(None, draw_detections, frame.copy(), detections)
 
         # Add timing overlay
         h, w = annotated.shape[:2]
@@ -557,16 +558,18 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
             cv2.putText(annotated, f"Detect: {detect_info['detect_w']}x{detect_info['detect_h']}", (10, 118),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
 
-        # Encode full-res annotated JPEG
-        _, jpeg_full = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        # Encode images in thread pool to avoid blocking event loop
+        def _encode_images(ann):
+            _, jf = cv2.imencode('.jpg', ann, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            if ann.shape[1] > 800:
+                s = 800 / ann.shape[1]
+                thumb = cv2.resize(ann, (800, int(ann.shape[0] * s)))
+            else:
+                thumb = ann
+            _, jt = cv2.imencode('.jpg', thumb, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return jf, jt
 
-        # Resize for web (max 800px wide)
-        if w > 800:
-            scale = 800 / w
-            annotated = cv2.resize(annotated, (800, int(h * scale)))
-
-        # Encode JPEG
-        _, jpeg = cv2.imencode('.jpg', annotated, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        jpeg_full, jpeg = await loop.run_in_executor(None, _encode_images, annotated)
 
         # Build tag details list
         tag_details = []
