@@ -268,7 +268,8 @@ async def fetch_frame_zmq_dealer(nvr: str, channel: int, use_snapshot: bool = Fa
     return None, (time.perf_counter() - start) * 1000, None
 
 
-TARGET_DETECT_WIDTH = 3072  # Right-size to ~3K for detection
+TARGET_DETECT_WIDTH = 7680  # Effectively disabled — preserve all pixels for detection
+LOW_RES_THRESHOLD = 1920    # Warn when source is below 1080p width
 
 
 def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
@@ -288,7 +289,7 @@ def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
     else:
         scale = 1.0
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        if w < TARGET_DETECT_WIDTH:
+        if w < LOW_RES_THRESHOLD:
             detect_info["low_res"] = True
 
     all_detections = []
