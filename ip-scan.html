@@ -221,16 +221,16 @@ async function stopIp(ip) {
     } catch (e) {}
     activeIps.delete(ip);
     appendSystemLine(`Stopped ${ip}`, '#888');
-    if (activeIps.size === 0) {
-        clearInterval(pollInterval);
-        pollInterval = null;
-        document.getElementById('stopAllBtn').style.display = 'none';
-    }
 }
 
 async function stopAll() {
     const ips = [...activeIps];
     await Promise.all(ips.map(ip => stopIp(ip)));
+}
+
+async function restartIp(ip) {
+    document.getElementById('ipInput').value = ip;
+    await startIp();
 }
 
 // ---- Polling ----
@@ -286,11 +286,6 @@ async function pollAll() {
             renderTagSummary();
         }
 
-        // Check if all stopped
-        if (activeIps.size === 0 && pollInterval) {
-            clearInterval(pollInterval);
-            pollInterval = null;
-        }
     } catch (e) {
         console.error('Poll error:', e);
     }
@@ -333,6 +328,7 @@ function updateCards(status) {
                 ? `${s.frames}f / ${s.elapsed_s}s = ${s.fps} fps`
                 : 'stopped';
             html += `<div class="stat" style="color:#666;">${summary}</div>`;
+            html += `<button class="stop-btn" style="background:#00d46a;color:#000;" onclick="restartIp('${ip}')">Start</button>`;
         }
 
         card.innerHTML = html;
