@@ -1,0 +1,9 @@
+{
+  "_doc": "Camera model → .env credential prefix. Used by nvr-service and camera-service.",
+  "_author": "novicat gen-13",
+  "IPCamera": "CAM_UNIVIEW",
+  "N802-IRC-GW": "CAM_N802",
+  "YM600F_AF": "CAM_YM600F",
+  "YMF52_STARIR_GW_AF": "CAM_066",
+  "GW12577MIC": "CAM_GW12577"
+}

@@ -53,13 +53,9 @@ if ENV_PATH.exists():
             _k, _v = _line.split('=', 1)
             os.environ.setdefault(_k.strip(), _v.strip())
 
-CAM_CRED_GROUPS = {
-    "IPCamera": "CAM_UNIVIEW",
-    "N802-IRC-GW": "CAM_N802",
-    "YM600F_AF": "CAM_YM600F",
-    "YMF52_STARIR_GW_AF": "CAM_066",
-    "GW12577MIC": "CAM_GW12577",
-}
+_CRED_GROUPS_PATH = MODESTO_ROOT / "warehouses" / "lodge" / "cam-cred-groups.json"
+_raw = json.loads(_CRED_GROUPS_PATH.read_text())
+CAM_CRED_GROUPS = {k: v for k, v in _raw.items() if not k.startswith("_")}
 
 def get_camera_credentials(model: str, ip: str) -> tuple:
     """Resolve camera credentials. IP-specific override > model group > default."""
