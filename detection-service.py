@@ -1192,7 +1192,7 @@ async def start_ip_scan(ip: str):
     # Check if already scanning this IP
     with ip_scans_lock:
         if ip in ip_scans and ip_scans[ip]["running"]:
-            return {"ip": ip, "status": "already_running"}
+            return {"ip": ip, "status": "already_running", "log_path": ip_scans[ip].get("log_path")}
 
     # Create log file
     SCAN_LOG_DIR.mkdir(exist_ok=True)
