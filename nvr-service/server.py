@@ -58,6 +58,7 @@ CAM_CRED_GROUPS = {
     "N802-IRC-GW": "CAM_N802",
     "YM600F_AF": "CAM_YM600F",
     "YMF52_STARIR_GW_AF": "CAM_066",
+    "GW12577MIC": "CAM_GW12577",
 }
 
 def get_camera_credentials(model: str, ip: str) -> tuple:
@@ -103,11 +104,16 @@ def get_nvr_info(nvr_id: str) -> Optional[dict]:
     conn.close()
     return dict(row) if row else None
 
+def get_nvr_credentials(nvr_id: str) -> tuple:
+    """Resolve NVR credentials from .env. E.g. nvr1 → NVR1_USER/NVR1_PASS."""
+    prefix = nvr_id.upper()
+    return (os.environ.get(f"{prefix}_USER", "admin"),
+            os.environ.get(f"{prefix}_PASS", ""))
+
 def build_rtsp_url(nvr: dict, channel: int) -> str:
-    """Build RTSP URL from NVR info and channel number"""
+    """Build RTSP URL from NVR info and channel number. Creds from .env."""
     ip = nvr['ip']
-    username = nvr['username'] or 'admin'
-    password = nvr['password'] or ''
+    username, password = get_nvr_credentials(nvr['id'])
     path_format = nvr['path_format']
 
     if '{channel:02d}' in path_format:
@@ -118,8 +124,8 @@ def build_rtsp_url(nvr: dict, channel: int) -> str:
     password_encoded = quote(password, safe='')
     return f"rtsp://{username}:{password_encoded}@{ip}:554/{path}"
 
-def get_direct_camera_info(nvr_id: str, channel: int) -> Optional[dict]:
-    """Get camera IP, rtsp_path, model for direct access. Returns None if not available."""
+def get_channel_camera_info(nvr_id: str, channel: int) -> Optional[dict]:
+    """Get camera IP, rtsp_path, model for a channel. Returns None if no camera linked."""
     if not DB_PATH.exists():
         return None
     conn = sqlite3.connect(DB_PATH)
@@ -130,7 +136,7 @@ def get_direct_camera_info(nvr_id: str, channel: int) -> Optional[dict]:
         FROM channels ch
         JOIN cameras cam ON ch.camera_id = cam.mac
         WHERE ch.nvr_id = ? AND ch.channel_number = ?
-          AND cam.ip IS NOT NULL AND cam.rtsp_path IS NOT NULL
+          AND cam.ip IS NOT NULL
     """, (nvr_id, channel))
     row = cursor.fetchone()
     conn.close()
@@ -250,20 +256,23 @@ def _probe_channel(nvr_id: str, channel: int) -> dict:
         result["jpeg"] = nvr_result["jpeg"]
 
     # --- Direct-camera test ---
-    cam = get_direct_camera_info(nvr_id, channel)
+    cam = get_channel_camera_info(nvr_id, channel)
     if cam:
         result["direct_ip"] = cam["ip"]
         result["direct_model"] = cam["model"]
-        direct_url = build_direct_rtsp_url(cam)
-        direct_result = _try_rtsp_capture(direct_url)
-        result["direct_success"] = direct_result["success"]
-        result["direct_bytes"] = direct_result.get("bytes", 0)
-        result["direct_resolution"] = direct_result.get("resolution")
-        result["direct_error"] = direct_result.get("error")
-        if direct_result.get("jpeg") and result["jpeg"] is None:
-            result["jpeg"] = direct_result["jpeg"]
+        if cam.get("rtsp_path"):
+            direct_url = build_direct_rtsp_url(cam)
+            direct_result = _try_rtsp_capture(direct_url)
+            result["direct_success"] = direct_result["success"]
+            result["direct_bytes"] = direct_result.get("bytes", 0)
+            result["direct_resolution"] = direct_result.get("resolution")
+            result["direct_error"] = direct_result.get("error")
+            if direct_result.get("jpeg") and result["jpeg"] is None:
+                result["jpeg"] = direct_result["jpeg"]
+        else:
+            result["direct_error"] = "no_rtsp_path"
     else:
-        result["direct_error"] = "no_direct_path"
+        result["direct_error"] = "no_camera_linked"
 
     return result
 

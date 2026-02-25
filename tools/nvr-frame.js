@@ -26,6 +26,18 @@ const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
+// Load .env
+const envPath = path.join(__dirname, '..', '.env');
+if (fs.existsSync(envPath)) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+      const [k, ...rest] = trimmed.split('=');
+      if (!process.env[k.trim()]) process.env[k.trim()] = rest.join('=').trim();
+    }
+  }
+}
+
 // Find ffmpeg — check PATH first, then WinGet Links
 function findFfmpeg() {
   try { execSync('where ffmpeg', { stdio: 'pipe' }); return 'ffmpeg'; } catch (e) {}
@@ -75,8 +87,10 @@ if (nvr.brand !== 'UNIVIEW') {
 }
 
 const NVR_IP = nvr.ip;
-const NVR_USER = nvr.username || 'admin';
-const NVR_PASS = nvr.password || '';
+// Creds from .env, not DB
+const envPrefix = nvrId.toUpperCase();
+const NVR_USER = process.env[`${envPrefix}_USER`] || 'admin';
+const NVR_PASS = process.env[`${envPrefix}_PASS`] || '';
 
 // Parse timestamp to epoch
 const timestamp = new Date(timeStr);

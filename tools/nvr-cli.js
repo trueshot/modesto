@@ -81,8 +81,8 @@ function add(args) {
   }
 
   const stmt = db.prepare(`
-    INSERT INTO nvrs (id, brand, model, ip, mac, serial, max_channels, ownership, onvif_supported, protocol, path_format, username, password, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO nvrs (id, brand, model, ip, mac, serial, max_channels, ownership, onvif_supported, protocol, path_format, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   stmt.run(
@@ -97,8 +97,6 @@ function add(args) {
     args.onvif ? 1 : 0,
     args.protocol || 'rtsp',
     args.pathFormat || null,
-    args.username || 'admin',
-    args.password || '',
     args.notes || null
   );
 
@@ -135,8 +133,6 @@ function update(args) {
     onvif: 'onvif_supported',
     protocol: 'protocol',
     pathFormat: 'path_format',
-    username: 'username',
-    password: 'password',
     notes: 'notes'
   };
 
@@ -220,8 +216,6 @@ function show(args) {
     console.log(`  ONVIF:          ${row.onvif_supported ? 'Yes' : 'No'}`);
     console.log(`  Protocol:       ${row.protocol || '-'}`);
     console.log(`  Path Format:    ${row.path_format || '-'}`);
-    console.log(`  Username:       ${row.username || '-'}`);
-    console.log(`  Password:       ${row.password ? '***' : '(empty)'}`);
     console.log(`  Notes:          ${row.notes || '-'}`);
     console.log(`  Created:        ${row.created_at || '-'}`);
     console.log('');
@@ -526,7 +520,7 @@ function main() {
       console.log('NVR Options:');
       console.log('  --brand, --model, --ip, --mac, --serial, --max-channels');
       console.log('  --ownership, --onvif, --protocol, --path-format');
-      console.log('  --username, --password, --notes');
+      console.log('  --notes');
       console.log('');
       console.log('Channel Options:');
       console.log('  --camera-id, --status, --recording, --resolution, --rtsp-path');
