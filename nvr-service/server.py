@@ -444,7 +444,7 @@ def _probe_update_db(probe: dict, dry_run: bool = False):
         resolution = ch_result["resolution"]
         channel_id = f"{nvr_id}_ch{ch_num:02d}"
 
-        cursor.execute("SELECT id, status FROM channels WHERE id = ?", (channel_id,))
+        cursor.execute("SELECT id, status, resolution FROM channels WHERE id = ?", (channel_id,))
         row = cursor.fetchone()
 
         new_status = verdict if verdict else "inactive"
@@ -452,11 +452,14 @@ def _probe_update_db(probe: dict, dry_run: bool = False):
         if row:
             touched += 1
             old_status = row[1]
+            old_resolution = row[2]
             if old_status != new_status:
                 probe["stats"].setdefault("status_changes", []).append(
                     {"channel": ch_num, "old": old_status, "new": new_status}
                 )
-            if not dry_run:
+            changed = (old_status != new_status or
+                       (resolution and resolution != old_resolution))
+            if not dry_run and changed:
                 updates = {"status": new_status, "last_probed": now}
                 if resolution:
                     updates["resolution"] = resolution
