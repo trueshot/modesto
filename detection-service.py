@@ -60,6 +60,7 @@ stats_lock = threading.Lock()
 # Pass storage: passId -> { cameras: [...], results: {...}, images: {...}, startTime, done }
 passes = {}
 passes_lock = threading.Lock()
+detect_lock = threading.Lock()  # Serialize detection — pupil_apriltags is not thread-safe
 MAX_PASSES = 10  # Keep last N passes in memory
 
 # Initialize detectors
@@ -534,8 +535,12 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
             overhead_ms = max(0, int(fetch_ms) - queue_ms - capture_ms)
 
         # Run detection in thread pool so event loop stays free for poll responses
+        # Lock serializes detection — pupil_apriltags C lib is not thread-safe
+        def _locked_detect(f):
+            with detect_lock:
+                return run_detection(f)
         loop = asyncio.get_event_loop()
-        detections, detect_ms, detect_info = await loop.run_in_executor(None, run_detection, frame)
+        detections, detect_ms, detect_info = await loop.run_in_executor(None, _locked_detect, frame)
 
         # Draw overlays
         annotated = await loop.run_in_executor(None, draw_detections, frame.copy(), detections)
