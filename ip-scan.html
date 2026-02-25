@@ -185,10 +185,12 @@ async function startIp() {
         const data = await resp.json();
 
         if (resp.status === 409) {
+            document.getElementById('logContainer').style.display = 'block';
             appendSystemLine(`Blocked: ${data.error}`, '#ff4757');
             return;
         }
         if (data.error) {
+            document.getElementById('logContainer').style.display = 'block';
             appendSystemLine(`Error: ${data.error}`, '#ff4757');
             return;
         }
@@ -201,12 +203,14 @@ async function startIp() {
 
         document.getElementById('emptyState').style.display = 'none';
         document.getElementById('logContainer').style.display = 'block';
+        document.getElementById('stopAllBtn').style.display = '';
         appendSystemLine(`Started scan for ${ip}`, getIpColor(ip));
 
         if (!pollInterval) {
             pollInterval = setInterval(pollAll, 500);
         }
     } catch (e) {
+        document.getElementById('logContainer').style.display = 'block';
         appendSystemLine('Detection service unreachable', '#ff4757');
     }
 }

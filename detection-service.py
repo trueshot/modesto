@@ -61,28 +61,23 @@ stats_lock = threading.Lock()
 passes = {}
 passes_lock = threading.Lock()
 _detect_lock = threading.Lock()  # Serialize detection — pupil_apriltags is not thread-safe
-_detect_busy_ns = 0   # Total nanoseconds lock held (detection running)
-_detect_total_ns = 0  # Total nanoseconds since first use (wall clock)
-_detect_first_use = 0 # time.perf_counter_ns() of first acquisition
+_detect_samples = []  # list of (end_ns, busy_ns) for rolling utilization
+_DETECT_WINDOW_S = 15  # rolling window for utilization %
 
 
 class _DetectLock:
     """Wrapper around detect_lock that tracks wait_ms and utilization."""
     def __enter__(self):
-        global _detect_busy_ns, _detect_total_ns, _detect_first_use
         self._wait_start = time.perf_counter_ns()
         _detect_lock.acquire()
         self._acquired = time.perf_counter_ns()
         self.wait_ns = self._acquired - self._wait_start
-        if _detect_first_use == 0:
-            _detect_first_use = self._acquired
         return self
 
     def __exit__(self, *args):
-        global _detect_busy_ns, _detect_total_ns
         now = time.perf_counter_ns()
-        _detect_busy_ns += now - self._acquired
-        _detect_total_ns = now - _detect_first_use
+        busy_ns = now - self._acquired
+        _detect_samples.append((now, busy_ns))
         _detect_lock.release()
 
 
@@ -1273,10 +1268,15 @@ async def get_ip_scan_status():
                 "fps": round(frames / elapsed, 2) if elapsed > 1 else 0,
                 "observations": len(scan["log_lines"]),
             }
-    # Detector utilization (global, not per-IP)
-    util_pct = 0
-    if _detect_total_ns > 0:
-        util_pct = round(100 * _detect_busy_ns / _detect_total_ns, 1)
+    # Detector utilization (rolling 30s window)
+    now = time.perf_counter_ns()
+    cutoff = now - _DETECT_WINDOW_S * 1_000_000_000
+    # Prune old samples
+    while _detect_samples and _detect_samples[0][0] < cutoff:
+        _detect_samples.pop(0)
+    busy_in_window = sum(s[1] for s in _detect_samples)
+    window_ns = _DETECT_WINDOW_S * 1_000_000_000
+    util_pct = round(100 * busy_in_window / window_ns, 1) if window_ns > 0 else 0
     result["_detector"] = {"utilization_pct": util_pct}
     return result
 
