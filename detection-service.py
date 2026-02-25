@@ -60,7 +60,33 @@ stats_lock = threading.Lock()
 # Pass storage: passId -> { cameras: [...], results: {...}, images: {...}, startTime, done }
 passes = {}
 passes_lock = threading.Lock()
-detect_lock = threading.Lock()  # Serialize detection — pupil_apriltags is not thread-safe
+_detect_lock = threading.Lock()  # Serialize detection — pupil_apriltags is not thread-safe
+_detect_busy_ns = 0   # Total nanoseconds lock held (detection running)
+_detect_total_ns = 0  # Total nanoseconds since first use (wall clock)
+_detect_first_use = 0 # time.perf_counter_ns() of first acquisition
+
+
+class _DetectLock:
+    """Wrapper around detect_lock that tracks wait_ms and utilization."""
+    def __enter__(self):
+        global _detect_busy_ns, _detect_total_ns, _detect_first_use
+        self._wait_start = time.perf_counter_ns()
+        _detect_lock.acquire()
+        self._acquired = time.perf_counter_ns()
+        self.wait_ns = self._acquired - self._wait_start
+        if _detect_first_use == 0:
+            _detect_first_use = self._acquired
+        return self
+
+    def __exit__(self, *args):
+        global _detect_busy_ns, _detect_total_ns
+        now = time.perf_counter_ns()
+        _detect_busy_ns += now - self._acquired
+        _detect_total_ns = now - _detect_first_use
+        _detect_lock.release()
+
+
+detect_lock = _DetectLock()
 MAX_PASSES = 10  # Keep last N passes in memory
 
 # Initialize detectors
@@ -767,6 +793,21 @@ MAX_SCANS = 10
 scans = {}  # scanId -> {cameras, timeout, startTime, running, log_lines, counters, log_path}
 scans_lock = threading.Lock()
 
+# IP-based scan (alternate interface — cameras addressed by IP)
+ip_scans = {}  # ip -> {running, start_time, log_lines, log_path, counters, task}
+ip_scans_lock = threading.Lock()
+
+
+def _active_scan_mode():
+    """Check what scan type is currently active (for mutual exclusion)"""
+    with ip_scans_lock:
+        if any(s["running"] for s in ip_scans.values()):
+            return "ip"
+    with scans_lock:
+        if any(s["running"] for s in scans.values()):
+            return "batch"
+    return None
+
 # ZMQ PULL socket for receiving scan frames
 zmq_pull_socket = None
 zmq_pull_thread = None
@@ -879,6 +920,12 @@ async def start_scan(request: ScanStartRequest):
     Camera-service controls frame pacing. Detection service processes
     frames as they arrive via ZMQ PULL.
     """
+    # Mutual exclusion with IP scan
+    if _active_scan_mode() == "ip":
+        return Response(
+            content=json.dumps({"error": "IP scan is running — stop all IP scans first"}),
+            media_type="application/json", status_code=409)
+
     _ensure_pull_socket()
 
     # Create log directory
@@ -1004,6 +1051,260 @@ async def scan_page():
     if html_path.exists():
         return html_path.read_text(encoding="utf-8")
     return "<h1>scan-log.html not found</h1>"
+
+
+# =============================================================================
+# IP-based Scan API (cameras addressed by IP, concurrent per-IP scans)
+# =============================================================================
+
+MAX_IP_SCANS = 30  # Max tracked IP scan records
+
+
+async def _ip_scan_loop(ip: str):
+    """Continuous scan loop for one camera IP. Runs as asyncio task."""
+    loop = asyncio.get_event_loop()
+
+    # Start persistent stream on camera-service
+    try:
+        start_resp = await loop.run_in_executor(None, lambda: requests.post(
+            f"{CAMERA_SERVICE_URL}/api/camera/{ip}/stream/start", timeout=10))
+        if start_resp.status_code != 200:
+            print(f"IP scan {ip}: failed to start stream — {start_resp.status_code}")
+            with ip_scans_lock:
+                if ip in ip_scans:
+                    ip_scans[ip]["running"] = False
+                    ip_scans[ip]["stop_time"] = time.time()
+            return
+    except Exception as e:
+        print(f"IP scan {ip}: stream start error — {e}")
+        with ip_scans_lock:
+            if ip in ip_scans:
+                ip_scans[ip]["running"] = False
+        return
+
+    # Wait for stream to warm up
+    await asyncio.sleep(1.5)
+    print(f"IP scan {ip}: stream started, beginning detection loop")
+
+    try:
+        while True:
+            # Check if still running
+            with ip_scans_lock:
+                if ip not in ip_scans or not ip_scans[ip]["running"]:
+                    break
+
+            try:
+                # Fetch frame from camera-service (instant from active stream)
+                fetch_start = time.perf_counter()
+                resp = await loop.run_in_executor(None, lambda: requests.get(
+                    f"{CAMERA_SERVICE_URL}/api/camera/{ip}/frame",
+                    params={"format": "image"}, timeout=10))
+                fetch_ms = (time.perf_counter() - fetch_start) * 1000
+                if resp.status_code != 200:
+                    await asyncio.sleep(0.5)
+                    continue
+
+                jpeg_bytes = resp.content
+                arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
+                frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                if frame is None:
+                    await asyncio.sleep(0.2)
+                    continue
+
+                # Run detection (serialized by detect_lock via thread executor)
+                def _locked_detect(f):
+                    with detect_lock as lk:
+                        dets, d_ms, d_info = run_detection(f)
+                        return dets, d_ms, d_info, lk.wait_ns / 1e6
+                detections, detect_ms, detect_info, wait_ms = await loop.run_in_executor(
+                    None, _locked_detect, frame)
+
+                # Build log entry
+                tags_found = []
+                for det in detections:
+                    size_px = compute_tag_size(det.corners)
+                    orient_deg = compute_tag_orientation(det.corners)
+                    margin = round(det.decision_margin, 1) if det.decision_margin >= 0 else "aruco"
+                    tags_found.append({
+                        "tag": det.tag_id,
+                        "family": det.asset_name,
+                        "margin": margin,
+                        "size_px": round(size_px, 1),
+                        "orient_deg": round(orient_deg, 1),
+                    })
+
+                h, w = frame.shape[:2]
+                entry = {
+                    "ts": round(time.time(), 3),
+                    "type": "frame",
+                    "fetch_ms": round(fetch_ms, 0),
+                    "wait_ms": round(wait_ms, 0),
+                    "detect_ms": round(detect_ms, 0),
+                    "res": f"{w}x{h}",
+                    "tags_found": tags_found,
+                }
+                if detect_info.get("low_res"):
+                    entry["low_res"] = True
+
+                # Write to state and JSONL file
+                with ip_scans_lock:
+                    if ip in ip_scans and ip_scans[ip]["running"]:
+                        scan = ip_scans[ip]
+                        scan["log_lines"].append(entry)
+                        scan["counters"]["frames"] += 1
+                        for t in tags_found:
+                            scan["counters"]["tags"].add((t["family"], t["tag"]))
+
+                        try:
+                            with open(scan["log_path"], "a") as f:
+                                f.write(json.dumps(entry) + "\n")
+                        except Exception as e:
+                            print(f"IP scan {ip}: log write error — {e}")
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"IP scan {ip}: loop error — {e}")
+                await asyncio.sleep(0.5)
+
+            # Yield to event loop
+            await asyncio.sleep(0.05)
+
+    except asyncio.CancelledError:
+        pass
+    finally:
+        # Stop stream on camera-service
+        try:
+            await loop.run_in_executor(None, lambda: requests.post(
+                f"{CAMERA_SERVICE_URL}/api/camera/{ip}/stream/stop", timeout=5))
+        except Exception:
+            pass
+        with ip_scans_lock:
+            if ip in ip_scans:
+                ip_scans[ip]["running"] = False
+        print(f"IP scan {ip}: stopped")
+
+
+@app.post("/ip-scan/{ip}/start")
+async def start_ip_scan(ip: str):
+    """Start scanning a single camera by IP."""
+    # Mutual exclusion with batch scan
+    if _active_scan_mode() == "batch":
+        return Response(
+            content=json.dumps({"error": "Batch scan is running — stop it first"}),
+            media_type="application/json", status_code=409)
+
+    # Check if already scanning this IP
+    with ip_scans_lock:
+        if ip in ip_scans and ip_scans[ip]["running"]:
+            return {"ip": ip, "status": "already_running"}
+
+    # Create log file
+    SCAN_LOG_DIR.mkdir(exist_ok=True)
+    from datetime import datetime
+    ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = SCAN_LOG_DIR / f"ipscan_{ip}_{ts_str}.jsonl"
+
+    with ip_scans_lock:
+        # Cleanup old records
+        stopped = [k for k, v in ip_scans.items() if not v["running"]]
+        if len(ip_scans) >= MAX_IP_SCANS:
+            for k in stopped[:len(ip_scans) - MAX_IP_SCANS + 1]:
+                del ip_scans[k]
+
+        ip_scans[ip] = {
+            "ip": ip,
+            "running": True,
+            "start_time": time.time(),
+            "log_lines": [],
+            "log_path": str(log_path),
+            "counters": {"frames": 0, "tags": set()},
+            "task": None,
+        }
+
+    # Launch scan loop
+    task = asyncio.create_task(_ip_scan_loop(ip))
+    with ip_scans_lock:
+        if ip in ip_scans:
+            ip_scans[ip]["task"] = task
+
+    return {"ip": ip, "status": "started", "log_path": str(log_path)}
+
+
+@app.post("/ip-scan/{ip}/stop")
+async def stop_ip_scan(ip: str):
+    """Stop scanning a single camera IP."""
+    with ip_scans_lock:
+        if ip not in ip_scans or not ip_scans[ip]["running"]:
+            return Response(
+                content=json.dumps({"error": f"No active scan for {ip}"}),
+                media_type="application/json", status_code=404)
+        ip_scans[ip]["running"] = False
+        ip_scans[ip]["stop_time"] = time.time()
+        task = ip_scans[ip].get("task")
+
+    if task and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    return {"ip": ip, "status": "stopped"}
+
+
+@app.get("/ip-scan/status")
+async def get_ip_scan_status():
+    """Get status of all IP scans."""
+    result = {}
+    with ip_scans_lock:
+        for ip, scan in ip_scans.items():
+            if scan["running"]:
+                elapsed = time.time() - scan["start_time"]
+            else:
+                elapsed = scan.get("stop_time", scan["start_time"]) - scan["start_time"]
+            frames = scan["counters"]["frames"]
+            result[ip] = {
+                "ip": ip,
+                "running": scan["running"],
+                "elapsed_s": round(elapsed, 1),
+                "frames": frames,
+                "unique_tags": len(scan["counters"]["tags"]),
+                "fps": round(frames / elapsed, 2) if elapsed > 1 else 0,
+                "observations": len(scan["log_lines"]),
+            }
+    # Detector utilization (global, not per-IP)
+    util_pct = 0
+    if _detect_total_ns > 0:
+        util_pct = round(100 * _detect_busy_ns / _detect_total_ns, 1)
+    result["_detector"] = {"utilization_pct": util_pct}
+    return result
+
+
+@app.get("/ip-scan/{ip}/log")
+async def get_ip_scan_log(ip: str, after: int = 0):
+    """Get log lines for a specific IP scan (polling)."""
+    with ip_scans_lock:
+        if ip not in ip_scans:
+            return Response(
+                content=json.dumps({"error": f"No scan for {ip}"}),
+                media_type="application/json", status_code=404)
+        scan = ip_scans[ip]
+        lines = scan["log_lines"][after:]
+        return {
+            "lines": lines,
+            "nextOffset": after + len(lines),
+            "running": scan["running"],
+        }
+
+
+@app.get("/ip-scan", response_class=HTMLResponse)
+async def ip_scan_page():
+    """Serve the IP scan HTML page"""
+    html_path = Path(__file__).parent / "ip-scan.html"
+    if html_path.exists():
+        return html_path.read_text(encoding="utf-8")
+    return "<h1>ip-scan.html not found</h1>"
 
 
 if __name__ == "__main__":
