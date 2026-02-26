@@ -458,17 +458,25 @@ async function init() {
         const resp = await fetch(`${DETECTION_SERVICE}/ip-scan/status`);
         const status = await resp.json();
 
-        const runningIps = Object.keys(status).filter(ip => status[ip].running);
-        if (runningIps.length > 0) {
+        const allIps = Object.keys(status).filter(k => k !== '_detector');
+        const runningIps = allIps.filter(ip => status[ip].running);
+
+        if (allIps.length > 0) {
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('logContainer').style.display = 'block';
-    
+            updateCards(status);
+        }
+
+        if (runningIps.length > 0) {
             for (const ip of runningIps) {
                 activeIps.add(ip);
                 logOffsets[ip] = 0;
                 getIpColor(ip);
             }
             appendSystemLine(`Reconnected to ${runningIps.length} running scan${runningIps.length > 1 ? 's' : ''}: ${runningIps.join(', ')}`);
+        }
+
+        if (allIps.length > 0) {
             pollInterval = setInterval(pollAll, 500);
         }
     } catch (e) {
