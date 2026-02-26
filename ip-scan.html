@@ -91,6 +91,19 @@
         .log-line .orient { color: #fd79a8; }
         .log-line .margin { color: #888; }
 
+        /* Family toggles */
+        .families-bar {
+            display: flex; justify-content: center; gap: 8px;
+            margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .family-toggle {
+            padding: 6px 14px; font-size: 13px; font-family: monospace;
+            border: 2px solid; border-radius: 6px; cursor: pointer;
+            transition: all 0.15s; background: transparent;
+        }
+        .family-toggle.enabled { color: #000; }
+        .family-toggle.disabled { background: transparent; opacity: 0.5; }
+
         .empty-state {
             text-align: center; padding: 60px 20px; color: #555;
         }
@@ -119,6 +132,8 @@
         <button class="btn-stop" onclick="stopAll()" id="stopAllBtn">Stop All</button>
         <span id="detectorUtil" style="display:none; font-size:13px; color:#aaa; margin-left:8px;"></span>
     </div>
+
+    <div class="families-bar" id="familiesBar"></div>
 
     <div class="scans-panel" id="scansPanel"></div>
 
@@ -159,6 +174,15 @@ let totalLines = 0;
 // Accumulated tags across all IPs: "family:id" -> {family, tag, bestMargin, seenCount, ips: Set}
 let allTags = {};
 
+// Family color map (matches detector colors, BGR->hex)
+const FAMILY_COLORS = {
+    'Fiducial36h11': '#00ff00',
+    'Forklift25h9':  '#ffa500',
+    'Pallet41h12':   '#ff00ff',
+    'Pallet52h13':   '#00ffff',
+    'Pallet48h12':   '#00c8c8',
+};
+
 const IP_COLORS = ['#00d4ff','#ff6b81','#ffa502','#a29bfe','#00d46a','#fd79a8','#e056fd','#7bed9f'];
 
 function getIpColor(ip) {
@@ -167,6 +191,40 @@ function getIpColor(ip) {
         nextColor++;
     }
     return IP_COLORS[ipColors[ip]];
+}
+
+// ---- Family toggles ----
+
+async function fetchFamilies() {
+    try {
+        const resp = await fetch(`${DETECTION_SERVICE}/families`);
+        const families = await resp.json();
+        renderFamilies(families);
+    } catch (e) {}
+}
+
+function renderFamilies(families) {
+    const bar = document.getElementById('familiesBar');
+    bar.innerHTML = '';
+    for (const [name, info] of Object.entries(families)) {
+        const btn = document.createElement('button');
+        btn.className = `family-toggle ${info.enabled ? 'enabled' : 'disabled'}`;
+        const color = FAMILY_COLORS[name] || '#888';
+        btn.style.borderColor = color;
+        if (info.enabled) {
+            btn.style.background = color;
+        }
+        btn.textContent = name;
+        btn.onclick = () => toggleFamily(name);
+        bar.appendChild(btn);
+    }
+}
+
+async function toggleFamily(name) {
+    try {
+        await fetch(`${DETECTION_SERVICE}/families/${name}/toggle`, { method: 'POST' });
+        await fetchFamilies();
+    } catch (e) {}
 }
 
 // ---- Start / Stop ----
@@ -454,6 +512,7 @@ function clearLog() {
 // ---- Init: reconnect to any running scans ----
 
 async function init() {
+    fetchFamilies();
     try {
         const resp = await fetch(`${DETECTION_SERVICE}/ip-scan/status`);
         const status = await resp.json();

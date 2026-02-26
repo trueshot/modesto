@@ -80,6 +80,35 @@ def cmd_tail(ip):
     os.system(f'tail -f "{path}"')
 
 
+def cmd_families():
+    d = curl_json("GET", "/families")
+    for name, info in d.items():
+        state = "ON " if info["enabled"] else "OFF"
+        print(f"  {state}  {name}")
+
+
+def cmd_enable(name):
+    d = curl_json("POST", f"/families/{name}/enable")
+    if d.get("error"):
+        print(f"Error: {d['error']}"); sys.exit(1)
+    print(f"{name} enabled")
+
+
+def cmd_disable(name):
+    d = curl_json("POST", f"/families/{name}/disable")
+    if d.get("error"):
+        print(f"Error: {d['error']}"); sys.exit(1)
+    print(f"{name} disabled")
+
+
+def cmd_toggle(name):
+    d = curl_json("POST", f"/families/{name}/toggle")
+    if d.get("error"):
+        print(f"Error: {d['error']}"); sys.exit(1)
+    state = "enabled" if d["enabled"] else "disabled"
+    print(f"{name} {state}")
+
+
 def usage():
     print()
     print("  ip-scan start <ip>    Start scanning camera, returns JSONL path")
@@ -88,25 +117,31 @@ def usage():
     print("  ip-scan status        Show active scans + detector utilization")
     print("  ip-scan list          Alias for status")
     print("  ip-scan tail <ip>     Tail the JSONL log for an IP")
+    print("  ip-scan families      List detector families and state")
+    print("  ip-scan enable <fam>  Enable a detector family")
+    print("  ip-scan disable <fam> Disable a detector family")
+    print("  ip-scan toggle <fam>  Toggle a detector family")
     print()
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     cmd = args[0] if args else None
-    ip = args[1] if len(args) > 1 else None
+    arg = args[1] if len(args) > 1 else None
 
-    if cmd in ("start",) and not ip:
-        print("Error: ip required"); sys.exit(1)
-    if cmd in ("stop",) and not ip:
-        print("Error: ip required"); sys.exit(1)
-    if cmd in ("tail",) and not ip:
-        print("Error: ip required"); sys.exit(1)
+    if cmd in ("start", "stop", "tail") and not arg:
+        print(f"Error: argument required for '{cmd}'"); sys.exit(1)
+    if cmd in ("enable", "disable", "toggle") and not arg:
+        print(f"Error: family name required for '{cmd}'"); sys.exit(1)
 
-    if cmd == "start":      cmd_start(ip)
-    elif cmd == "stop":     cmd_stop(ip)
-    elif cmd == "stop-all": cmd_stopall()
-    elif cmd == "status":   cmd_status()
-    elif cmd == "list":     cmd_status()
-    elif cmd == "tail":     cmd_tail(ip)
-    else:                   usage()
+    if cmd == "start":       cmd_start(arg)
+    elif cmd == "stop":      cmd_stop(arg)
+    elif cmd == "stop-all":  cmd_stopall()
+    elif cmd == "status":    cmd_status()
+    elif cmd == "list":      cmd_status()
+    elif cmd == "tail":      cmd_tail(arg)
+    elif cmd == "families":  cmd_families()
+    elif cmd == "enable":    cmd_enable(arg)
+    elif cmd == "disable":   cmd_disable(arg)
+    elif cmd == "toggle":    cmd_toggle(arg)
+    else:                    usage()

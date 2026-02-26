@@ -113,7 +113,8 @@ detectors = {
         'color': (0, 200, 200)  # Teal
     },
 }
-print("Detectors ready.")
+enabled_families = set(detectors.keys())  # all enabled by default
+print(f"Detectors ready. {len(enabled_families)} families enabled.")
 
 # OpenCV ArUco fallback detectors (better perspective tolerance)
 print("Initializing ArUco fallback detectors...")
@@ -319,6 +320,8 @@ def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
 
     # Primary: pupil_apriltags
     for asset_name, config in detectors.items():
+        if asset_name not in enabled_families:
+            continue
         dets = config['detector'].detect(gray, estimate_tag_pose=False)
         for d in dets:
             d.asset_name = asset_name
@@ -332,6 +335,8 @@ def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
     # Fallback: OpenCV ArUco at full resolution (better perspective tolerance)
     gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     for asset_name, config in aruco_detectors.items():
+        if asset_name not in enabled_families:
+            continue
         corners_list, ids, _ = config['detector'].detectMarkers(gray_full)
         if ids is not None:
             for i, tag_id in enumerate(ids):
@@ -1179,6 +1184,49 @@ async def _ip_scan_loop(ip: str):
                 ip_scans[ip]["running"] = False
         print(f"IP scan {ip}: stopped")
 
+
+# ---- Family toggle endpoints ----
+
+@app.get("/families")
+async def get_families():
+    """List all detector families and their enabled state."""
+    return {
+        name: {"enabled": name in enabled_families, "color": list(config["color"])}
+        for name, config in detectors.items()
+    }
+
+
+@app.post("/families/{name}/enable")
+async def enable_family(name: str):
+    if name not in detectors:
+        return Response(content=json.dumps({"error": f"Unknown family: {name}"}),
+                        media_type="application/json", status_code=404)
+    enabled_families.add(name)
+    return {"family": name, "enabled": True}
+
+
+@app.post("/families/{name}/disable")
+async def disable_family(name: str):
+    if name not in detectors:
+        return Response(content=json.dumps({"error": f"Unknown family: {name}"}),
+                        media_type="application/json", status_code=404)
+    enabled_families.discard(name)
+    return {"family": name, "enabled": False}
+
+
+@app.post("/families/{name}/toggle")
+async def toggle_family(name: str):
+    if name not in detectors:
+        return Response(content=json.dumps({"error": f"Unknown family: {name}"}),
+                        media_type="application/json", status_code=404)
+    if name in enabled_families:
+        enabled_families.discard(name)
+    else:
+        enabled_families.add(name)
+    return {"family": name, "enabled": name in enabled_families}
+
+
+# ---- IP scan endpoints ----
 
 @app.post("/ip-scan/{ip}/start")
 async def start_ip_scan(ip: str):
