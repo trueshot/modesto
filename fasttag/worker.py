@@ -8,15 +8,19 @@ results to a shared multiprocessing Queue.
 Author: modeltcamerascat gen-26
 """
 
+import json
 import time
 import logging
 import multiprocessing
+from pathlib import Path
 from typing import Optional
 
 import cv2
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+CAMERAS_DIR = Path(__file__).parent / "cameras"
 
 
 def detection_worker(
@@ -43,6 +47,8 @@ def detection_worker(
 
     families = config.get("families", "tagCustom48h12")
     quad_decimate = config.get("quad_decimate", 1.0)
+    target_fps = config.get("target_fps", 0)  # 0 = no limit
+    frame_interval = 1.0 / target_fps if target_fps > 0 else 0
 
     detector = Detector(
         families=families,
@@ -57,6 +63,12 @@ def detection_worker(
     fps_window: list[float] = []  # timestamps of recent frames for fps calc
     reconnect_delay = 1.0
     max_reconnect_delay = 30.0
+
+    # Per-camera JSONL detection log
+    log_dir = CAMERAS_DIR / camera_ip
+    log_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = log_dir / "detections.jsonl"
+    jsonl_file = open(jsonl_path, "a", buffering=1)  # line-buffered
 
     def send_heartbeat(fps: float, status: str = "running", error: Optional[str] = None):
         result_queue.put({
@@ -99,6 +111,8 @@ def detection_worker(
             send_heartbeat(0.0, status="running")
             last_heartbeat = time.time()
 
+            last_frame_time = 0.0
+
             while not stop_event.is_set():
                 ret, frame = cap.read()
                 if not ret or frame is None:
@@ -109,8 +123,14 @@ def detection_worker(
                 if frame.std() < 10:
                     continue
 
-                frame_seq += 1
                 now = time.time()
+
+                # Rate limiting: skip frames to hit target_fps
+                if frame_interval > 0 and (now - last_frame_time) < frame_interval:
+                    continue
+                last_frame_time = now
+
+                frame_seq += 1
                 fps_window.append(now)
 
                 # Convert to grayscale for detection
@@ -121,7 +141,7 @@ def detection_worker(
 
                 for det in detections:
                     detect_count += 1
-                    result_queue.put({
+                    det_record = {
                         "type": "detection",
                         "camera_ip": camera_ip,
                         "timestamp": now,
@@ -131,7 +151,13 @@ def detection_worker(
                         "corners": det.corners.tolist(),
                         "decision_margin": float(det.decision_margin),
                         "frame_seq": frame_seq,
-                    })
+                    }
+                    result_queue.put(det_record)
+                    # Per-camera JSONL log
+                    try:
+                        jsonl_file.write(json.dumps(det_record) + "\n")
+                    except Exception:
+                        pass  # don't let log failure kill detection
 
                 # Heartbeat every 2 seconds
                 if now - last_heartbeat >= 2.0:
@@ -151,4 +177,8 @@ def detection_worker(
                     pass
 
     # Exiting
+    try:
+        jsonl_file.close()
+    except Exception:
+        pass
     send_heartbeat(0.0, status="stopped")

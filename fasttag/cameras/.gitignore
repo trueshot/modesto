@@ -1,0 +1,2 @@
+# Detection logs are local runtime data — not tracked in git
+*/detections.jsonl
