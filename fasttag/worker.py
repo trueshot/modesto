@@ -47,12 +47,13 @@ def detection_worker(
 
     families = config.get("families", "tagCustom48h12")
     quad_decimate = config.get("quad_decimate", 1.0)
+    nthreads = config.get("nthreads", 4)
     target_fps = config.get("target_fps", 0)  # 0 = no limit
     frame_interval = 1.0 / target_fps if target_fps > 0 else 0
 
     detector = Detector(
         families=families,
-        nthreads=1,
+        nthreads=nthreads,
         quad_decimate=quad_decimate,
         quad_sigma=0.0,
         decode_sharpening=0.25,

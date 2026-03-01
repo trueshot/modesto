@@ -270,7 +270,7 @@ result_queue: Optional[multiprocessing.Queue] = None
 # Default detection config
 DEFAULT_CONFIG = {
     "families": "tagCustom48h12",
-    "quad_decimate": 1.0,
+    "quad_decimate": 2.0,
 }
 
 # ============================================================================

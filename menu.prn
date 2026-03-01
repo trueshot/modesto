@@ -5,6 +5,7 @@
   1) Server          - ModelT 3D Viewer (port 5173)
   2) Camera Service  - Camera Capture API (port 8001)
   3) SAM3            - Visual Segmentation (port 8000)
+  4) FastTag         - AprilTag Detection (port 8003)
 
   0) Show this menu
   f0) Back to c:\clients
