@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IP Tag Scan</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            padding: 20px;
+        }
+        h1 { text-align: center; margin-bottom: 20px; color: #00d4ff; }
+
+        .controls {
+            display: flex; justify-content: center; gap: 12px;
+            margin-bottom: 20px; align-items: flex-end; flex-wrap: wrap;
+        }
+        .controls label { color: #aaa; font-size: 13px; display: block; margin-bottom: 4px; }
+        .controls input {
+            background: #2d2d44; border: 1px solid #555; border-radius: 6px;
+            color: #eee; padding: 8px 12px; font-family: monospace; font-size: 14px;
+        }
+        #ipInput { width: 180px; }
+        button {
+            padding: 10px 20px; font-size: 14px; border: none; border-radius: 6px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        button:hover { transform: scale(1.05); }
+        button:disabled { opacity: 0.4; cursor: default; transform: none; }
+        .btn-start { background: #00d46a; color: #000; }
+        .btn-stop { background: #ff4757; color: #fff; }
+        .btn-small { padding: 4px 12px; font-size: 12px; background: #444; color: #ccc; }
+        .btn-stop-sm { padding: 6px 14px; font-size: 12px; background: #ff4757; color: #fff; }
+
+        /* Active scan cards */
+        .scans-panel {
+            display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+            margin-bottom: 16px;
+        }
+        .scan-card {
+            background: #2d2d44; border: 1px solid #444; border-radius: 8px;
+            padding: 12px 16px; min-width: 220px; position: relative;
+        }
+        .scan-card.running { border-color: #00d46a; }
+        .scan-card.stopped { border-color: #666; opacity: 0.7; }
+        .scan-card .ip { font-size: 16px; font-weight: bold; font-family: monospace; color: #00d4ff; }
+        .scan-card .stat { font-size: 13px; color: #aaa; margin-top: 4px; }
+        .scan-card .stat .val { color: #eee; }
+        .scan-card .tag-count { color: #00d46a; font-weight: bold; }
+        .scan-card .fps { color: #ffa502; }
+        .scan-card .stop-btn {
+            position: absolute; top: 8px; right: 8px;
+            padding: 3px 10px; font-size: 11px; background: #ff4757; color: #fff;
+            border: none; border-radius: 4px; cursor: pointer;
+        }
+
+        /* Tag summary */
+        .tag-summary {
+            background: #2d2d44; border: 1px solid #444; border-radius: 8px;
+            padding: 12px 16px; margin-bottom: 16px;
+        }
+        .tag-summary h3 { font-size: 14px; color: #aaa; margin-bottom: 8px; }
+        .tag-row { font-family: monospace; font-size: 13px; padding: 2px 0; }
+        .tag-row .family { color: #ffa502; }
+        .tag-row .tag-id { color: #00d46a; font-weight: bold; }
+        .tag-row .seen { color: #888; }
+        .tag-row .best-margin { color: #a29bfe; }
+
+        /* Log view */
+        .log-container {
+            background: #0d0d1a; border: 1px solid #333; border-radius: 8px;
+            max-height: 50vh; overflow-y: auto; padding: 0; position: relative;
+        }
+        .log-header {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 8px 16px; background: #2d2d44; border-bottom: 1px solid #333;
+            position: sticky; top: 0; z-index: 1;
+        }
+        .log-header span { font-size: 13px; color: #aaa; }
+
+        .log-lines { padding: 8px 16px; font-family: monospace; font-size: 13px; line-height: 1.6; }
+        .log-line { white-space: nowrap; }
+        .log-line .ts { color: #666; }
+        .log-line .ip-label { color: #00d4ff; }
+        .log-line .tag { color: #00d46a; font-weight: bold; }
+        .log-line .family { color: #ffa502; }
+        .log-line .size { color: #a29bfe; }
+        .log-line .orient { color: #fd79a8; }
+        .log-line .margin { color: #888; }
+
+        /* Family toggles */
+        .families-bar {
+            display: flex; justify-content: center; gap: 8px;
+            margin-bottom: 16px; flex-wrap: wrap;
+        }
+        .family-toggle {
+            padding: 6px 14px; font-size: 13px; font-family: monospace;
+            border: 2px solid; border-radius: 6px; cursor: pointer;
+            transition: all 0.15s; background: transparent;
+        }
+        .family-toggle.enabled { color: #000; }
+        .family-toggle.disabled { background: transparent; opacity: 0.5; }
+
+        .empty-state {
+            text-align: center; padding: 60px 20px; color: #555;
+        }
+        .empty-state .hint { font-size: 14px; margin-top: 8px; color: #444; }
+
+        /* IP color coding (cycle through for up to 8 simultaneous) */
+        .ip-color-0 { color: #00d4ff; }
+        .ip-color-1 { color: #ff6b81; }
+        .ip-color-2 { color: #ffa502; }
+        .ip-color-3 { color: #a29bfe; }
+        .ip-color-4 { color: #00d46a; }
+        .ip-color-5 { color: #fd79a8; }
+        .ip-color-6 { color: #e056fd; }
+        .ip-color-7 { color: #7bed9f; }
+    </style>
+</head>
+<body>
+    <h1>IP Tag Scan</h1>
+
+    <div class="controls">
+        <div>
+            <label>Camera IP:</label>
+            <input type="text" id="ipInput" placeholder="192.168.0.xxx" onkeydown="if(event.key==='Enter')startIp()">
+        </div>
+        <button class="btn-start" onclick="startIp()">Start Scan</button>
+        <button class="btn-stop" onclick="stopAll()" id="stopAllBtn">Stop All</button>
+        <span id="detectorUtil" style="display:none; font-size:13px; color:#aaa; margin-left:8px;"></span>
+    </div>
+
+    <div class="families-bar" id="familiesBar"></div>
+
+    <div class="scans-panel" id="scansPanel"></div>
+
+    <div class="tag-summary" id="tagSummary" style="display:none;">
+        <h3>Unique Tags (all cameras)</h3>
+        <div id="tagRows"></div>
+    </div>
+
+    <div class="log-container" id="logContainer" style="display:none;">
+        <div class="log-header">
+            <span id="logCount">0 lines</span>
+            <div>
+                <button class="btn-small" id="autoscrollBtn" onclick="toggleAutoscroll()">Auto-scroll: ON</button>
+                <button class="btn-small" onclick="clearLog()">Clear</button>
+            </div>
+        </div>
+        <div class="log-lines" id="logLines"></div>
+    </div>
+
+    <div id="emptyState" class="empty-state">
+        <div style="font-size: 32px;">&#x1F3AF;</div>
+        <div>Enter a camera IP above and click Start Scan</div>
+        <div class="hint">Multiple IPs can run simultaneously</div>
+    </div>
+
+<script>
+const DETECTION_SERVICE = window.location.port === '8002' ? '' : 'http://localhost:8002';
+
+// Active scan tracking
+let activeIps = new Set();       // IPs currently scanning
+let logOffsets = {};             // ip -> nextOffset for polling
+let ipColors = {};              // ip -> color index
+let nextColor = 0;
+let pollInterval = null;
+let autoscroll = true;
+let totalLines = 0;
+
+// Accumulated tags across all IPs: "family:id" -> {family, tag, bestMargin, seenCount, ips: Set}
+let allTags = {};
+
+// Family color map (matches detector colors, BGR->hex)
+const FAMILY_COLORS = {
+    'Fiducial36h11': '#00ff00',
+    'Forklift25h9':  '#ffa500',
+    'Pallet41h12':   '#ff00ff',
+    'Pallet52h13':   '#00ffff',
+    'Pallet48h12':   '#00c8c8',
+};
+
+const IP_COLORS = ['#00d4ff','#ff6b81','#ffa502','#a29bfe','#00d46a','#fd79a8','#e056fd','#7bed9f'];
+
+function getIpColor(ip) {
+    if (!(ip in ipColors)) {
+        ipColors[ip] = nextColor % IP_COLORS.length;
+        nextColor++;
+    }
+    return IP_COLORS[ipColors[ip]];
+}
+
+// ---- Family toggles ----
+
+async function fetchFamilies() {
+    try {
+        const resp = await fetch(`${DETECTION_SERVICE}/families`);
+        const families = await resp.json();
+        renderFamilies(families);
+    } catch (e) {}
+}
+
+function renderFamilies(families) {
+    const bar = document.getElementById('familiesBar');
+    bar.innerHTML = '';
+    for (const [name, info] of Object.entries(families)) {
+        const btn = document.createElement('button');
+        btn.className = `family-toggle ${info.enabled ? 'enabled' : 'disabled'}`;
+        const color = FAMILY_COLORS[name] || '#888';
+        btn.style.borderColor = color;
+        if (info.enabled) {
+            btn.style.background = color;
+        }
+        btn.textContent = name;
+        btn.onclick = () => toggleFamily(name);
+        bar.appendChild(btn);
+    }
+}
+
+async function toggleFamily(name) {
+    try {
+        await fetch(`${DETECTION_SERVICE}/families/${name}/toggle`, { method: 'POST' });
+        await fetchFamilies();
+    } catch (e) {}
+}
+
+// ---- Start / Stop ----
+
+async function startIp() {
+    const input = document.getElementById('ipInput');
+    const ip = input.value.trim();
+    if (!ip) return;
+    if (activeIps.has(ip)) {
+        appendSystemLine(`${ip} is already scanning`);
+        return;
+    }
+
+    try {
+        const resp = await fetch(`${DETECTION_SERVICE}/ip-scan/${ip}/start`, { method: 'POST' });
+        const data = await resp.json();
+
+        if (resp.status === 409) {
+            document.getElementById('logContainer').style.display = 'block';
+            appendSystemLine(`Blocked: ${data.error}`, '#ff4757');
+            return;
+        }
+        if (data.error) {
+            document.getElementById('logContainer').style.display = 'block';
+            appendSystemLine(`Error: ${data.error}`, '#ff4757');
+            return;
+        }
+
+        activeIps.add(ip);
+        logOffsets[ip] = 0;
+        getIpColor(ip);  // assign color
+        input.value = '';
+        input.focus();
+
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('logContainer').style.display = 'block';
+        document.getElementById('stopAllBtn').style.display = '';
+        appendSystemLine(`Started scan for ${ip}`, getIpColor(ip));
+
+        if (!pollInterval) {
+            pollInterval = setInterval(pollAll, 500);
+        }
+    } catch (e) {
+        document.getElementById('logContainer').style.display = 'block';
+        appendSystemLine('Detection service unreachable', '#ff4757');
+    }
+}
+
+async function stopIp(ip) {
+    try {
+        await fetch(`${DETECTION_SERVICE}/ip-scan/${ip}/stop`, { method: 'POST' });
+    } catch (e) {}
+    activeIps.delete(ip);
+    appendSystemLine(`Stopped ${ip}`, '#888');
+}
+
+async function stopAll() {
+    const ips = [...activeIps];
+    await Promise.all(ips.map(ip => stopIp(ip)));
+}
+
+async function restartIp(ip) {
+    document.getElementById('ipInput').value = ip;
+    await startIp();
+}
+
+// ---- Polling ----
+
+async function pollAll() {
+    try {
+        // Fetch global status
+        const statusResp = await fetch(`${DETECTION_SERVICE}/ip-scan/status`);
+        const status = await statusResp.json();
+
+        // Update scan cards
+        updateCards(status);
+
+        // Fetch logs for each active IP
+        const allIps = [...activeIps];
+        const logPromises = allIps.map(async ip => {
+            const offset = logOffsets[ip] || 0;
+            const resp = await fetch(`${DETECTION_SERVICE}/ip-scan/${ip}/log?after=${offset}`);
+            const data = await resp.json();
+            return { ip, data };
+        });
+        const logs = await Promise.all(logPromises);
+
+        // Process log lines (interleave by timestamp)
+        let newLines = [];
+        for (const { ip, data } of logs) {
+            if (data.lines && data.lines.length > 0) {
+                for (const entry of data.lines) {
+                    newLines.push({ ip, entry });
+                }
+                logOffsets[ip] = data.nextOffset;
+            }
+            // If scan stopped on server side
+            if (!data.running && activeIps.has(ip)) {
+                activeIps.delete(ip);
+                appendSystemLine(`${ip} scan ended`, '#888');
+            }
+        }
+
+        // Sort by timestamp and render
+        newLines.sort((a, b) => a.entry.ts - b.entry.ts);
+        for (const { ip, entry } of newLines) {
+            renderLogLine(ip, entry);
+            accumulateTags(ip, entry);
+        }
+        if (newLines.length > 0) {
+            totalLines += newLines.length;
+            document.getElementById('logCount').textContent = `${totalLines} lines`;
+            if (autoscroll) {
+                document.getElementById('logContainer').scrollTop =
+                    document.getElementById('logContainer').scrollHeight;
+            }
+            renderTagSummary();
+        }
+
+    } catch (e) {
+        console.error('Poll error:', e);
+    }
+}
+
+function updateCards(status) {
+    const panel = document.getElementById('scansPanel');
+    panel.innerHTML = '';
+
+    // Detector utilization (global)
+    const det = status._detector;
+    if (det) {
+        const utilEl = document.getElementById('detectorUtil');
+        if (utilEl) {
+            const pct = det.utilization_pct;
+            const color = pct > 90 ? '#ff4757' : pct > 60 ? '#ffa502' : '#00d46a';
+            utilEl.innerHTML = `Detector: <span style="color:${color};font-weight:bold;">${pct}%</span>`;
+            utilEl.style.display = '';
+        }
+    }
+
+    // Show all IPs that have status (active or recently active)
+    const ips = Object.keys(status).filter(k => k !== '_detector').sort();
+    for (const ip of ips) {
+        const s = status[ip];
+        const card = document.createElement('div');
+        card.className = `scan-card ${s.running ? 'running' : 'stopped'}`;
+
+        let html = `<div class="ip" style="color:${getIpColor(ip)}">${ip}</div>`;
+        html += `<div class="stat">Frames: <span class="val">${s.frames}</span></div>`;
+        html += `<div class="stat">Tags: <span class="tag-count">${s.unique_tags}</span></div>`;
+        if (s.running && s.fps > 0) {
+            html += `<div class="stat">Rate: <span class="fps">${s.fps} fps</span></div>`;
+        }
+        if (s.running) {
+            html += `<div class="stat">Elapsed: <span class="val">${s.elapsed_s}s</span></div>`;
+            html += `<button class="stop-btn" onclick="stopIp('${ip}')">Stop</button>`;
+        } else {
+            const summary = s.frames > 0 && s.elapsed_s > 0
+                ? `${s.frames}f / ${s.elapsed_s}s = ${s.fps} fps`
+                : 'stopped';
+            html += `<div class="stat" style="color:#666;">${summary}</div>`;
+            html += `<button class="stop-btn" style="background:#00d46a;color:#000;" onclick="restartIp('${ip}')">Start</button>`;
+        }
+
+        card.innerHTML = html;
+        panel.appendChild(card);
+    }
+}
+
+// ---- Tag Accumulation ----
+
+function accumulateTags(ip, entry) {
+    const tags = entry.tags_found || [];
+    for (const t of tags) {
+        const key = `${t.family}:${t.tag}`;
+        if (!allTags[key]) {
+            allTags[key] = { family: t.family, tag: t.tag, bestMargin: -999, seenCount: 0, ips: new Set() };
+        }
+        allTags[key].seenCount++;
+        allTags[key].ips.add(ip);
+        const m = typeof t.margin === 'number' ? t.margin : -1;
+        if (m > allTags[key].bestMargin) allTags[key].bestMargin = m;
+    }
+}
+
+function renderTagSummary() {
+    const container = document.getElementById('tagRows');
+    const keys = Object.keys(allTags).sort();
+    if (keys.length === 0) {
+        document.getElementById('tagSummary').style.display = 'none';
+        return;
+    }
+    document.getElementById('tagSummary').style.display = '';
+    container.innerHTML = '';
+    for (const key of keys) {
+        const t = allTags[key];
+        const margin = t.bestMargin >= 0 ? t.bestMargin.toFixed(1) : 'aruco';
+        const ipsStr = [...t.ips].sort().join(', ');
+        const div = document.createElement('div');
+        div.className = 'tag-row';
+        div.innerHTML = `<span class="family">${t.family}</span> ` +
+            `<span class="tag-id">#${t.tag}</span> ` +
+            `<span class="best-margin">margin:${margin}</span> ` +
+            `<span class="seen">seen:${t.seenCount}x from ${t.ips.size} IP${t.ips.size>1?'s':''}</span>`;
+        container.appendChild(div);
+    }
+}
+
+// ---- Log Rendering ----
+
+function renderLogLine(ip, entry) {
+    const container = document.getElementById('logLines');
+    const div = document.createElement('div');
+    div.className = 'log-line';
+
+    // Timestamp
+    let ts;
+    if (entry.ts > 1e9) {
+        const d = new Date(entry.ts * 1000);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const ss = String(d.getSeconds()).padStart(2, '0');
+        const ms = String(Math.floor(d.getMilliseconds() / 100));
+        ts = `${hh}:${mm}:${ss}.${ms}`;
+    } else {
+        ts = Number(entry.ts).toFixed(1) + 's';
+    }
+
+    const tags = entry.tags_found || [];
+    const lowRes = entry.low_res ? ' <span style="color:#ff4757;">LOW RES</span>' : '';
+    div.style.color = tags.length > 0 ? '#00d46a' : '#555';
+
+    let tagStr = '';
+    if (tags.length > 0) {
+        tagStr = tags.map(t => {
+            const margin = t.margin === 'aruco' ? 'aruco' : t.margin;
+            return ` <span class="family">${t.family}</span>` +
+                ` <span class="tag">#${t.tag}</span>` +
+                ` <span class="size">${t.size_px}px</span>` +
+                ` <span class="orient">${t.orient_deg}&deg;</span>` +
+                ` <span class="margin">m:${margin}</span>`;
+        }).join(' | ');
+    } else {
+        tagStr = '<span>no tags</span>';
+    }
+
+    const color = getIpColor(ip);
+    const fetchLabel = entry.fetch_ms != null ? `${entry.fetch_ms}+` : '';
+    const waitLabel = entry.wait_ms > 0 ? `${entry.wait_ms}w+` : '';
+    div.innerHTML = `<span class="ts">${ts}</span> ` +
+        `<span class="ip-label" style="color:${color}">${ip}</span> ` +
+        `<span style="color:#666;">${entry.res || '?'}</span> ` +
+        `<span style="color:#888;">${fetchLabel}${waitLabel}${entry.detect_ms}ms</span> ` +
+        tagStr + lowRes;
+    container.appendChild(div);
+}
+
+function appendSystemLine(text, color) {
+    const container = document.getElementById('logLines');
+    const div = document.createElement('div');
+    div.className = 'log-line';
+    div.style.color = color || '#888';
+    div.style.fontStyle = 'italic';
+    div.textContent = text;
+    container.appendChild(div);
+    if (autoscroll) {
+        document.getElementById('logContainer').scrollTop =
+            document.getElementById('logContainer').scrollHeight;
+    }
+}
+
+// ---- Helpers ----
+
+function toggleAutoscroll() {
+    autoscroll = !autoscroll;
+    document.getElementById('autoscrollBtn').textContent = `Auto-scroll: ${autoscroll ? 'ON' : 'OFF'}`;
+}
+
+function clearLog() {
+    document.getElementById('logLines').innerHTML = '';
+    totalLines = 0;
+    document.getElementById('logCount').textContent = '0 lines';
+}
+
+// ---- Init: reconnect to any running scans ----
+
+async function init() {
+    fetchFamilies();
+    try {
+        const resp = await fetch(`${DETECTION_SERVICE}/ip-scan/status`);
+        const status = await resp.json();
+
+        const allIps = Object.keys(status).filter(k => k !== '_detector');
+        const runningIps = allIps.filter(ip => status[ip].running);
+
+        if (allIps.length > 0) {
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('logContainer').style.display = 'block';
+            updateCards(status);
+        }
+
+        if (runningIps.length > 0) {
+            for (const ip of runningIps) {
+                activeIps.add(ip);
+                logOffsets[ip] = 0;
+                getIpColor(ip);
+            }
+            appendSystemLine(`Reconnected to ${runningIps.length} running scan${runningIps.length > 1 ? 's' : ''}: ${runningIps.join(', ')}`);
+        }
+
+        if (allIps.length > 0) {
+            pollInterval = setInterval(pollAll, 500);
+        }
+    } catch (e) {
+        appendSystemLine('Detection service unreachable', '#ff4757');
+    }
+}
+
+init();
+</script>
+</body>
+</html>

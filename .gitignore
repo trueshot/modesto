@@ -7,3 +7,9 @@
 __pycache__/
 *.pyc
 nul
+tmpclaude-*-cwd
+*.log
+/zpl_output/
+/test-output/
+/logs/
+.env

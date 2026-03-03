@@ -1,3 +1,3 @@
 python api/server.py
-pause
-0
+1.bat
+

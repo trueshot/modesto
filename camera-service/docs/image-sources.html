@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Image Sources for AprilTag Detection</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            color: #333;
+        }
+        h1 { color: #1a1a1a; border-bottom: 2px solid #333; padding-bottom: 10px; }
+        h2 { color: #444; margin-top: 30px; }
+        table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+        th { background: #f5f5f5; }
+        .fast { color: #22863a; font-weight: bold; }
+        .medium { color: #b08800; font-weight: bold; }
+        .slow { color: #cb2431; font-weight: bold; }
+        .recommended { background: #e6ffec; }
+        code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-size: 14px; }
+        pre { background: #f6f8fa; padding: 15px; border-radius: 5px; overflow-x: auto; }
+        .note { background: #fffbe6; border-left: 4px solid #b08800; padding: 10px 15px; margin: 15px 0; }
+        .warning { background: #ffeef0; border-left: 4px solid #cb2431; padding: 10px 15px; margin: 15px 0; }
+    </style>
+</head>
+<body>
+
+<h1>Camera Image Sources for AprilTag Detection</h1>
+
+<p><strong>Question:</strong> Where's the most efficient place to grab an image for AprilTag detection?</p>
+
+<p><strong>Answer:</strong> It depends on the use case. Here are the options:</p>
+
+<h2>Image Source Options</h2>
+
+<table>
+    <tr>
+        <th>Source</th>
+        <th>Latency</th>
+        <th>Resolution</th>
+        <th>Best For</th>
+    </tr>
+    <tr class="recommended">
+        <td><strong>Persistent RTSP Stream</strong><br><code>cv2.VideoCapture(rtsp_url)</code></td>
+        <td class="fast">~50-100ms</td>
+        <td>Full (3072x2048 to 4096x3072)</td>
+        <td>Real-time inner loop (100ms-1s)</td>
+    </tr>
+    <tr>
+        <td><strong>Camera Service /latest</strong><br><code>GET /api/cameras/lodge/{id}/latest</code></td>
+        <td class="medium">0ms (cached) or 2-6s (miss)</td>
+        <td>Full resolution</td>
+        <td>Ad-hoc requests, 30s TTL cache</td>
+    </tr>
+    <tr>
+        <td><strong>Camera Service /capture</strong><br><code>GET /api/cameras/lodge/{id}/capture</code></td>
+        <td class="slow">2-6 seconds</td>
+        <td>Full resolution</td>
+        <td>Force fresh frame, bypass cache</td>
+    </tr>
+    <tr>
+        <td><strong>Disk Thumbnails</strong><br><code>warehouses/lodge/cameras/thumbnails/{id}.jpg</code></td>
+        <td class="fast">~1ms (disk read)</td>
+        <td>320px width (small)</td>
+        <td>UI previews only - too small for tags</td>
+    </tr>
+    <tr>
+        <td><strong>NVR Historic (novicat)</strong><br>Query NVR for past footage</td>
+        <td class="slow">Seconds to minutes</td>
+        <td>Full resolution</td>
+        <td>Forensic outer loop (ghost tags)</td>
+    </tr>
+</table>
+
+<h2>The Problem with HTTP per Frame</h2>
+
+<div class="warning">
+    <strong>Don't do this for real-time tracking:</strong>
+    <pre>while True:
+    response = requests.get(f"http://localhost:8001/api/cameras/lodge/{cam}/capture")
+    frame = decode(response.content)
+    detect_apriltags(frame)
+    # Each iteration: 2-6 seconds latency!</pre>
+</div>
+
+<p>Each HTTP request to <code>/capture</code> opens a new RTSP connection, grabs one frame, closes it.
+That's 2-6 seconds per frame. For 16 cameras, that's 30+ seconds per scan.</p>
+
+<h2>The Solution: Persistent RTSP Connections</h2>
+
+<div class="note">
+    <strong>For real-time AprilTag detection (inner loop):</strong>
+    <pre># Keep connection open, read frames continuously
+cap = cv2.VideoCapture("rtsp://admin:@192.168.0.165:554/ch01/0")
+
+while True:
+    ret, frame = cap.read()  # ~50-100ms per frame
+    if ret:
+        tags = detect_apriltags(frame)
+        process_tags(tags)</pre>
+</div>
+
+<p>A persistent VideoCapture connection gives you frames in ~50-100ms instead of 2-6 seconds.
+That's 20-60x faster.</p>
+
+<h2>Architecture Recommendation</h2>
+
+<pre>
+                                    ┌─────────────────────────────────────┐
+                                    │         AprilTag Worker             │
+                                    │  (Persistent RTSP connections)      │
+                                    │                                     │
+                                    │  cap1 = VideoCapture(bagel_rtsp)    │
+                                    │  cap2 = VideoCapture(bacon_rtsp)    │
+                                    │  ...                                │
+                                    │                                     │
+                                    │  while True:                        │
+                                    │      for cap in cameras:            │
+                                    │          frame = cap.read()         │
+                                    │          tags = detect(frame)       │
+                                    │          emit_events(tags)          │
+                                    └─────────────────────────────────────┘
+                                                    │
+                                                    ▼
+                                           Time-series DB / Neo4j
+</pre>
+
+<h2>NVR Concurrency Limit</h2>
+
+<div class="warning">
+    <strong>Critical:</strong> The GW Security NVR at 192.168.0.165 can only handle <strong>2 concurrent RTSP connections</strong> reliably.
+    More than that causes failures or timeouts.
+</div>
+
+<p>Options for 16 cameras with 2-connection limit:</p>
+<ol>
+    <li><strong>Round-robin:</strong> Keep 2 connections, cycle through cameras</li>
+    <li><strong>Priority cameras:</strong> Keep persistent connections to high-value positions (bay doors), poll others</li>
+    <li><strong>Event-driven:</strong> Connect on-demand when activity detected</li>
+</ol>
+
+<h2>Summary</h2>
+
+<table>
+    <tr>
+        <th>Use Case</th>
+        <th>Best Source</th>
+        <th>Why</th>
+    </tr>
+    <tr class="recommended">
+        <td>Real-time AprilTag detection (inner loop)</td>
+        <td>Persistent RTSP</td>
+        <td>50-100ms latency, continuous frames</td>
+    </tr>
+    <tr>
+        <td>Ad-hoc single frame</td>
+        <td>Camera Service /latest</td>
+        <td>Uses cache, HTTP convenience</td>
+    </tr>
+    <tr>
+        <td>Force fresh frame</td>
+        <td>Camera Service /capture</td>
+        <td>Bypasses cache, 2-6s latency OK</td>
+    </tr>
+    <tr>
+        <td>Forensic investigation (outer loop)</td>
+        <td>NVR Historic</td>
+        <td>Query past footage for ghost tags</td>
+    </tr>
+    <tr>
+        <td>UI thumbnails</td>
+        <td>Disk thumbnails</td>
+        <td>Instant, pre-generated</td>
+    </tr>
+</table>
+
+<p><em>Author: modeltcamerascat gen-4 | 2026-01-28</em></p>
+
+</body>
+</html>

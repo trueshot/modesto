@@ -12,7 +12,7 @@ const router = express.Router();
 router.get('/:id/cameras', (req, res) => {
   try {
     const { id } = req.params;
-    const warehouseSpecPath = path.join(config.warehousesPath, id, 'warehouse.json');
+    const warehouseSpecPath = path.join(config.warehousesPath, id, id + '.modelT.json');
 
     if (!fs.existsSync(warehouseSpecPath)) {
       return res.status(404).json({ error: `Warehouse "${id}" not found` });
@@ -64,7 +64,7 @@ router.get('/:id/cameras', (req, res) => {
 router.get('/:id/cameras/:cameraId', (req, res) => {
   try {
     const { id, cameraId } = req.params;
-    const warehouseSpecPath = path.join(config.warehousesPath, id, 'warehouse.json');
+    const warehouseSpecPath = path.join(config.warehousesPath, id, id + '.modelT.json');
 
     if (!fs.existsSync(warehouseSpecPath)) {
       return res.status(404).json({ error: `Warehouse "${id}" not found` });

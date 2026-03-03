@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NVR Dashboard - ShadowCat</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    h1 { color: #00d4ff; margin-bottom: 10px; font-size: 1.8em; }
+    .subtitle { color: #888; margin-bottom: 30px; font-size: 0.9em; }
+
+    .nvr-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 20px;
+      max-width: 1600px;
+    }
+
+    .nvr-card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #0f3460;
+    }
+
+    .nvr-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 15px;
+    }
+
+    .nvr-brand { font-size: 1.3em; font-weight: 600; color: #00d4ff; }
+    .nvr-model { color: #aaa; font-size: 0.9em; margin-top: 3px; }
+
+    .nvr-status {
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 0.75em;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-ours { background: #00d46a20; color: #00d46a; border: 1px solid #00d46a40; }
+    .status-not-ours { background: #ff6b6b20; color: #ff6b6b; border: 1px solid #ff6b6b40; }
+
+    .nvr-info {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+      margin-top: 15px;
+    }
+
+    .info-item { background: #0f3460; padding: 12px; border-radius: 8px; }
+    .info-label { font-size: 0.7em; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .info-value { font-size: 1em; color: #fff; font-family: 'Monaco', 'Consolas', monospace; }
+    .info-value.ip { color: #00d4ff; }
+
+    .nvr-features { margin-top: 15px; display: flex; gap: 8px; flex-wrap: wrap; }
+    .feature-tag { padding: 4px 10px; border-radius: 4px; font-size: 0.75em; background: #0f346080; color: #aaa; }
+    .feature-tag.active { background: #00d4ff20; color: #00d4ff; border: 1px solid #00d4ff40; }
+
+    .nvr-notes { margin-top: 15px; padding: 12px; background: #0a0a1a; border-radius: 8px; font-size: 0.85em; color: #888; line-height: 1.5; }
+
+    .channels-toggle {
+      margin-top: 15px;
+      background: #0f3460;
+      border: none;
+      color: #00d4ff;
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9em;
+      width: 100%;
+      text-align: left;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .channels-toggle:hover { background: #1a4a80; }
+    .channels-toggle .arrow { transition: transform 0.2s; }
+    .channels-toggle.open .arrow { transform: rotate(180deg); }
+
+    .channels-container {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+    }
+
+    .channels-container.open { max-height: 600px; overflow-y: auto; }
+
+    .channels-list {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .channel-item {
+      background: #0a0a1a;
+      padding: 10px;
+      border-radius: 6px;
+      font-size: 0.85em;
+      border-left: 3px solid #00d46a;
+    }
+
+    .channel-item.inactive { border-left-color: #ff6b6b; opacity: 0.6; }
+
+    .channel-thumb {
+      width: 100%;
+      aspect-ratio: 16/9;
+      background: #16213e;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .channel-thumb svg {
+      width: 40px;
+      height: 40px;
+      opacity: 0.3;
+    }
+
+    .channel-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .channel-thumb .no-signal {
+      position: absolute;
+      font-size: 0.7em;
+      color: #666;
+      bottom: 4px;
+    }
+
+    .channel-name { color: #00d4ff; font-weight: 600; }
+    .channel-info { color: #888; font-size: 0.8em; margin-top: 4px; }
+    .channel-status { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .channel-status.active { background: #00d46a; }
+    .channel-status.inactive { background: #ff6b6b; }
+
+    .loading { text-align: center; padding: 60px; color: #888; }
+    .error { background: #ff6b6b20; border: 1px solid #ff6b6b40; color: #ff6b6b; padding: 20px; border-radius: 8px; text-align: center; }
+
+    .refresh-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #00d4ff;
+      color: #1a1a2e;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .refresh-btn:hover { background: #00b8e6; }
+
+    /* Discovery Tools */
+    .discovery-panel {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 20px;
+      border: 1px solid #0f3460;
+      margin-bottom: 30px;
+      max-width: 1600px;
+    }
+
+    .discovery-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+
+    .discovery-title { font-size: 1.2em; font-weight: 600; color: #00d4ff; }
+
+    .discovery-tools {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+
+    .tool-btn {
+      background: #0f3460;
+      border: 1px solid #00d4ff40;
+      color: #00d4ff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9em;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+
+    .tool-btn:hover { background: #1a4a80; border-color: #00d4ff; }
+    .tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tool-btn.running { background: #00d4ff20; animation: pulse 1.5s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .probe-input {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .probe-input input {
+      background: #0a0a1a;
+      border: 1px solid #0f3460;
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 0.9em;
+      width: 150px;
+    }
+
+    .probe-input input:focus { outline: none; border-color: #00d4ff; }
+    .probe-input input::placeholder { color: #666; }
+
+    .output-container {
+      background: #0a0a1a;
+      border-radius: 8px;
+      padding: 15px;
+      max-height: 400px;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .output-container.visible { display: block; }
+
+    .output-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .output-title { color: #888; font-size: 0.8em; text-transform: uppercase; }
+    .output-clear {
+      background: none;
+      border: none;
+      color: #666;
+      cursor: pointer;
+      font-size: 0.8em;
+    }
+    .output-clear:hover { color: #ff6b6b; }
+
+    .output-content {
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 0.85em;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #aaa;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <h1>NVR Dashboard</h1>
+  <p class="subtitle">ShadowCat by Jungle Devices - Active Network Video Recorders</p>
+
+  <!-- Discovery Tools Panel -->
+  <div class="discovery-panel">
+    <div class="discovery-header">
+      <span class="discovery-title">Discovery Tools</span>
+    </div>
+    <div class="discovery-tools">
+      <button class="tool-btn" id="btn-scan" onclick="runScan()">Scan Network</button>
+      <div class="probe-input">
+        <input type="text" id="probe-ip" placeholder="192.168.1.x">
+        <button class="tool-btn" id="btn-probe" onclick="runProbe()">Probe IP</button>
+      </div>
+      <button class="tool-btn" id="btn-sync" onclick="runSync()">Sync to DB</button>
+      <button class="tool-btn" id="btn-channels" onclick="runChannels()">List Channels</button>
+    </div>
+    <div class="output-container" id="output-container">
+      <div class="output-header">
+        <span class="output-title" id="output-title">Output</span>
+        <button class="output-clear" onclick="clearOutput()">Clear</button>
+      </div>
+      <div class="output-content" id="output-content"></div>
+    </div>
+  </div>
+
+  <div id="nvr-container" class="nvr-grid">
+    <div class="loading">Loading NVRs...</div>
+  </div>
+
+  <button class="refresh-btn" onclick="loadNVRs()">Refresh</button>
+
+  <script>
+    async function loadNVRs() {
+      const container = document.getElementById('nvr-container');
+      container.innerHTML = '<div class="loading">Loading NVRs...</div>';
+
+      try {
+        const response = await fetch('/api/nvrs?ownership=OURS');
+        if (!response.ok) throw new Error('Failed to fetch NVRs');
+
+        const data = await response.json();
+
+        if (data.count === 0) {
+          container.innerHTML = '<div class="error">No NVRs found</div>';
+          return;
+        }
+
+        container.innerHTML = data.nvrs.map(nvr => `
+          <div class="nvr-card" data-nvr-id="${nvr.id}">
+            <div class="nvr-header">
+              <div>
+                <div class="nvr-brand">${nvr.brand}</div>
+                <div class="nvr-model">${nvr.model || 'Unknown Model'} (${nvr.id})</div>
+              </div>
+              <span class="nvr-status ${nvr.ownership === 'OURS' ? 'status-ours' : 'status-not-ours'}">
+                ${nvr.ownership === 'OURS' ? 'Ours' : 'Not Ours'}
+              </span>
+            </div>
+
+            <div class="nvr-info">
+              <div class="info-item">
+                <div class="info-label">IP Address</div>
+                <div class="info-value ip">${nvr.ip}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Max Channels</div>
+                <div class="info-value">${nvr.maxChannels || 'Unknown'}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">MAC Address</div>
+                <div class="info-value">${nvr.mac || '-'}</div>
+              </div>
+              <div class="info-item">
+                <div class="info-label">Serial</div>
+                <div class="info-value">${nvr.serial || '-'}</div>
+              </div>
+            </div>
+
+            <div class="nvr-features">
+              <span class="feature-tag ${nvr.onvifSupported ? 'active' : ''}">
+                ONVIF ${nvr.onvifSupported ? 'Yes' : 'No'}
+              </span>
+              <span class="feature-tag active">RTSP</span>
+            </div>
+
+            ${nvr.notes ? `<div class="nvr-notes">${nvr.notes}</div>` : ''}
+
+            <button class="channels-toggle" onclick="toggleChannels('${nvr.id}', this)">
+              <span>Channels</span>
+              <span class="arrow">▼</span>
+            </button>
+            <div class="channels-container" id="channels-${nvr.id}">
+              <div class="channels-list">Loading channels...</div>
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        container.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+      }
+    }
+
+    async function toggleChannels(nvrId, btn) {
+      const container = document.getElementById(`channels-${nvrId}`);
+      const isOpen = container.classList.contains('open');
+
+      if (isOpen) {
+        container.classList.remove('open');
+        btn.classList.remove('open');
+        return;
+      }
+
+      // Open and load channels
+      btn.classList.add('open');
+      container.classList.add('open');
+
+      try {
+        const response = await fetch(`/api/nvrs/${nvrId}/channels`);
+        if (!response.ok) throw new Error('Failed to fetch channels');
+
+        const data = await response.json();
+
+        if (data.count === 0) {
+          container.innerHTML = '<div class="channels-list" style="padding:10px;color:#888;">No channels configured</div>';
+          return;
+        }
+
+        container.innerHTML = `
+          <div class="channels-list">
+            ${data.channels.map(ch => `
+              <div class="channel-item ${ch.status === 'active' ? '' : 'inactive'}">
+                <div class="channel-thumb">
+                  <svg viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z"/>
+                  </svg>
+                  <span class="no-signal">No Signal</span>
+                </div>
+                <div>
+                  <span class="channel-status ${ch.status === 'active' ? 'active' : 'inactive'}"></span>
+                  <span class="channel-name">${ch.cameraId || 'Ch ' + ch.channelNumber}</span>
+                </div>
+                <div class="channel-info">
+                  Ch ${ch.channelNumber} | ${ch.resolution || 'Unknown'}
+                  ${ch.recording ? ' | REC' : ''}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      } catch (error) {
+        container.innerHTML = `<div class="channels-list" style="padding:10px;color:#ff6b6b;">Error: ${error.message}</div>`;
+      }
+    }
+
+    loadNVRs();
+
+    // Discovery Tools Functions
+    let activeButton = null;
+
+    function showOutput(title) {
+      document.getElementById('output-container').classList.add('visible');
+      document.getElementById('output-title').textContent = title;
+      document.getElementById('output-content').textContent = '';
+    }
+
+    function appendOutput(text) {
+      const content = document.getElementById('output-content');
+      content.textContent += text;
+      content.scrollTop = content.scrollHeight;
+    }
+
+    function clearOutput() {
+      document.getElementById('output-container').classList.remove('visible');
+      document.getElementById('output-content').textContent = '';
+    }
+
+    function setButtonState(btn, running) {
+      if (running) {
+        btn.classList.add('running');
+        btn.disabled = true;
+        activeButton = btn;
+      } else {
+        btn.classList.remove('running');
+        btn.disabled = false;
+        activeButton = null;
+      }
+    }
+
+    async function runTool(endpoint, options, btn, title) {
+      if (activeButton) return;
+      setButtonState(btn, true);
+      showOutput(title);
+
+      try {
+        const response = await fetch(endpoint, options);
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          appendOutput(decoder.decode(value));
+        }
+      } catch (error) {
+        appendOutput(`\nError: ${error.message}`);
+      } finally {
+        setButtonState(btn, false);
+      }
+    }
+
+    function runScan() {
+      const btn = document.getElementById('btn-scan');
+      runTool('/api/discovery/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }, btn, 'Network Scan');
+    }
+
+    function runProbe() {
+      const ip = document.getElementById('probe-ip').value.trim();
+      if (!ip) {
+        alert('Please enter an IP address');
+        return;
+      }
+      const btn = document.getElementById('btn-probe');
+      runTool('/api/discovery/probe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip })
+      }, btn, `Probe ${ip}`);
+    }
+
+    function runSync() {
+      const btn = document.getElementById('btn-sync');
+      runTool('/api/discovery/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      }, btn, 'Sync to Database');
+    }
+
+    function runChannels() {
+      const btn = document.getElementById('btn-channels');
+      runTool('/api/discovery/channels', {
+        method: 'GET'
+      }, btn, 'Channel List');
+    }
+  </script>
+</body>
+</html>

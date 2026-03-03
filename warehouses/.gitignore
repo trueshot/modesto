@@ -1,0 +1,6 @@
+*.db
+*.svg
+*.png
+*.jpg
+*.npz
+*/cameras/

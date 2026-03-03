@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Test UI</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        h1 { margin: 0 0 20px 0; color: #00d4ff; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        select, button {
+            padding: 10px 16px;
+            font-size: 14px;
+            border: none;
+            border-radius: 4px;
+        }
+        select {
+            background: #2a2a4a;
+            color: #eee;
+            min-width: 120px;
+        }
+        button {
+            background: #00d4ff;
+            color: #000;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover { background: #00b8e6; }
+        button:disabled { background: #555; cursor: wait; }
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .status.loading { background: #444; }
+        .status.success { background: #1a4d1a; }
+        .status.error { background: #4d1a1a; }
+        .image-container {
+            background: #0a0a1a;
+            border-radius: 8px;
+            padding: 10px;
+            max-width: 100%;
+            overflow: auto;
+        }
+        #frame {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 4px;
+        }
+        #frame.hidden { display: none; }
+        .info {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .url-info {
+            margin-top: 15px;
+            padding: 12px;
+            background: #0d1117;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            border-left: 3px solid #00d4ff;
+        }
+        .url-info .label {
+            color: #7ee787;
+            margin-bottom: 4px;
+        }
+        .url-info .value {
+            color: #c9d1d9;
+            word-break: break-all;
+        }
+        .url-info .method {
+            color: #8b949e;
+            margin-top: 8px;
+            font-style: italic;
+        }
+        .toggle-group {
+            display: flex;
+            background: #2a2a4a;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .toggle-group button {
+            padding: 10px 16px;
+            border: none;
+            background: transparent;
+            color: #888;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .toggle-group button.active {
+            background: #00d4ff;
+            color: #000;
+            font-weight: 600;
+        }
+        .toggle-group button:disabled {
+            color: #555;
+            cursor: not-allowed;
+        }
+        .toggle-group button:disabled.active {
+            background: #555;
+            color: #888;
+        }
+        .quick-buttons {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .quick-buttons button {
+            padding: 6px 12px;
+            font-size: 12px;
+            background: #2a4a6a;
+        }
+        .quick-buttons button:hover { background: #3a5a7a; }
+    </style>
+</head>
+<body>
+    <h1>Camera Test UI</h1>
+
+    <div class="controls">
+        <select id="nvr">
+            <option value="">Loading...</option>
+        </select>
+        <select id="channel">
+            <option value="">Select NVR first</option>
+        </select>
+        <div class="toggle-group" id="sourceToggle">
+            <button id="srcRtsp" class="active" onclick="setSource('rtsp')">RTSP</button>
+            <button id="srcSnapshot" onclick="setSource('snapshot')">Snapshot</button>
+        </div>
+        <button id="capture" onclick="captureFrame()">Capture Frame</button>
+        <span id="status" class="status"></span>
+    </div>
+
+    <div class="quick-buttons" id="quickButtons"></div>
+
+    <div class="image-container">
+        <img id="frame" class="hidden" alt="Camera frame">
+    </div>
+
+    <div class="info" id="info"></div>
+
+    <div class="url-info" id="urlInfo" style="display:none;">
+        <div class="label">HTTP Request:</div>
+        <div class="value" id="httpUrl"></div>
+        <div class="label" style="margin-top:8px;" id="captureUrlLabel">Capture URL:</div>
+        <div class="value" id="captureUrl"></div>
+        <div class="method" id="captureMethod"></div>
+    </div>
+
+    <script>
+        const BASE = '';  // Same origin
+        let currentSource = 'rtsp';
+        let currentNvrSupportsSnapshot = false;
+
+        function setSource(source) {
+            if (source === 'snapshot' && !currentNvrSupportsSnapshot) return;
+            currentSource = source;
+            document.getElementById('srcRtsp').classList.toggle('active', source === 'rtsp');
+            document.getElementById('srcSnapshot').classList.toggle('active', source === 'snapshot');
+        }
+
+        function updateSnapshotToggle(supportsSnapshot) {
+            currentNvrSupportsSnapshot = supportsSnapshot;
+            const snapshotBtn = document.getElementById('srcSnapshot');
+            snapshotBtn.disabled = !supportsSnapshot;
+            snapshotBtn.title = supportsSnapshot ? 'HTTP snapshot (fast)' : 'This NVR does not support HTTP snapshot';
+            // If snapshot was selected but NVR doesn't support it, switch to RTSP
+            if (!supportsSnapshot && currentSource === 'snapshot') {
+                setSource('rtsp');
+            }
+        }
+
+        async function loadNVRs() {
+            try {
+                const res = await fetch(`${BASE}/api/nvrs`);
+                const data = await res.json();
+                const select = document.getElementById('nvr');
+                select.innerHTML = '<option value="">Select NVR</option>';
+                data.nvrs.forEach(nvr => {
+                    const opt = document.createElement('option');
+                    opt.value = nvr.id;
+                    opt.textContent = `${nvr.id} (${nvr.ip}) - ${nvr.brand || 'Unknown'}`;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error('Failed to load NVRs:', e);
+                document.getElementById('nvr').innerHTML = '<option value="">Error loading NVRs</option>';
+            }
+        }
+
+        async function loadChannels(nvrId) {
+            const select = document.getElementById('channel');
+            const quickButtons = document.getElementById('quickButtons');
+
+            if (!nvrId) {
+                select.innerHTML = '<option value="">Select NVR first</option>';
+                quickButtons.innerHTML = '';
+                updateSnapshotToggle(false);
+                return;
+            }
+
+            try {
+                // Check if NVR supports snapshot by fetching info for any channel
+                const infoRes = await fetch(`${BASE}/api/nvr/${nvrId}/channel/1/info?source=snapshot`);
+                if (infoRes.ok) {
+                    const infoData = await infoRes.json();
+                    updateSnapshotToggle(infoData.supports_snapshot);
+                } else {
+                    updateSnapshotToggle(false);
+                }
+
+                const res = await fetch(`${BASE}/api/nvrs/${nvrId}/channels`);
+                const data = await res.json();
+                select.innerHTML = '<option value="">Select channel</option>';
+                quickButtons.innerHTML = '';
+
+                data.channels.forEach(ch => {
+                    // Dropdown option
+                    const opt = document.createElement('option');
+                    opt.value = ch.channel_number;
+                    const status = ch.status === 'active' ? '' : ' [DEAD]';
+                    opt.textContent = `Ch ${ch.channel_number}${status} - ${ch.resolution || 'Unknown'}`;
+                    if (ch.status !== 'active') opt.style.color = '#888';
+                    select.appendChild(opt);
+
+                    // Quick button for active channels
+                    if (ch.status === 'active') {
+                        const btn = document.createElement('button');
+                        btn.textContent = `Ch ${ch.channel_number}`;
+                        btn.onclick = () => {
+                            document.getElementById('channel').value = ch.channel_number;
+                            captureFrame();
+                        };
+                        quickButtons.appendChild(btn);
+                    }
+                });
+            } catch (e) {
+                console.error('Failed to load channels:', e);
+                select.innerHTML = '<option value="">Error loading channels</option>';
+            }
+        }
+
+        async function captureFrame() {
+            const nvrId = document.getElementById('nvr').value;
+            const channel = document.getElementById('channel').value;
+            const status = document.getElementById('status');
+            const frame = document.getElementById('frame');
+            const info = document.getElementById('info');
+            const urlInfo = document.getElementById('urlInfo');
+            const captureBtn = document.getElementById('capture');
+
+            if (!nvrId || !channel) {
+                status.textContent = 'Select NVR and channel';
+                status.className = 'status error';
+                return;
+            }
+
+            captureBtn.disabled = true;
+            status.textContent = `Capturing via ${currentSource.toUpperCase()}...`;
+            status.className = 'status loading';
+            frame.classList.add('hidden');
+            urlInfo.style.display = 'none';
+
+            const startTime = Date.now();
+            const httpUrl = `${window.location.origin}/api/nvr/${nvrId}/channel/${channel}/frame?source=${currentSource}&timeout=10`;
+
+            let captureInfo = null;
+            try {
+                // Fetch capture info
+                const infoRes = await fetch(`${BASE}/api/nvr/${nvrId}/channel/${channel}/info?source=${currentSource}`);
+                captureInfo = infoRes.ok ? await infoRes.json() : null;
+
+                // Fetch the actual frame
+                const res = await fetch(httpUrl);
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Capture failed');
+                }
+
+                const blob = await res.blob();
+                const elapsed = Date.now() - startTime;
+
+                frame.src = URL.createObjectURL(blob);
+                frame.classList.remove('hidden');
+                frame.onload = () => {
+                    const sourceLabel = currentSource === 'snapshot' ? '[Snapshot]' : '[RTSP]';
+                    info.textContent = `${sourceLabel} ${nvrId} ch${channel} | ${frame.naturalWidth}x${frame.naturalHeight} | ${elapsed}ms | ${(blob.size/1024).toFixed(1)}KB`;
+                };
+
+                // Show URL info
+                document.getElementById('httpUrl').textContent = httpUrl;
+                document.getElementById('captureUrlLabel').textContent =
+                    currentSource === 'snapshot' ? 'Snapshot URL (internal):' : 'RTSP URL (internal):';
+                if (captureInfo) {
+                    document.getElementById('captureUrl').textContent = captureInfo.capture_url || '(not available)';
+                    document.getElementById('captureMethod').textContent =
+                        `Method: ${captureInfo.method}. ${captureInfo.notes}`;
+                } else {
+                    document.getElementById('captureUrl').textContent = '(info unavailable)';
+                    document.getElementById('captureMethod').textContent = '';
+                }
+                urlInfo.style.display = 'block';
+
+                status.textContent = `OK via ${currentSource.toUpperCase()} (${elapsed}ms)`;
+                status.className = 'status success';
+
+            } catch (e) {
+                const elapsed = Date.now() - startTime;
+                status.textContent = `Error: ${e.message} (${elapsed}ms)`;
+                status.className = 'status error';
+                info.textContent = '';
+
+                // Show the attempted URL and error details
+                document.getElementById('httpUrl').textContent = httpUrl;
+                document.getElementById('captureUrlLabel').textContent =
+                    currentSource === 'snapshot' ? 'Snapshot URL (internal):' : 'RTSP URL (internal):';
+                if (captureInfo) {
+                    document.getElementById('captureUrl').textContent = captureInfo.capture_url || '(not available)';
+                    document.getElementById('captureMethod').textContent = `Error: ${e.message}`;
+                } else {
+                    document.getElementById('captureUrl').textContent = '(info unavailable)';
+                    document.getElementById('captureMethod').textContent = `Error: ${e.message}`;
+                }
+                urlInfo.style.display = 'block';
+            } finally {
+                captureBtn.disabled = false;
+            }
+        }
+
+        // Event listeners
+        document.getElementById('nvr').addEventListener('change', (e) => {
+            loadChannels(e.target.value);
+        });
+
+        // Keyboard shortcut: Enter to capture
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !document.getElementById('capture').disabled) {
+                captureFrame();
+            }
+        });
+
+        // Init
+        loadNVRs();
+    </script>
+</body>
+</html>

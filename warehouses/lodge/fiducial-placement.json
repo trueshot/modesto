@@ -1,0 +1,312 @@
+{
+  "warehouse": "lodge",
+  "version": "1.1",
+  "author": "federalcat gen-2",
+  "created": "2026-01-22",
+  "updated": "2026-01-22",
+  "update_notes": "Corrected biscuit visibility: faces East (not Southwest as documented). Uses East wall tags 12-14.",
+  "family": "tag36h11",
+  "purpose": "Camera calibration reference points",
+  "notes": {
+    "coordinate_system": "ModelT (origin NW corner, X=east, Y=south, units=feet)",
+    "elevation": "Height above ground (slab surface is 4ft)",
+    "tag_size": "5.5 inches (standard for detection at 20-50ft range)",
+    "mounting": "Center of tag at specified coordinates"
+  },
+  "fiducials": [
+    {
+      "id": 1,
+      "wall": "mercury_perimeter_north",
+      "x": 185,
+      "y": 100,
+      "z": 10,
+      "facing": "south",
+      "visible_from": ["burger", "washington_door_area"]
+    },
+    {
+      "id": 2,
+      "wall": "mercury_perimeter_north",
+      "x": 215,
+      "y": 100,
+      "z": 10,
+      "facing": "south",
+      "visible_from": ["burger", "lincoln_door_area"]
+    },
+    {
+      "id": 3,
+      "wall": "mercury_perimeter_north",
+      "x": 250,
+      "y": 100,
+      "z": 10,
+      "facing": "south",
+      "visible_from": ["burger", "chicken"]
+    },
+    {
+      "id": 4,
+      "wall": "mercury_perimeter_north",
+      "x": 285,
+      "y": 100,
+      "z": 10,
+      "facing": "south",
+      "visible_from": ["burger"]
+    },
+    {
+      "id": 5,
+      "wall": "mercury_perimeter_north",
+      "x": 315,
+      "y": 100,
+      "z": 10,
+      "facing": "south",
+      "visible_from": ["carter_door_area"]
+    },
+    {
+      "id": 10,
+      "wall": "mercury_perimeter_east",
+      "x": 330,
+      "y": 130,
+      "z": 10,
+      "facing": "west",
+      "visible_from": ["brownie", "chili"]
+    },
+    {
+      "id": 11,
+      "wall": "mercury_perimeter_east",
+      "x": 330,
+      "y": 170,
+      "z": 10,
+      "facing": "west",
+      "visible_from": ["brownie", "chocolate"]
+    },
+    {
+      "id": 12,
+      "wall": "mercury_perimeter_east",
+      "x": 330,
+      "y": 210,
+      "z": 10,
+      "facing": "west",
+      "visible_from": ["brownie", "cake", "biscuit"]
+    },
+    {
+      "id": 13,
+      "wall": "mercury_perimeter_east",
+      "x": 330,
+      "y": 250,
+      "z": 10,
+      "facing": "west",
+      "visible_from": ["bread", "cake", "biscuit"]
+    },
+    {
+      "id": 14,
+      "wall": "mercury_perimeter_east",
+      "x": 330,
+      "y": 270,
+      "z": 10,
+      "facing": "west",
+      "visible_from": ["bread", "biscuit"]
+    },
+    {
+      "id": 20,
+      "wall": "mercury_perimeter_west",
+      "x": 170,
+      "y": 130,
+      "z": 10,
+      "facing": "east",
+      "visible_from": []
+    },
+    {
+      "id": 21,
+      "wall": "mercury_perimeter_west",
+      "x": 170,
+      "y": 170,
+      "z": 10,
+      "facing": "east",
+      "visible_from": []
+    },
+    {
+      "id": 22,
+      "wall": "mercury_perimeter_west",
+      "x": 170,
+      "y": 210,
+      "z": 10,
+      "facing": "east",
+      "visible_from": []
+    },
+    {
+      "id": 23,
+      "wall": "mercury_perimeter_west",
+      "x": 170,
+      "y": 240,
+      "z": 10,
+      "facing": "east",
+      "visible_from": []
+    },
+    {
+      "id": 24,
+      "wall": "mercury_perimeter_west",
+      "x": 170,
+      "y": 270,
+      "z": 10,
+      "facing": "east",
+      "visible_from": []
+    },
+    {
+      "id": 30,
+      "wall": "mercury_perimeter_south",
+      "x": 165,
+      "y": 400,
+      "z": 10,
+      "facing": "north",
+      "visible_from": ["beef", "bagel"]
+    },
+    {
+      "id": 31,
+      "wall": "mercury_perimeter_south",
+      "x": 200,
+      "y": 400,
+      "z": 10,
+      "facing": "north",
+      "visible_from": ["beef", "coffee"]
+    },
+    {
+      "id": 32,
+      "wall": "mercury_perimeter_south",
+      "x": 250,
+      "y": 400,
+      "z": 10,
+      "facing": "north",
+      "visible_from": ["coffee"]
+    },
+    {
+      "id": 33,
+      "wall": "mercury_perimeter_south",
+      "x": 290,
+      "y": 400,
+      "z": 10,
+      "facing": "north",
+      "visible_from": ["coffee"]
+    },
+    {
+      "id": 34,
+      "wall": "mercury_perimeter_south",
+      "x": 320,
+      "y": 400,
+      "z": 10,
+      "facing": "north",
+      "visible_from": []
+    },
+    {
+      "id": 40,
+      "wall": "abigail",
+      "x": 190,
+      "y": 239,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["candy", "butter"]
+    },
+    {
+      "id": 41,
+      "wall": "abigail",
+      "x": 220,
+      "y": 239,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["candy", "butter"]
+    },
+    {
+      "id": 42,
+      "wall": "abigail",
+      "x": 260,
+      "y": 239,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["cheese", "butter"]
+    },
+    {
+      "id": 43,
+      "wall": "abigail",
+      "x": 290,
+      "y": 239,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["cheese", "cake"]
+    },
+    {
+      "id": 44,
+      "wall": "abigail",
+      "x": 320,
+      "y": 239,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["cake"]
+    },
+    {
+      "id": 50,
+      "wall": "beatrice",
+      "x": 195,
+      "y": 308,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["cinnamonroll"]
+    },
+    {
+      "id": 51,
+      "wall": "beatrice",
+      "x": 235,
+      "y": 308,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["cinnamonroll", "coffee"]
+    },
+    {
+      "id": 52,
+      "wall": "beatrice",
+      "x": 275,
+      "y": 308,
+      "z": 8,
+      "facing": "north",
+      "visible_from": ["coffee"]
+    },
+    {
+      "id": 53,
+      "wall": "beatrice",
+      "x": 315,
+      "y": 308,
+      "z": 8,
+      "facing": "north",
+      "visible_from": []
+    }
+  ],
+  "summary": {
+    "total_fiducials": 29,
+    "by_wall": {
+      "north": 5,
+      "east": 5,
+      "west": 5,
+      "south": 5,
+      "abigail": 5,
+      "beatrice": 4
+    },
+    "id_ranges": {
+      "north_wall": "1-5",
+      "east_wall": "10-14",
+      "west_wall": "20-24",
+      "south_wall": "30-34",
+      "abigail_partition": "40-44",
+      "beatrice_partition": "50-53"
+    }
+  },
+  "calibration_priority": {
+    "high": ["biscuit"],
+    "reason": "biscuit has intrinsics calibrated, needs extrinsics. East wall tags 10-14 provide reference points."
+  },
+  "issues": {
+    "biscuit_direction": {
+      "status": "DISCOVERED",
+      "documented_direction": 242,
+      "documented_meaning": "Southwest",
+      "actual_direction_observed": "~80 (East-Northeast)",
+      "evidence": "Detection found East wall tag 13 at (330,250), proving camera faces East not Southwest",
+      "action_needed": "Update ModelT lodge.modelT.json biscuit.direction from 242 to ~80"
+    }
+  }
+}

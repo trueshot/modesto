@@ -1,0 +1,2 @@
+cd fasttag
+0
