@@ -1,11 +1,32 @@
 // svc.js — Unified Service Manager TUI
 // Author: modestomulti gen-3
+// Created: 2026-02-28
 
 const fs = require('fs');
 const path = require('path');
 const { spawn, execSync } = require('child_process');
 const readline = require('readline');
 const yaml = require('js-yaml');
+
+if (process.argv.includes('--help')) {
+  console.log(`svc.js — Unified Service Manager TUI
+
+Usage: node svc.js [--help]
+
+Reads services.yaml and shows a dashboard of managed services.
+Adopts pre-existing processes by port. Spawned services survive TUI exit.
+
+Controls:
+  1-N          Select service
+  Up/Down      Navigate
+  K            Kick (kill + auto-restart)
+  S            Stop (kill + keep down)
+  R            Restore (re-enable + start)
+  Q            Quit (services keep running)
+
+Config: services.yaml (same directory as svc.js)`);
+  process.exit(0);
+}
 
 const configPath = path.join(__dirname, 'services.yaml');
 const config = yaml.load(fs.readFileSync(configPath, 'utf8'));
