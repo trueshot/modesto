@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// svg-to-zpl-cli.js — Convert AprilTag SVG to ZPL for Zebra printers
+// Author: federalcat gen-2
+// Created: 2025-12-15
 
 const fs = require('fs');
 const path = require('path');

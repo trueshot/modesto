@@ -139,4 +139,40 @@ router.get('/:id/svg-data', (req, res) => {
   }
 });
 
+/**
+ * GET /api/warehouses/:id/cameras
+ * Camera data direct from JSON (source of truth)
+ */
+router.get('/:id/cameras', (req, res) => {
+  try {
+    const { id } = req.params;
+    const jsonPath = path.join(config.warehousesPath, id, `${id}.modelT.json`);
+
+    if (!fs.existsSync(jsonPath)) {
+      return res.status(404).json({ error: 'Warehouse JSON not found' });
+    }
+
+    const data = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    const cameras = [];
+
+    if (data.slabs) {
+      data.slabs.forEach(slab => {
+        if (slab.cameras) {
+          slab.cameras.forEach(cam => {
+            cameras.push({ ...cam, slabElevation: slab.elevation || 4 });
+          });
+        }
+      });
+    } else if (data.cameras) {
+      data.cameras.forEach(cam => {
+        cameras.push({ ...cam, slabElevation: 4 });
+      });
+    }
+
+    res.json({ warehouseId: id, cameras });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

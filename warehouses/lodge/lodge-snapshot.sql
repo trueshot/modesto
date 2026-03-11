@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-02-25T12:37:46.349Z
+-- Generated: 2026-03-09T11:44:11.511Z
 
 BEGIN TRANSACTION;
 
@@ -15,30 +15,42 @@ CREATE TABLE cameras (
     retired_date TEXT,
     notes TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
-, rtsp_path TEXT);
+, rtsp_path TEXT, onvif_supported INTEGER, reachable_from_lan INTEGER);
 
 INSERT INTO "cameras" VALUES('F0:00:00:77:2D:8D','YM600F_AF','A_ONVIF_CAMERA','EF00000000772D8D','3072x2048','192.168.0.151','V3.0.2.5 build 2020-09-24 17:00:10 
-',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101');
+',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1);
 INSERT INTO "cameras" VALUES('F0:00:00:77:2E:EB','YM600F_AF','A_ONVIF_CAMERA','EF00000000772EEB','3072x2048','192.168.0.152','V3.0.2.5 build 2020-09-24 17:00:10 
-',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101');
-INSERT INTO "cameras" VALUES('F4:00:00:01:A8:BB','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb','3840x2160','192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18','/media/live/1/1');
-INSERT INTO "cameras" VALUES('F0:00:00:77:28:F4','YM600F_AF','A_ONVIF_CAMERA','EF000000007728F4','3072x2048','192.168.0.156','V3.0.2.5 build 2020-09-24',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101');
+',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A8:BB','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb','3840x2160','192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18','/media/live/1/1',1,1);
+INSERT INTO "cameras" VALUES('F0:00:00:77:28:F4','YM600F_AF','A_ONVIF_CAMERA','EF000000007728F4','3072x2048','192.168.0.156','V3.0.2.5 build 2020-09-24',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1);
 INSERT INTO "cameras" VALUES('F0:00:00:C5:4C:B4','YMF52_STARIR_GW_AF','A_ONVIF_CAMERA','EF00000000C54CB4','3072x2048','192.168.0.66','V3.0.7.5 build 2022-04-22 18:50:44 
-',NULL,NULL,NULL,'2026-01-22 12:23:18','/cam/realmonitor?channel=1&subtype=0');
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A9','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.172',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101');
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A4','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.59',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101');
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:58','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.183',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101');
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:2A','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.198',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101');
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:8D','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.105',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101');
-INSERT INTO "cameras" VALUES('38:24:F1:01:14:B2','GWIP85BF','GW Security',NULL,NULL,'192.168.0.245',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL);
-INSERT INTO "cameras" VALUES('38:24:F1:05:19:D4','GWIP85BF','GW Security',NULL,NULL,'192.168.0.94',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL);
-INSERT INTO "cameras" VALUES('F4:00:00:01:A8:E2','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.170',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1');
-INSERT INTO "cameras" VALUES('F4:00:00:01:A9:01','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.185',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1');
-INSERT INTO "cameras" VALUES('F4:00:00:01:A8:EF','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.224',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1');
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AE','GW12577MIC','GW Security',NULL,NULL,'192.168.0.223',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream');
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:BE','GW12577MIC','GW Security',NULL,NULL,'192.168.0.176',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream');
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AD','GW12577MIC','GW Security',NULL,NULL,'192.168.0.209',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream');
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:C2','GW12577MIC','GW Security',NULL,NULL,'192.168.0.178',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream');
+',NULL,NULL,NULL,'2026-01-22 12:23:18','/cam/realmonitor?channel=1&subtype=0',1,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A9','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.172',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A4','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.59',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:58','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.183',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:2A','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.198',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:8D','IPCamera','UNIVIEW',NULL,NULL,'192.168.0.105',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('38:24:F1:01:14:B2','GWIP85BF','GW Security',NULL,NULL,'192.168.0.245',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL,0,1);
+INSERT INTO "cameras" VALUES('38:24:F1:05:19:D4','GWIP85BF','GW Security',NULL,NULL,'192.168.0.94',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL,0,1);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A8:E2','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.170',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A9:01','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.185',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A8:EF','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.224',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AE','GW12577MIC','GW Security',NULL,NULL,'192.168.0.223',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:BE','GW12577MIC','GW Security',NULL,NULL,'192.168.0.176',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AD','GW12577MIC','GW Security',NULL,NULL,'192.168.0.209',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:C2','GW12577MIC','GW Security',NULL,NULL,'192.168.0.178',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:57','IPCamera',NULL,NULL,NULL,'192.168.0.28',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:72:05','IPCamera',NULL,NULL,NULL,'192.168.0.29',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:6F','IPCamera',NULL,NULL,NULL,'192.168.0.32',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A1','IPCamera',NULL,NULL,NULL,'192.168.0.162',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:72:0B','IPCamera',NULL,NULL,NULL,'192.168.0.168',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:84','IPCamera',NULL,NULL,NULL,'192.168.0.204',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_13',NULL,'I91DL',NULL,NULL,'192.168.0.13',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_30',NULL,'IPC',NULL,NULL,'192.168.0.30',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_67',NULL,'ONVIF_CAMERA',NULL,NULL,'192.168.0.67',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,1,1);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_119',NULL,'WC-MT94Wi28',NULL,NULL,'192.168.0.119',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_169',NULL,'IPC',NULL,NULL,'192.168.0.169',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_235',NULL,'WC-MT94Wi28',NULL,NULL,'192.168.0.235',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0);
 
 CREATE TABLE channels (
     id TEXT PRIMARY KEY,              -- 'nvr1_ch01', 'nvr2_ch05'
@@ -177,6 +189,20 @@ INSERT INTO "linkages" VALUES(14,'bagel','F0:00:00:C5:4C:B4','nvr1_ch30','2026-0
 INSERT INTO "linkages" VALUES(17,'biscuit','F0:00:00:77:2D:8D','nvr1_ch01',NULL,'gemcat','HIGH','gemcat vision match','2026-01-31 20:45:15');
 INSERT INTO "linkages" VALUES(18,'coffee','F4:00:00:01:A8:BB','nvr1_ch03',NULL,'gemcat','MEDIUM','gemcat vision match - needs verification','2026-01-31 20:45:15');
 INSERT INTO "linkages" VALUES(19,'burger','F4:00:00:01:A9:01','nvr1_ch04',NULL,'gemcat','HIGH','gemcat vision match','2026-01-31 20:45:15');
+INSERT INTO "linkages" VALUES(20,'cookie','2C:6F:51:3B:71:A9','nvr2_ch01','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(21,'cornbread','2C:6F:51:3B:71:A4','nvr2_ch02','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(22,'cream','2C:6F:51:3B:71:58','nvr2_ch03','2026-03-09 11:43:54','gemcat','assumed','LOW confidence - audit frame fogged, matched by elimination','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(23,'croissant','2C:6F:51:3B:71:2A','nvr2_ch04','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(24,'cupcake','2C:6F:51:3B:71:8D','nvr2_ch05','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(25,'custard','38:24:F1:01:14:B2','nvr2_ch06','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(26,'donut','38:24:F1:05:19:D4','nvr2_ch07','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(27,'dumpling','F4:00:00:01:A8:E2','nvr2_ch08','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(28,'egg','F4:00:00:01:A9:01','nvr2_ch09','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(29,'frenchtoast','F4:00:00:01:A8:EF','nvr2_ch10','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(30,'fudge','38:24:F1:01:3C:AE','nvr2_ch11','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(31,'gravy','38:24:F1:01:3C:BE','nvr2_ch12','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(32,'ham','38:24:F1:01:3C:AD','nvr2_ch13','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+INSERT INTO "linkages" VALUES(33,'hashbrown','38:24:F1:01:3C:C2','nvr2_ch14','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
 
 CREATE TABLE mount_fiducial_visibility (
     mount_id TEXT REFERENCES mounts(id),
@@ -252,6 +278,20 @@ INSERT INTO "mounts" VALUES('chili',0,0,12,NULL,NULL,'unknown','Unknown - needs 
 INSERT INTO "mounts" VALUES('chocolate',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
 INSERT INTO "mounts" VALUES('cinnamonroll',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
 INSERT INTO "mounts" VALUES('coffee',0,0,12,NULL,NULL,'unknown','Unknown - needs configuration','2026-01-22 12:23:18');
+INSERT INTO "mounts" VALUES('cookie',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('cornbread',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('cream',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('croissant',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('cupcake',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('custard',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('donut',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('dumpling',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('egg',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('frenchtoast',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('fudge',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('gravy',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('ham',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
+INSERT INTO "mounts" VALUES('hashbrown',0,0,12,NULL,NULL,'unknown','nvr2 mount - needs configuration','2026-03-09 11:43:54');
 
 CREATE TABLE nvr_capabilities (
     nvr_id TEXT NOT NULL REFERENCES nvrs(id),
@@ -301,7 +341,7 @@ INSERT INTO "nvrs" VALUES('nvr2','UNIVIEW','XVR302-16Q3','192.168.0.7','c4:79:05
 
 CREATE TABLE sqlite_sequence(name,seq);
 
-INSERT INTO "sqlite_sequence" VALUES('linkages',19);
+INSERT INTO "sqlite_sequence" VALUES('linkages',33);
 
 CREATE TABLE zones (
     id TEXT PRIMARY KEY,              -- 'dock_east', 'cooler_1', 'packing_line_2'

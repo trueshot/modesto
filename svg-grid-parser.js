@@ -1,3 +1,7 @@
+// svg-grid-parser.js — Parse SVG AprilTags to grid and generate ZPL
+// Author: federalcat gen-2
+// Created: 2025-12-15
+
 const fs = require('fs');
 const path = require('path');
 

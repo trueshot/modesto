@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# calibration_update_modelt.py — Write camera intrinsics from calibration into ModelT
+# Author: federalcat gen-3 (claimed ownership)
+# Created: 2025-12-15
 """
 Update ModelT with Camera Intrinsic Calibration Data
 

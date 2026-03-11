@@ -900,7 +900,7 @@
             "k2": 0.16322085697861471,
             "p1": 0.002185321486342584,
             "p2": 0.020120475381192122,
-            "k3": 0.0,
+            "k3": 0,
             "rms_error": 0.6914116152461016,
             "fov_horizontal": 72.36529631502188,
             "fov_vertical": 57.444976944115695
@@ -964,12 +964,13 @@
           "number": 9,
           "x": 315,
           "y": 239,
-          "elevation": 12,
-          "direction": 0,
-          "tilt": 20,
-          "viewingAngle": 90,
+          "elevation": 13.9,
+          "direction": 358,
+          "tilt": 2.8,
+          "viewingAngle": 85,
           "range": 50,
-          "location": "Packing Line 1, South wall, 15ft from east"
+          "location": "Packing Line 1, South wall, 15ft from east",
+          "roll": -2
         },
         {
           "id": "candy",
@@ -1056,11 +1057,11 @@
           "number": 16,
           "x": 208.1,
           "y": 384,
-          "elevation": 10,
-          "direction": 8,
-          "tilt": 8.2,
-          "roll": 0,
-          "viewingAngle": 90,
+          "elevation": 15,
+          "direction": 30,
+          "tilt": 32.8,
+          "roll": -10,
+          "viewingAngle": 100,
           "range": 100,
           "location": ""
         }

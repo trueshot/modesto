@@ -90,7 +90,7 @@ router.get('/:id/thumbnails', (req, res) => {
   try {
     const { id } = req.params;
     const { nvr } = req.query;
-    const thumbnailsPath = path.join(config.warehousesPath, id, 'cameras', 'thumbnails');
+    const thumbnailsPath = path.join(config.warehousesPath, id, 'cameras', 'thumb');
     const configPath = path.join(config.warehousesPath, id, 'cameras', 'config.json');
 
     if (!fs.existsSync(thumbnailsPath)) {
@@ -124,7 +124,7 @@ router.get('/:id/thumbnails', (req, res) => {
         return {
           id: name,
           filename: file,
-          url: `/warehouses/${id}/cameras/thumbnails/${file}`
+          url: `/warehouses/${id}/cameras/thumb/${file}`
         };
       })
       .filter(t => {
