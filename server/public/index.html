@@ -155,7 +155,7 @@
             display: flex;
             gap: 3px;
             flex-wrap: wrap;
-            max-width: 90%;
+            max-width: 700px;
             justify-content: center;
         }
         .cameraBtn {
@@ -393,7 +393,8 @@
             padding: 15px;
             z-index: 200;
             display: none;
-            max-width: 90vw;
+            width: 1080px;
+            max-width: 95vw;
             max-height: 85vh;
             overflow: auto;
         }
@@ -414,9 +415,9 @@
         }
         #thumbnailGrid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            grid-template-columns: repeat(6, 1fr);
             gap: 8px;
-            max-height: 60vh;
+            max-height: 70vh;
             overflow-y: auto;
         }
         .thumbnailCard {
@@ -636,7 +637,7 @@
         </div>
         <div class="param">
             <span class="label">Elevation:</span>
-            <span class="value" id="camElevation">-</span>
+            <input type="number" class="value-input" id="camElevation" step="0.5" onchange="updateCameraFromInput()">
         </div>
         <div class="param">
             <span class="label">Direction:</span>
@@ -688,7 +689,7 @@
     <div id="cameraMappingPanel">
         <button id="mappingPanelClose" onclick="closeMappingPanel()">×</button>
         <h3>Map Camera: <span id="mappingCameraName">-</span></h3>
-        <div class="instructions">Select the real camera feed that matches this 3D view</div>
+        <div class="instructions">Select the physical camera that is at this mount position</div>
         <div id="nvrTabs"></div>
         <div id="thumbnailGrid"></div>
     </div>
@@ -722,35 +723,29 @@
         let placementMountPoint = null;  // {position: Vector3, normal: Vector3}
         let placementMarker = null;  // Visual marker for mount point
 
-        // Camera Mapping
-        let cameraMappings = {};  // { digitalTwinCameraId: { nvrId, channel } }
-        let availableThumbnails = [];  // Loaded from API
+        // Camera Mapping — persisted to localStorage
+        let cameraMappings = JSON.parse(localStorage.getItem('cameraMappings') || '{}');
+        let availableThumbnails = [];
         let currentNvrTab = null;
+
+        function saveMappings() {
+            localStorage.setItem('cameraMappings', JSON.stringify(cameraMappings));
+        }
 
         // Camera Mapping Functions
         async function openMappingPanel() {
-            console.log('openMappingPanel called, currentCameraData:', currentCameraData);
-
             if (!currentCameraData) {
                 alert('Select a camera view first');
                 return;
             }
 
             const panel = document.getElementById('cameraMappingPanel');
-            console.log('cameraMappingPanel element:', panel);
-
-            if (!panel) {
-                console.error('cameraMappingPanel element not found!');
-                return;
-            }
+            if (!panel) return;
 
             document.getElementById('mappingCameraName').textContent =
                 `${currentCameraData.name} (#${currentCameraData.number})`;
 
             panel.classList.add('active');
-            console.log('Panel activated, classList:', panel.classList);
-
-            // Fetch available thumbnails from API
             await loadThumbnails();
         }
 
@@ -759,63 +754,28 @@
         }
 
         async function loadThumbnails() {
-            // Fetch thumbnails from Express server
-            const baseUrl = 'http://localhost:5173';
-            console.log('loadThumbnails called, currentWarehouseId:', currentWarehouseId);
             try {
-                const resp = await fetch(`${baseUrl}/api/warehouses/${currentWarehouseId}/thumbnails`);
+                const resp = await fetch(`/api/warehouses/${currentWarehouseId}/thumbnails`);
                 const data = await resp.json();
-                console.log('Thumbnails API response:', data.count, 'thumbnails (nvr filter:', data.nvrFilter, ')');
                 availableThumbnails = (data.thumbnails || []).map(t => ({
-                    cameraId: t.id,
-                    channel: 0,
-                    thumbnailUrl: `${baseUrl}${t.url}`,
-                    label: t.id
+                    ip: t.id,
+                    thumbnailUrl: t.url,
+                    fullUrl: t.url.replace('/thumb/', '/full/')
                 }));
-                console.log('availableThumbnails:', availableThumbnails.length);
             } catch (err) {
                 console.error('Failed to load thumbnails:', err);
                 availableThumbnails = [];
             }
-            availableThumbnails.sort((a, b) => a.cameraId.localeCompare(b.cameraId));
-            renderNvrTabs([]);
-            renderThumbnailGrid();
-            console.log('renderThumbnailGrid done, grid children:', document.getElementById('thumbnailGrid')?.children.length);
-        }
-
-        function renderNvrTabs(nvrs) {
-            const tabsContainer = document.getElementById('nvrTabs');
-            tabsContainer.innerHTML = '';
-
-            if (nvrs.length <= 1) {
-                currentNvrTab = nvrs[0]?.id || null;
-                return;
-            }
-
-            // Add "All" tab
-            const allTab = document.createElement('button');
-            allTab.className = 'nvrTab active';
-            allTab.textContent = 'All';
-            allTab.onclick = () => selectNvrTab(null, allTab);
-            tabsContainer.appendChild(allTab);
-
-            nvrs.forEach(nvr => {
-                const tab = document.createElement('button');
-                tab.className = 'nvrTab';
-                tab.textContent = nvr.name;
-                tab.onclick = () => selectNvrTab(nvr.id, tab);
-                tabsContainer.appendChild(tab);
+            // Sort by IP numerically
+            availableThumbnails.sort((a, b) => {
+                const aParts = a.ip.split('.').map(Number);
+                const bParts = b.ip.split('.').map(Number);
+                for (let i = 0; i < aParts.length; i++) {
+                    if (aParts[i] !== bParts[i]) return aParts[i] - bParts[i];
+                }
+                return 0;
             });
-
-            currentNvrTab = null;  // Show all by default
-        }
-
-        function selectNvrTab(nvrId, tabElement) {
-            // Update active tab
-            document.querySelectorAll('.nvrTab').forEach(t => t.classList.remove('active'));
-            tabElement.classList.add('active');
-
-            currentNvrTab = nvrId;
+            document.getElementById('nvrTabs').innerHTML = '';
             renderThumbnailGrid();
         }
 
@@ -823,46 +783,36 @@
             const grid = document.getElementById('thumbnailGrid');
             grid.innerHTML = '';
 
-            const filtered = currentNvrTab
-                ? availableThumbnails.filter(t => t.nvrId === currentNvrTab)
-                : availableThumbnails;
-
-            filtered.forEach(thumb => {
+            availableThumbnails.forEach(thumb => {
                 const card = document.createElement('div');
                 card.className = 'thumbnailCard';
                 card.style.position = 'relative';
 
-                // Check if this channel is already mapped to current camera
+                // Check if this camera is already mapped to current mount
                 const mapping = cameraMappings[currentCameraData?.id];
-                if (mapping && mapping.nvrId === thumb.nvrId && mapping.channel === thumb.channel) {
+                if (mapping && mapping.ip === thumb.ip) {
                     card.classList.add('mapped');
                 }
 
                 const img = document.createElement('img');
                 img.src = thumb.thumbnailUrl;
-                img.alt = `${thumb.nvrName} Ch${thumb.channel}`;
+                img.alt = `192.168.0.${thumb.ip}`;
                 img.onerror = () => {
-                    // Show placeholder on error
                     img.src = 'data:image/svg+xml,' + encodeURIComponent(
                         `<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90" viewBox="0 0 160 90">
                             <rect fill="#333" width="160" height="90"/>
                             <text x="80" y="45" fill="#666" text-anchor="middle" font-size="12">No Signal</text>
-                            <text x="80" y="60" fill="#888" text-anchor="middle" font-size="10">Ch ${thumb.channel}</text>
+                            <text x="80" y="60" fill="#888" text-anchor="middle" font-size="10">.${thumb.ip}</text>
                         </svg>`
                     );
                 };
 
                 const label = document.createElement('div');
                 label.className = 'label';
-                label.textContent = thumb.label || `Channel ${thumb.channel}`;
-
-                const sublabel = document.createElement('div');
-                sublabel.className = 'sublabel';
-                sublabel.textContent = thumb.nvrName;
+                label.textContent = `192.168.0.${thumb.ip}`;
 
                 card.appendChild(img);
                 card.appendChild(label);
-                card.appendChild(sublabel);
 
                 card.onclick = () => selectThumbnailMapping(thumb, card);
 
@@ -873,25 +823,22 @@
         function selectThumbnailMapping(thumb, cardElement) {
             if (!currentCameraData) return;
 
-            // Save mapping
+            // Save mapping: mount (food name) -> camera IP
             cameraMappings[currentCameraData.id] = {
-                nvrId: thumb.nvrId,
-                channel: thumb.channel,
-                label: thumb.label
+                ip: thumb.ip,
+                fullUrl: thumb.fullUrl
             };
+            saveMappings();
 
-            console.log(`Mapped ${currentCameraData.name} → ${thumb.nvrName} Ch${thumb.channel}`);
+            console.log(`Mapped mount "${currentCameraData.name}" → 192.168.0.${thumb.ip}`);
 
             // Send to server via WebSocket
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
                     type: 'save-camera-mapping',
                     warehouseId: currentWarehouseId,
-                    cameraId: currentCameraData.id,
-                    mapping: {
-                        nvrId: thumb.nvrId,
-                        channel: thumb.channel
-                    }
+                    mountId: currentCameraData.id,
+                    cameraIp: `192.168.0.${thumb.ip}`
                 }));
             }
 
@@ -899,7 +846,6 @@
             document.querySelectorAll('.thumbnailCard').forEach(c => c.classList.remove('mapped'));
             cardElement.classList.add('mapped');
 
-            // Flash success and close
             cardElement.style.borderColor = 'rgba(100, 255, 100, 1)';
             setTimeout(() => {
                 closeMappingPanel();
@@ -929,46 +875,17 @@
             }
         }
 
-        // Mapping of camera IDs to their channel numbers in filenames
-        const cameraChannelMap = {
-            'bagel': '01', 'bacon': '02', 'beef': '04', 'biscuit': '07',
-            'bread': '06', 'brownie': '05', 'burger': '08', 'butter': '09',
-            'cake': '10', 'candy': '12', 'cheese': '13', 'chicken': '14',
-            'chili': '15', 'chocolate': '16'
-        };
-
         function loadCameraImage() {
             const img = document.getElementById('overlayImage');
             if (currentCameraData && currentCameraData.id) {
-                const cameraId = currentCameraData.id;
-                const channelNum = cameraChannelMap[cameraId] || '01';
-
-                // Try common resolutions in order of likelihood
-                const resolutions = ['2592x1520', '3072x2048', '3840x2160', '4096x3072'];
-                const basePath = `/cameras/lodge_screenshots_20251124_114216/ch${channelNum}_${cameraId}`;
-
-                let resIndex = 0;
-
-                function tryNextResolution() {
-                    if (resIndex >= resolutions.length) {
-                        console.log('No camera image found for:', cameraId);
-                        img.src = '';
-                        return;
-                    }
-                    const res = resolutions[resIndex];
-                    img.src = `${basePath}_${res}.jpg`;
-                    console.log('Trying camera image:', img.src);
-                    resIndex++;
+                const mapping = cameraMappings[currentCameraData.id];
+                if (mapping && mapping.fullUrl) {
+                    img.src = mapping.fullUrl;
+                    img.onerror = () => { img.src = ''; };
+                } else {
+                    img.src = '';
                 }
-
-                img.onerror = tryNextResolution;
-                img.onload = function() {
-                    console.log('Loaded camera image:', img.src);
-                };
-
-                tryNextResolution();
             } else {
-                console.log('No camera selected, cannot load image');
                 img.src = '';
             }
         }
@@ -1186,7 +1103,7 @@
 
         // WebSocket setup
         function initWebSocket() {
-            ws = new WebSocket('ws://localhost:8080');
+            ws = new WebSocket(`ws://${window.location.hostname}:8080`);
 
             ws.onopen = () => {
                 console.log('WebSocket connected');
@@ -1494,6 +1411,38 @@
                 // Dispose old scene if exists
                 if (currentScene) {
                     currentScene.dispose();
+                }
+
+                // Overlay camera data from JSON (source of truth, survives SVG staleness)
+                try {
+                    const camResp = await fetch(`/api/warehouses/${warehouseId}/cameras`);
+                    const camData = await camResp.json();
+                    if (camData.cameras && camData.cameras.length > 0) {
+                        const jsonCamMap = {};
+                        camData.cameras.forEach(c => { jsonCamMap[c.id] = c; });
+
+                        const isV2 = warehouseData.slabs && Array.isArray(warehouseData.slabs);
+                        if (isV2) {
+                            warehouseData.slabs.forEach(slab => {
+                                if (slab.cameras) {
+                                    slab.cameras.forEach((cam, i) => {
+                                        if (jsonCamMap[cam.id]) {
+                                            slab.cameras[i] = { ...cam, ...jsonCamMap[cam.id] };
+                                        }
+                                    });
+                                }
+                            });
+                        } else if (warehouseData.cameras) {
+                            warehouseData.cameras.forEach((cam, i) => {
+                                if (jsonCamMap[cam.id]) {
+                                    warehouseData.cameras[i] = { ...cam, ...jsonCamMap[cam.id] };
+                                }
+                            });
+                        }
+                        console.log(`Overlaid ${camData.cameras.length} cameras from JSON`);
+                    }
+                } catch (e) {
+                    console.error('Failed to load camera JSON overlay:', e);
                 }
 
                 // Create scene
@@ -1865,6 +1814,8 @@
             const rollInput = document.getElementById('camRoll');
             const fovInput = document.getElementById('camViewAngle');
 
+            const elevInput = document.getElementById('camElevation');
+            if (document.activeElement !== elevInput) elevInput.value = elevation.toFixed(1);
             if (document.activeElement !== dirInput) dirInput.value = directionDeg.toFixed(0);
             if (document.activeElement !== tiltInput) tiltInput.value = tiltDeg.toFixed(1);
             if (document.activeElement !== rollInput) rollInput.value = rollDeg.toFixed(1);
@@ -1876,10 +1827,16 @@
         function updateCameraFromInput() {
             if (!universalCamera || !currentCameraData) return;
 
+            const elevation = parseFloat(document.getElementById('camElevation').value) || 12;
             const direction = parseFloat(document.getElementById('camDirection').value) || 0;
             const tilt = parseFloat(document.getElementById('camTilt').value) || 0;
             const roll = parseFloat(document.getElementById('camRoll').value) || 0;
             const viewingAngle = parseFloat(document.getElementById('camViewAngle').value) || 90;
+
+            // Apply elevation
+            const slabElevation = currentCameraData.slabElevation || 4;
+            universalCamera.position.y = slabElevation + elevation;
+            currentCameraData.elevation = elevation;
 
             // Apply direction
             const directionRad = direction * Math.PI / 180;
@@ -1913,6 +1870,7 @@
                 return;
             }
 
+            const elevation = parseFloat(document.getElementById('camElevation').value) || 12;
             const direction = parseFloat(document.getElementById('camDirection').value) || 0;
             const tilt = parseFloat(document.getElementById('camTilt').value) || 0;
             const roll = parseFloat(document.getElementById('camRoll').value) || 0;
@@ -1923,6 +1881,7 @@
                 warehouseId: currentWarehouseId,
                 cameraId: currentCameraData.id,
                 updates: {
+                    elevation: elevation,
                     direction: direction,
                     tilt: tilt,
                     roll: roll,
@@ -1930,7 +1889,7 @@
                 }
             }));
 
-            console.log(`Saving camera ${currentCameraData.id}:`, { direction, tilt, roll, viewingAngle });
+            console.log(`Saving camera ${currentCameraData.id}:`, { elevation, direction, tilt, roll, viewingAngle });
 
             // Visual feedback
             const btn = document.getElementById('saveCameraBtn');

@@ -71,6 +71,12 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', environment: config.env });
 });
 
+// Restart route — batch file loop will restart the process
+app.post('/api/restart', (req, res) => {
+  res.json({ status: 'restarting' });
+  setTimeout(() => process.exit(0), 500);
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not Found' });
@@ -247,6 +253,7 @@ wss.on('connection', (ws) => {
         try {
           // Build CLI command with updates
           let cmd = `node "${cliPath}" ${data.warehouseId} update-camera ${data.cameraId}`;
+          if (data.updates.elevation !== undefined) cmd += ` --elevation ${data.updates.elevation}`;
           if (data.updates.direction !== undefined) cmd += ` --direction ${data.updates.direction}`;
           if (data.updates.tilt !== undefined) cmd += ` --tilt ${data.updates.tilt}`;
           if (data.updates.roll !== undefined) cmd += ` --roll ${data.updates.roll}`;
@@ -330,6 +337,43 @@ wss.on('connection', (ws) => {
             warehouseId: data.warehouseId,
             error: error.message
           }));
+        }
+      }
+
+      // Handle camera mapping: mount (food name) -> camera IP
+      else if (data.type === 'save-camera-mapping') {
+        try {
+          const Database = require('better-sqlite3');
+          const dbPath = path.join(config.warehousesPath, data.warehouseId, `${data.warehouseId}.db`);
+          const db = new Database(dbPath);
+
+          // Find camera MAC by IP
+          const camera = db.prepare('SELECT mac FROM cameras WHERE ip = ?').get(data.cameraIp);
+
+          if (camera) {
+            // Check if linkage exists for this mount
+            const existing = db.prepare('SELECT id FROM linkages WHERE mount_id = ?').get(data.mountId);
+            if (existing) {
+              db.prepare('UPDATE linkages SET camera_mac = ?, verified_by = ?, confidence = ?, verified_at = CURRENT_TIMESTAMP WHERE mount_id = ?')
+                .run(camera.mac, 'manual', 'verified', data.mountId);
+            } else {
+              db.prepare('INSERT INTO linkages (mount_id, camera_mac, verified_by, confidence, verified_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)')
+                .run(data.mountId, camera.mac, 'manual', 'verified');
+            }
+            console.log(`📷 Mapped mount "${data.mountId}" → ${data.cameraIp} (MAC: ${camera.mac})`);
+          } else {
+            console.log(`📷 Mapped mount "${data.mountId}" → ${data.cameraIp} (no MAC in db, IP-only)`);
+          }
+
+          db.close();
+
+          ws.send(JSON.stringify({
+            type: 'mapping-confirmed',
+            mountId: data.mountId,
+            cameraIp: data.cameraIp
+          }));
+        } catch (err) {
+          console.error('Failed to save camera mapping:', err.message);
         }
       }
 

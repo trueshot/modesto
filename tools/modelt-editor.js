@@ -490,7 +490,11 @@ class ModelTEditor {
    */
   commit() {
     this.save();
-    this.regenerateSVG();
+    try {
+      this.regenerateSVG();
+    } catch (e) {
+      console.error('SVG regeneration skipped:', e.message);
+    }
   }
 }
 

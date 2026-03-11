@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+# detect_tags_biscuit.py — Multi-family AprilTag detection on biscuit camera
+# Author: federalcat gen-2
+# Created: 2026-01-14
 """
 Multi-Family AprilTag Detection on Biscuit Camera
 Detects building fiducials, forklifts, and pallets
