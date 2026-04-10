@@ -84,6 +84,13 @@ class _DetectLock:
 detect_lock = _DetectLock()
 MAX_PASSES = 10  # Keep last N passes in memory
 
+# Per-camera adaptive flip state
+# Key: camera identifier (e.g. "nvr1/3" or IP). Value: flip_mode (None=normal, 1=H-flip)
+camera_flip_state: dict[str, int | None] = {}
+camera_flip_forced: dict[str, int | None] = {}  # Forced flip override (API-set), None = auto
+camera_flip_empty_count: dict[str, int] = {}  # Consecutive empty frames per camera
+FLIP_CHECK_AFTER = 30  # Try flip after this many consecutive empty frames
+
 # Initialize detectors
 print("Initializing AprilTag detectors...")
 detectors = {
@@ -295,28 +302,10 @@ TARGET_DETECT_WIDTH = 7680  # Effectively disabled — preserve all pixels for d
 LOW_RES_THRESHOLD = 1920    # Warn when source is below 1080p width
 
 
-def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
-    """Run all detectors, return (detections, detect_time_ms, detect_info)"""
-    start = time.perf_counter()
-
-    h, w = frame.shape[:2]
-    detect_info = {"capture_w": w, "capture_h": h}
-
-    # Right-size: scale down to TARGET_DETECT_WIDTH if larger, otherwise use as-is
-    if w > TARGET_DETECT_WIDTH:
-        scale = TARGET_DETECT_WIDTH / w
-        small = cv2.resize(frame, (int(w * scale), int(h * scale)))
-        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-        detect_info["detect_w"] = int(w * scale)
-        detect_info["detect_h"] = int(h * scale)
-    else:
-        scale = 1.0
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        if w < LOW_RES_THRESHOLD:
-            detect_info["low_res"] = True
-
+def _run_detection_on_gray(gray: np.ndarray, gray_full: np.ndarray, scale: float) -> tuple[list, set]:
+    """Core detection logic on prepared grayscale images. Returns (detections, found_keys)."""
     all_detections = []
-    found_keys = set()  # (asset_name, tag_id) to deduplicate
+    found_keys = set()
 
     # Primary: pupil_apriltags
     for asset_name, config in detectors.items():
@@ -326,14 +315,12 @@ def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
         for d in dets:
             d.asset_name = asset_name
             d.color = config['color']
-            # Scale back to full resolution
             d.center = d.center / scale
             d.corners = d.corners / scale
             all_detections.append(d)
             found_keys.add((asset_name, d.tag_id))
 
-    # Fallback: OpenCV ArUco at full resolution (better perspective tolerance)
-    gray_full = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # Fallback: OpenCV ArUco at full resolution
     for asset_name, config in aruco_detectors.items():
         if asset_name not in enabled_families:
             continue
@@ -342,10 +329,78 @@ def run_detection(frame: np.ndarray) -> tuple[list, float, dict]:
             for i, tag_id in enumerate(ids):
                 tid = int(tag_id[0])
                 if (asset_name, tid) not in found_keys:
-                    corners = corners_list[i][0]  # already full resolution
+                    corners = corners_list[i][0]
                     det = ArUcoDetection(tid, corners, asset_name, config['color'])
                     all_detections.append(det)
                     found_keys.add((asset_name, tid))
+
+    return all_detections, found_keys
+
+
+def run_detection(frame: np.ndarray, camera_key: str = None) -> tuple[list, float, dict]:
+    """Run all detectors with adaptive flip. Returns (detections, detect_time_ms, detect_info).
+
+    camera_key identifies the camera for per-camera flip state (e.g. "nvr1/3" or an IP).
+    If None, no adaptive flip is applied.
+    """
+    start = time.perf_counter()
+
+    h, w = frame.shape[:2]
+    detect_info = {"capture_w": w, "capture_h": h}
+
+    # Determine current flip mode for this camera
+    flip_mode = None
+    if camera_key is not None:
+        forced = camera_flip_forced.get(camera_key)
+        if forced is not None:
+            flip_mode = forced if forced == 1 else None
+        else:
+            flip_mode = camera_flip_state.get(camera_key)
+
+    # Right-size: scale down to TARGET_DETECT_WIDTH if larger, otherwise use as-is
+    if w > TARGET_DETECT_WIDTH:
+        scale = TARGET_DETECT_WIDTH / w
+        small = cv2.resize(frame, (int(w * scale), int(h * scale)))
+        gray_base = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        detect_info["detect_w"] = int(w * scale)
+        detect_info["detect_h"] = int(h * scale)
+    else:
+        scale = 1.0
+        gray_base = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        if w < LOW_RES_THRESHOLD:
+            detect_info["low_res"] = True
+
+    gray_full_base = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Apply flip
+    gray = cv2.flip(gray_base, flip_mode) if flip_mode is not None else gray_base
+    gray_full = cv2.flip(gray_full_base, flip_mode) if flip_mode is not None else gray_full_base
+
+    all_detections, found_keys = _run_detection_on_gray(gray, gray_full, scale)
+
+    # Adaptive flip: if no detections and we have a camera_key, track empties
+    if camera_key is not None and not all_detections:
+        count = camera_flip_empty_count.get(camera_key, 0) + 1
+        camera_flip_empty_count[camera_key] = count
+        if count == FLIP_CHECK_AFTER:
+            # Try the other orientation
+            alt_flip = None if flip_mode is not None else 1
+            alt_gray = cv2.flip(gray_base, alt_flip) if alt_flip is not None else gray_base
+            alt_gray_full = cv2.flip(gray_full_base, alt_flip) if alt_flip is not None else gray_full_base
+            alt_dets, _ = _run_detection_on_gray(alt_gray, alt_gray_full, scale)
+            if alt_dets:
+                # Switch to alt orientation
+                camera_flip_state[camera_key] = alt_flip
+                flip_mode = alt_flip
+                all_detections = alt_dets
+                camera_flip_empty_count[camera_key] = 0
+            else:
+                camera_flip_empty_count[camera_key] = 0
+    elif camera_key is not None and all_detections:
+        camera_flip_empty_count[camera_key] = 0
+
+    # Tag flip_mode into detect_info so callers can report it
+    detect_info["flip_mode"] = "H-flip" if flip_mode == 1 else "normal"
 
     return all_detections, (time.perf_counter() - start) * 1000, detect_info
 
@@ -413,7 +468,9 @@ async def detect(
         return Response(content=b"", media_type="image/jpeg", status_code=404)
 
     # Detect
-    detections, detect_ms, detect_info = run_detection(frame)
+    camera_key = f"{nvr}/{channel}"
+    detections, detect_ms, detect_info = run_detection(frame, camera_key=camera_key)
+    flip_label = detect_info.get("flip_mode", "normal")
 
     # Draw overlays
     annotated = draw_detections(frame.copy(), detections)
@@ -421,13 +478,17 @@ async def detect(
     # Add timing overlay
     h, w = annotated.shape[:2]
     source_label = transport.upper() + ("+SNAP" if snapshot else "")
-    cv2.rectangle(annotated, (0, 0), (450, 110), (40, 40, 40), -1)
+    overlay_h = 140 if flip_label != "normal" else 110
+    cv2.rectangle(annotated, (0, 0), (450, overlay_h), (40, 40, 40), -1)
     cv2.putText(annotated, f"{w}x{h}", (10, 28),
                cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
     cv2.putText(annotated, f"Fetch: {fetch_ms:.0f}ms ({source_label})", (10, 58),
                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
     cv2.putText(annotated, f"Detect: {detect_ms:.0f}ms | Tags: {len(detections)}", (10, 88),
                cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+    if flip_label != "normal":
+        cv2.putText(annotated, f"FLIPPED ({flip_label})", (10, 118),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 128, 255), 2)
 
     # Resize for web (max 800px wide)
     if w > 800:
@@ -453,6 +514,7 @@ async def detect(
             "X-Fetch-Ms": str(int(fetch_ms)),
             "X-Detect-Ms": str(int(detect_ms)),
             "X-Tags": str(len(detections)),
+            "X-Flip-Mode": flip_label,
         }
     )
 
@@ -564,7 +626,7 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
         # Lock serializes detection — pupil_apriltags C lib is not thread-safe
         def _locked_detect(f):
             with detect_lock:
-                return run_detection(f)
+                return run_detection(f, camera_key=key)
         loop = asyncio.get_event_loop()
         detections, detect_ms, detect_info = await loop.run_in_executor(None, _locked_detect, frame)
 
@@ -632,6 +694,9 @@ async def _process_camera_for_pass(pass_id: str, cam: dict):
                     result["capture_ms"] = capture_ms
                 if overhead_ms is not None:
                     result["overhead_ms"] = overhead_ms
+                flip_label = detect_info.get("flip_mode", "normal")
+                if flip_label != "normal":
+                    result["flip_mode"] = flip_label
                 passes[pass_id]["results"][key] = result
                 passes[pass_id]["images"][key] = jpeg.tobytes()
                 passes[pass_id]["images_full"][key] = jpeg_full.tobytes()
@@ -847,10 +912,10 @@ def _pull_receiver():
             if frame is None:
                 continue
 
-            # Run detection
-            detections, detect_ms, detect_info = run_detection(frame)
-
             key = f"{nvr}/{channel}"
+
+            # Run detection
+            detections, detect_ms, detect_info = run_detection(frame, camera_key=key)
 
             # Find which active scan owns this camera
             with scans_lock:
@@ -891,6 +956,9 @@ def _pull_receiver():
                 }
                 if detect_info.get("low_res"):
                     frame_entry["low_res"] = True
+                flip_label = detect_info.get("flip_mode", "normal")
+                if flip_label != "normal":
+                    frame_entry["flip_mode"] = flip_label
                 frame_entry["tags_found"] = tags
                 scan["log_lines"].append(frame_entry)
                 try:
@@ -1114,7 +1182,7 @@ async def _ip_scan_loop(ip: str):
                 # Run detection (serialized by detect_lock via thread executor)
                 def _locked_detect(f):
                     with detect_lock as lk:
-                        dets, d_ms, d_info = run_detection(f)
+                        dets, d_ms, d_info = run_detection(f, camera_key=ip)
                         return dets, d_ms, d_info, lk.wait_ns / 1e6
                 detections, detect_ms, detect_info, wait_ms = await loop.run_in_executor(
                     None, _locked_detect, frame)
@@ -1145,6 +1213,9 @@ async def _ip_scan_loop(ip: str):
                 }
                 if detect_info.get("low_res"):
                     entry["low_res"] = True
+                flip_label = detect_info.get("flip_mode", "normal")
+                if flip_label != "normal":
+                    entry["flip_mode"] = flip_label
 
                 # Write to state and JSONL file
                 with ip_scans_lock:
@@ -1224,6 +1295,45 @@ async def toggle_family(name: str):
     else:
         enabled_families.add(name)
     return {"family": name, "enabled": name in enabled_families}
+
+
+# ---- Per-camera flip control ----
+
+@app.get("/flip")
+async def get_flip_status():
+    """Get flip state for all cameras that have one."""
+    result = {}
+    all_keys = set(camera_flip_state.keys()) | set(camera_flip_forced.keys())
+    for key in sorted(all_keys):
+        current = camera_flip_state.get(key)
+        forced = camera_flip_forced.get(key)
+        result[key] = {
+            "active": "H-flip" if (forced if forced is not None else current) == 1 else "normal",
+            "auto": "H-flip" if current == 1 else "normal",
+            "forced": "H-flip" if forced == 1 else ("normal" if forced is not None else None),
+        }
+    return result
+
+
+@app.post("/flip/{camera_key:path}/set")
+async def set_flip(camera_key: str, mode: int = Query(..., description="0=normal, 1=H-flip")):
+    """Force a camera's flip mode. Overrides auto-detection."""
+    if mode not in (0, 1):
+        return Response(content=json.dumps({"error": "mode must be 0 or 1"}),
+                        media_type="application/json", status_code=400)
+    camera_flip_forced[camera_key] = mode if mode == 1 else None
+    active = camera_flip_forced.get(camera_key)
+    if active is None:
+        active = camera_flip_state.get(camera_key)
+    return {"camera": camera_key, "forced": mode, "active": "H-flip" if active == 1 else "normal"}
+
+
+@app.post("/flip/{camera_key:path}/auto")
+async def set_flip_auto(camera_key: str):
+    """Clear forced flip — return to auto-detection for this camera."""
+    camera_flip_forced.pop(camera_key, None)
+    current = camera_flip_state.get(camera_key)
+    return {"camera": camera_key, "forced": None, "active": "H-flip" if current == 1 else "normal"}
 
 
 # ---- IP scan endpoints ----
