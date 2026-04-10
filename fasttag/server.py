@@ -70,6 +70,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_CAMERA_CONFIG = {
     "enabled": True,
     "target_fps": 5.0,  # target detection rate (frames per second)
+    "flip": None,       # None = normal, 1 = H-flip. Adaptive: auto-switches on detection failure.
 }
 
 
@@ -382,8 +383,12 @@ def start_cameras(request: StartRequest):
             errors.append({"ip": ip, "error": "no RTSP path available (direct or NVR)"})
             continue
 
-        # Merge detection config with per-camera rate
-        worker_config = {**config, "target_fps": cam_cfg.get("target_fps", 5.0)}
+        # Merge detection config with per-camera settings
+        worker_config = {
+            **config,
+            "target_fps": cam_cfg.get("target_fps", 5.0),
+            "flip": cam_cfg.get("flip", None),
+        }
 
         stop_event = multiprocessing.Event()
 
@@ -480,6 +485,7 @@ def get_status():
             "detect_count": hb["detect_count"] if hb else 0,
             "status": hb["status"] if hb else "starting",
             "error": hb.get("error") if hb else None,
+            "flip_mode": hb.get("flip_mode", "normal") if hb else "normal",
             "last_heartbeat_age": round(now - hb["timestamp"], 1) if hb else None,
         }
 
@@ -582,6 +588,7 @@ def get_camera_config(camera_ip: str):
 class CameraConfigUpdate(BaseModel):
     enabled: Optional[bool] = None
     target_fps: Optional[float] = None
+    flip: Optional[int] = None  # None=normal (auto-detect), 1=force H-flip
 
 
 @app.put("/cameras/{camera_ip}/config")
@@ -598,6 +605,10 @@ def set_camera_config(camera_ip: str, update: CameraConfigUpdate):
         if update.target_fps <= 0 or update.target_fps > 30:
             raise HTTPException(status_code=400, detail="target_fps must be 0.1-30")
         current["target_fps"] = update.target_fps
+    if update.flip is not None:
+        if update.flip not in (0, 1):
+            raise HTTPException(status_code=400, detail="flip must be 0 (normal) or 1 (H-flip)")
+        current["flip"] = update.flip if update.flip == 1 else None
     save_camera_config(camera_ip, current)
     return {"ip": camera_ip, "config": current}
 

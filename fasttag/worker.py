@@ -41,6 +41,8 @@ def detection_worker(
         config: Detection config dict with keys:
             - families: str (e.g., "tagCustom48h12")
             - quad_decimate: float (1.0 = full, 2.0 = half)
+            - flip: int or None — initial flip mode (None=normal, 1=H-flip)
+            - flip_check_after: int — consecutive empty frames before trying flip (default 30)
     """
     # Import detector inside the process — each gets its own instance
     from pupil_apriltags import Detector
@@ -50,6 +52,14 @@ def detection_worker(
     nthreads = config.get("nthreads", 4)
     target_fps = config.get("target_fps", 0)  # 0 = no limit
     frame_interval = 1.0 / target_fps if target_fps > 0 else 0
+
+    # Adaptive flip: if camera image is mirrored, tags are undetectable
+    # (mirror of a valid codeword lands outside error correction threshold).
+    # Strategy: track consecutive empty frames. After flip_check_after empties,
+    # try the other orientation. Sticky until it stops working too.
+    flip_mode = config.get("flip", None)  # None = normal, 1 = H-flip
+    flip_check_after = config.get("flip_check_after", 30)
+    consecutive_empty = 0
 
     detector = Detector(
         families=families,
@@ -81,6 +91,7 @@ def detection_worker(
             "fps": round(fps, 2),
             "status": status,
             "error": error,
+            "flip_mode": "H-flip" if flip_mode == 1 else "normal",
         })
 
     def calc_fps() -> float:
@@ -137,8 +148,31 @@ def detection_worker(
                 # Convert to grayscale for detection
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+                # Apply flip if active
+                detect_gray = cv2.flip(gray, flip_mode) if flip_mode is not None else gray
+
                 # Detect
-                detections = detector.detect(gray)
+                detections = detector.detect(detect_gray)
+
+                # Adaptive flip: if no detections, count empties.
+                # After flip_check_after consecutive empties, try the other orientation.
+                if not detections:
+                    consecutive_empty += 1
+                    if consecutive_empty == flip_check_after:
+                        alt_flip = None if flip_mode is not None else 1
+                        alt_gray = cv2.flip(gray, alt_flip) if alt_flip is not None else gray
+                        alt_dets = detector.detect(alt_gray)
+                        if alt_dets:
+                            flip_mode = alt_flip
+                            detections = alt_dets
+                            detect_gray = alt_gray
+                            consecutive_empty = 0
+                        # If alt also empty, reset counter and keep current mode.
+                        # We'll check again after another flip_check_after frames.
+                        else:
+                            consecutive_empty = 0
+                else:
+                    consecutive_empty = 0
 
                 for det in detections:
                     detect_count += 1
@@ -152,6 +186,7 @@ def detection_worker(
                         "corners": det.corners.tolist(),
                         "decision_margin": float(det.decision_margin),
                         "frame_seq": frame_seq,
+                        "flip_mode": "H-flip" if flip_mode == 1 else "normal",
                     }
                     result_queue.put(det_record)
                     # Per-camera JSONL log
