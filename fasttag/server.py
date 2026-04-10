@@ -124,7 +124,7 @@ def get_camera_by_ip(camera_ip: str) -> Optional[dict]:
     conn = sqlite3.connect(str(DB_PATH), timeout=2)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT mac, ip, model, rtsp_path FROM cameras WHERE ip = ?", (camera_ip,))
+    cur.execute("SELECT mac, ip, model, rtsp_path, protocol, http_path FROM cameras WHERE ip = ?", (camera_ip,))
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -150,7 +150,7 @@ def get_all_active_cameras() -> list:
     # 1. All cameras on active channels
     cur.execute("""
         SELECT DISTINCT cam.mac, cam.ip, cam.model, cam.rtsp_path,
-               ch.nvr_id, ch.channel_number
+               cam.protocol, cam.http_path, ch.nvr_id, ch.channel_number
         FROM channels ch
         JOIN cameras cam ON ch.camera_id = cam.mac
         WHERE ch.status = 'active' AND cam.ip IS NOT NULL
@@ -163,6 +163,8 @@ def get_all_active_cameras() -> list:
         entry = {
             'mac': row['mac'], 'ip': ip, 'model': row['model'],
             'rtsp_path': row['rtsp_path'],
+            'protocol': row['protocol'] or 'rtsp',
+            'http_path': row['http_path'],
             'nvr_id': row['nvr_id'], 'channel': row['channel_number'],
         }
         if row['rtsp_path']:
@@ -173,9 +175,9 @@ def get_all_active_cameras() -> list:
 
     # 2. Cameras with direct access not on any active channel
     cur.execute("""
-        SELECT mac, ip, model, rtsp_path
+        SELECT mac, ip, model, rtsp_path, protocol, http_path
         FROM cameras
-        WHERE ip IS NOT NULL AND rtsp_path IS NOT NULL
+        WHERE ip IS NOT NULL AND (rtsp_path IS NOT NULL OR protocol IS NOT NULL)
           AND mac NOT IN (
             SELECT camera_id FROM channels WHERE status = 'active' AND camera_id IS NOT NULL
           )
@@ -186,6 +188,8 @@ def get_all_active_cameras() -> list:
             cameras_by_ip[ip] = {
                 'mac': row['mac'], 'ip': ip, 'model': row['model'],
                 'rtsp_path': row['rtsp_path'],
+                'protocol': row['protocol'] or 'rtsp',
+                'http_path': row['http_path'],
                 'nvr_id': None, 'channel': None,
                 'access': 'direct',
             }
@@ -208,7 +212,11 @@ def get_all_active_cameras() -> list:
 
 
 def build_rtsp_url(cam: dict) -> str:
-    """Build RTSP URL for a camera — direct if available, NVR fallback otherwise."""
+    """Build RTSP URL for a camera — direct if available, NVR fallback otherwise.
+    Returns None for non-RTSP cameras (e.g. HTTP/MJPEG)."""
+    if cam.get('protocol', 'rtsp') != 'rtsp':
+        return None  # HTTP cameras handled separately
+
     ip = cam['ip']
 
     if cam.get('rtsp_path'):

@@ -1,6 +1,9 @@
 {
-  "_doc": "Camera model → .env credential prefix. Used by nvr-service and camera-service.",
-  "_author": "novicat gen-13",
+  "_doc": "Camera credential resolution. Maps camera model (from lodge.db) to .env variable prefix.",
+  "_how": "Lookup: model -> prefix -> .env ${prefix}_USER / ${prefix}_PASS. Per-IP override: CAM_{last_octet}_USER / CAM_{last_octet}_PASS. Default: admin / empty.",
+  "_consumers": "camera-service/api/server.py, fasttag/server.py, nvr-service/server.py — all use get_camera_credentials(model, ip)",
+  "_note": "Credentials are NOT stored in lodge.db. They live here + .env only, so the git-tracked snapshot stays clean.",
+  "_author": "novicat gen-13, updated modeltcamerascat gen-41",
   "IPCamera": "CAM_UNIVIEW",
   "N802-IRC-GW": "CAM_N802",
   "YM600F_AF": "CAM_YM600F",
