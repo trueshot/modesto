@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-04-10T19:12:02.205Z
+-- Generated: 2026-04-17T07:37:12.304Z
 
 BEGIN TRANSACTION;
 
@@ -20,43 +20,49 @@ CREATE TABLE cameras (
     reachable_from_lan INTEGER,
     protocol TEXT,
     http_path TEXT
-);
+, baseline_color TEXT);
 
 INSERT INTO "cameras" VALUES('F0:00:00:77:2D:8D','YM600F_AF','A_ONVIF_CAMERA','EF00000000772D8D','3072x2048','192.168.0.151','V3.0.2.5 build 2020-09-24 17:00:10 
-',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1,NULL,NULL);
+',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1,NULL,NULL,NULL);
 INSERT INTO "cameras" VALUES('F0:00:00:77:2E:EB','YM600F_AF','A_ONVIF_CAMERA','EF00000000772EEB','3072x2048','192.168.0.152','V3.0.2.5 build 2020-09-24 17:00:10 
-',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('F4:00:00:01:A8:BB','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb','3840x2160','192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18','/media/live/1/1',1,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('F0:00:00:77:28:F4','YM600F_AF','A_ONVIF_CAMERA','EF000000007728F4','3072x2048','192.168.0.156','V3.0.2.5 build 2020-09-24',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1,NULL,NULL);
+',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A8:BB','N802-IRC-GW','A_ONVIF_CAMERA','01a8bb','3840x2160','192.168.0.133','V1.0.3.17-build:20241205154401',NULL,NULL,NULL,'2026-01-22 12:23:18','/media/live/1/1',1,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('F0:00:00:77:28:F4','YM600F_AF','A_ONVIF_CAMERA','EF000000007728F4','3072x2048','192.168.0.156','V3.0.2.5 build 2020-09-24',NULL,NULL,NULL,'2026-01-22 12:23:18','/Streaming/Channels/101',1,1,NULL,NULL,NULL);
 INSERT INTO "cameras" VALUES('F0:00:00:C5:4C:B4','YMF52_STARIR_GW_AF','A_ONVIF_CAMERA','EF00000000C54CB4','3072x2048','192.168.0.66','V3.0.7.5 build 2022-04-22 18:50:44 
-',NULL,NULL,NULL,'2026-01-22 12:23:18','/cam/realmonitor?channel=1&subtype=0',1,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A9','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.172',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A4','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.59',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:58','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.183',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:2A','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.198',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:8D','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.105',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('38:24:F1:01:14:B2','GWIP85BF','GW Security',NULL,NULL,'192.168.0.245',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL,0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('38:24:F1:05:19:D4','GWIP85BF','GW Security',NULL,NULL,'192.168.0.94',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL,0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('F4:00:00:01:A8:E2','N802-IRC-GW','GW Security',NULL,'3840x2160','192.168.0.170',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('F4:00:00:01:A9:01','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.185',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('F4:00:00:01:A8:EF','N802-IRC-GW','GW Security',NULL,'3840x2160','192.168.0.224',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AE','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.223',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:BE','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.176',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AD','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.209',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('38:24:F1:01:3C:C2','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.178',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:57','IPCamera',NULL,NULL,'3840x2160','192.168.0.28',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:72:05','IPCamera',NULL,NULL,'3840x2160','192.168.0.29',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:6F','IPCamera',NULL,NULL,'3840x2160','192.168.0.32',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A1','IPCamera',NULL,NULL,'3840x2160','192.168.0.162',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:72:0B','IPCamera',NULL,NULL,NULL,'192.168.0.168',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:84','IPCamera',NULL,NULL,'3840x2160','192.168.0.204',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_13',NULL,'I91DL',NULL,NULL,'192.168.0.13',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL);
-INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_30',NULL,'IPC',NULL,NULL,'192.168.0.30',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL);
-INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_67',NULL,'ONVIF_CAMERA',NULL,NULL,'192.168.0.67',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,1,1,NULL,NULL);
-INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_119',NULL,'WC-MT94Wi28',NULL,NULL,'192.168.0.119',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL);
-INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_169',NULL,'IPC',NULL,NULL,'192.168.0.169',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL);
-INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_235',NULL,'WC-MT94Wi28',NULL,NULL,'192.168.0.235',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL);
-INSERT INTO "cameras" VALUES('46:1d:64:60:8a:84','PoE-CAM','M5Stack',NULL,'1024x768','192.168.0.7',NULL,NULL,NULL,'ESP32 PoE camera. DHCP — IP changes on reboot. MJPEG only. Flaky after a few requests. Button cycles resolution (untested).','2026-04-10 18:44:14',NULL,0,1,'http','/');
+',NULL,NULL,NULL,'2026-01-22 12:23:18','/cam/realmonitor?channel=1&subtype=0',1,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A9','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.172',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A4','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.59',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:58','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.183',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:2A','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.198',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:8D','IPCamera','UNIVIEW',NULL,'3840x2160','192.168.0.105',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('38:24:F1:01:14:B2','GWIP85BF','GW Security',NULL,NULL,'192.168.0.245',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL,0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('38:24:F1:05:19:D4','GWIP85BF','GW Security',NULL,NULL,'192.168.0.94',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50',NULL,0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A8:E2','N802-IRC-GW','GW Security',NULL,'3840x2160','192.168.0.170',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A9:01','N802-IRC-GW','GW Security',NULL,NULL,'192.168.0.185',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('F4:00:00:01:A8:EF','N802-IRC-GW','GW Security',NULL,'3840x2160','192.168.0.224',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/media/live/1/1',1,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AE','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.223',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:BE','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.176',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:AD','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.209',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('38:24:F1:01:3C:C2','GW12577MIC','GW Security',NULL,'4096x3072','192.168.0.178',NULL,NULL,NULL,NULL,'2026-02-17 10:12:50','/H264/ch1/main/av_stream',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:57','IPCamera',NULL,NULL,'3840x2160','192.168.0.28',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:72:05','IPCamera',NULL,NULL,'3840x2160','192.168.0.29',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:6F','IPCamera',NULL,NULL,'3840x2160','192.168.0.32',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:A1','IPCamera',NULL,NULL,'3840x2160','192.168.0.162',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:72:0B','IPCamera',NULL,NULL,NULL,'192.168.0.168',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('2C:6F:51:3B:71:84','IPCamera',NULL,NULL,'3840x2160','192.168.0.204',NULL,NULL,NULL,NULL,'2026-03-05 09:40:14','/Streaming/Channels/101',0,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_13',NULL,'I91DL',NULL,NULL,'192.168.0.13',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_30',NULL,'IPC',NULL,NULL,'192.168.0.30',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_67',NULL,'ONVIF_CAMERA',NULL,NULL,'192.168.0.67',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,1,1,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_119',NULL,'WC-MT94Wi28',NULL,NULL,'192.168.0.119',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_169',NULL,'IPC',NULL,NULL,'192.168.0.169',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_235',NULL,'WC-MT94Wi28',NULL,NULL,'192.168.0.235',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL,NULL);
+INSERT INTO "cameras" VALUES('46:1d:64:60:8a:84','PoE-CAM','M5Stack',NULL,'1024x768','192.168.0.7',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-10 18:44:14',NULL,0,1,'http','/',NULL);
+INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a4:98','PoE-CAM',NULL,NULL,'1024x768','192.168.0.221',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/',NULL);
+INSERT INTO "cameras" VALUES('3e:8a:1f:d7:9f:9c','PoE-CAM',NULL,NULL,'1280x720','192.168.0.229',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/',NULL);
+INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a4:a8','PoE-CAM',NULL,NULL,'1600x1200','192.168.0.230',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/','{"r": 20.9, "g": 12.8, "b": 23.5, "brightness": 15.3, "std": 32.2, "samples": 10, "source_log": "poecam-reliability.jsonl", "ambient_temp_f": 63, "captured_at": "2026-04-17T07:37:06.311481+00:00"}');
+INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a1:70','PoE-CAM',NULL,NULL,'640x480','192.168.0.231',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/',NULL);
+INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a4:dc','PoE-CAM',NULL,NULL,NULL,'192.168.0.232',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/',NULL);
+INSERT INTO "cameras" VALUES('46:1d:64:60:8a:44','PoE-CAM','M5Stack',NULL,'1024x768','192.168.0.226',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/',NULL);
 
 CREATE TABLE channels (
     id TEXT PRIMARY KEY,              -- 'nvr1_ch01', 'nvr2_ch05'
@@ -342,8 +348,8 @@ CREATE TABLE nvrs (
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 , serial TEXT, ownership TEXT DEFAULT 'OURS', onvif_supported INTEGER DEFAULT 0);
 
-INSERT INTO "nvrs" VALUES('nvr1','GW Security',NULL,'192.168.0.6','00:23:63:6e:bc:7f',16,'rtsp','ch{channel:02d}/0',NULL,NULL,'Back online 2026-02-17 at .6. Empty password. 14 active channels (ch08,ch11 empty). Ports 80,554,9000.','2026-01-22 12:23:18',NULL,'OURS',0);
-INSERT INTO "nvrs" VALUES('nvr2','UNIVIEW','XVR302-16Q3','192.168.0.7','c4:79:05:e4:f5:0f',24,'rtsp','unicast/c{channel}/s0',NULL,NULL,'Chinese UNIVIEW hybrid NVR. LAPI partially functional. Web UI in Chinese.','2026-01-22 12:23:18','210235XJGM324C000048','OURS',1);
+INSERT INTO "nvrs" VALUES('nvr1','GW Security',NULL,'192.168.0.17','00:23:63:6e:bc:7f',16,'rtsp','ch{channel:02d}/0',NULL,NULL,'Back online 2026-02-17 at .6. Empty password. 14 active channels (ch08,ch11 empty). Ports 80,554,9000.','2026-01-22 12:23:18',NULL,'OURS',0);
+INSERT INTO "nvrs" VALUES('nvr2','UNIVIEW','XVR302-16Q3','192.168.0.10','c4:79:05:e4:f5:0f',24,'rtsp','unicast/c{channel}/s0',NULL,NULL,'Chinese UNIVIEW hybrid NVR. LAPI partially functional. Web UI in Chinese.','2026-01-22 12:23:18','210235XJGM324C000048','OURS',1);
 
 CREATE TABLE sqlite_sequence(name,seq);
 

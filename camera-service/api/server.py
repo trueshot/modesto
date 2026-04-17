@@ -41,6 +41,7 @@ from playback import capture_playback_frame
 from mediator import (
     FrameMediator, StreamManager, resolve_camera_key, clear_key_cache,
 )
+from http_mediator import HttpCameraMediator
 
 # ============================================================================
 # CAMERA CREDENTIALS (.env)
@@ -109,6 +110,10 @@ app.add_middleware(
 # Initialize camera capture and cache
 camera_capture = CameraCapture(warehouses_path="../warehouses")
 image_cache = ImageCache(default_ttl=30)  # 30 second cache
+
+# HTTP camera proxy (ESP32/PoE-CAM). Coalesces per-IP concurrent requests
+# onto a single upstream connection since these devices lock up otherwise.
+http_mediator = HttpCameraMediator()
 
 # ============================================================================
 # MODELS
@@ -1383,7 +1388,7 @@ def _get_camera_by_ip(camera_ip: str) -> Optional[dict]:
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT mac, ip, model, rtsp_path
+        SELECT mac, ip, model, rtsp_path, protocol, http_path
         FROM cameras
         WHERE ip = ?
     """, (camera_ip,))
@@ -1424,6 +1429,23 @@ def get_camera_frame_by_ip(
     cam = _get_camera_by_ip(camera_ip)
     if not cam:
         raise HTTPException(status_code=404, detail=f"Camera with IP '{camera_ip}' not found in cameras table")
+
+    # HTTP cameras (ESP32/PoE-CAM) — route through coalescing mediator.
+    if cam.get("protocol") == "http":
+        http_path = cam.get("http_path") or "/"
+        try:
+            image_data = http_mediator.get_frame(camera_ip, http_path)
+        except requests.RequestException as e:
+            raise HTTPException(status_code=503, detail=f"HTTP camera {camera_ip} failed: {e}")
+        media_type = "image/jpeg"  # PoE-CAM firmware serves JPEG only
+        if format == "base64":
+            return {
+                "camera_ip": camera_ip,
+                "source": "http-mediator",
+                "image": base64.b64encode(image_data).decode('utf-8'),
+                "format": "jpeg",
+            }
+        return Response(content=image_data, media_type=media_type)
 
     # Build direct RTSP URL
     rtsp_url = build_direct_rtsp_url(cam)
@@ -1482,6 +1504,21 @@ def stop_camera_stream(camera_ip: str):
 def list_streams():
     """List all active persistent RTSP streams and their status."""
     return stream_manager.status()
+
+
+@app.get("/api/http-cameras/status")
+def http_cameras_status():
+    """Per-camera state for HTTP (ESP32/PoE-CAM) proxy: frames served, failures, circuit state."""
+    return http_mediator.status()
+
+
+@app.post("/api/http-cameras/{camera_ip}/reset-circuit")
+def http_camera_reset_circuit(camera_ip: str):
+    """Clear a locked-open circuit breaker after a camera has been power-cycled."""
+    cleared = http_mediator.reset_circuit(camera_ip)
+    if not cleared:
+        raise HTTPException(status_code=404, detail=f"No HTTP camera state for {camera_ip}")
+    return {"camera_ip": camera_ip, "status": "reset"}
 
 
 # ============================================================================

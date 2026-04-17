@@ -1,0 +1,51 @@
+{"ts": "2026-04-10T21:28:35.877421+00:00", "stage": "baseline", "interval": 30.0, "type": "stage_start"}
+{"ts": "2026-04-10T21:28:35.878072+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.036, "stage": "baseline"}
+{"ts": "2026-04-10T21:29:10.914848+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.036, "stage": "baseline"}
+{"ts": "2026-04-10T21:29:45.951695+00:00", "ip": "192.168.0.7", "ok": true, "status": 200, "bytes": 44782, "content_type": "image/jpeg", "elapsed_s": 0.152, "stage": "baseline"}
+{"ts": "2026-04-10T21:30:16.104670+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.03, "stage": "baseline"}
+{"ts": "2026-04-10T21:30:51.135089+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.032, "stage": "baseline"}
+{"ts": "2026-04-10T21:31:26.168021+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.018, "stage": "baseline"}
+{"ts": "2026-04-10T21:32:01.186627+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.029, "stage": "baseline"}
+{"ts": "2026-04-10T21:32:36.216305+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.006, "stage": "baseline"}
+{"ts": "2026-04-10T21:33:11.222546+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.038, "stage": "baseline"}
+{"ts": "2026-04-10T21:33:46.261315+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.016, "stage": "baseline"}
+{"ts": "2026-04-10T21:34:21.278421+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.014, "stage": "baseline"}
+{"ts": "2026-04-10T21:34:56.294029+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.029, "stage": "baseline"}
+{"ts": "2026-04-10T21:35:31.323839+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.016, "stage": "baseline"}
+{"ts": "2026-04-10T21:35:36.340463+00:00", "stage": "baseline", "type": "stage_abort", "reason": "10 consecutive failures"}
+{"ts": "2026-04-10T21:40:32.796779+00:00", "stage": "baseline", "interval": 30.0, "type": "stage_start", "mode": "persistent"}
+{"ts": "2026-04-10T21:40:32.796779+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.007, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:41:07.804155+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.022, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:41:42.826484+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.028, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:42:17.855258+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.018, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:42:52.874078+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.029, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:43:27.903954+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.014, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:44:02.919027+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.016, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:44:37.935459+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.029, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:45:12.966643+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.015, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:45:47.982211+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.013, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-10T21:45:52.995373+00:00", "stage": "baseline", "type": "stage_abort", "reason": "10 consecutive failures"}
+{"ts": "2026-04-11T03:54:45.428496+00:00", "stage": "baseline", "interval": 30.0, "type": "stage_start", "mode": "persistent"}
+{"ts": "2026-04-11T03:54:45.428496+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.059, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:55:20.488752+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.024, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:55:55.513112+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.013, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:56:30.527868+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.014, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:57:05.542611+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.031, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:57:40.574745+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.016, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:58:15.591123+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.011, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:58:50.603039+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.002, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T03:59:25.606056+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.029, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T04:00:00.635861+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.004, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-11T04:00:05.640570+00:00", "stage": "baseline", "type": "stage_abort", "reason": "10 consecutive failures"}
+{"ts": "2026-04-13T05:13:46.387266+00:00", "stage": "baseline", "interval": 30.0, "type": "stage_start", "mode": "persistent"}
+{"ts": "2026-04-13T05:13:46.388266+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.036, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:14:21.425168+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.031, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:14:56.457694+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.009, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:15:31.467044+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.019, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:16:06.487451+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.028, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:16:41.516259+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.008, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:17:16.525087+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.006, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:17:51.532572+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.032, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:18:26.565256+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.03, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:19:01.596122+00:00", "ip": "192.168.0.7", "ok": false, "error": "timed out", "elapsed_s": 5.013, "mode": "persistent", "stage": "baseline"}
+{"ts": "2026-04-13T05:19:06.608943+00:00", "stage": "baseline", "type": "stage_abort", "reason": "10 consecutive failures"}

@@ -1,0 +1,55 @@
+{"ts": "2026-04-17T06:53:32.037777+00:00", "stage": "1 fps", "interval": 1.0, "type": "stage_start", "mode": "persistent"}
+{"ts": "2026-04-17T06:53:32.038292+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19613, "content_type": "image/jpeg", "elapsed_s": 0.058, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:33.096707+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18628, "content_type": "image/jpeg", "elapsed_s": 0.074, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:34.176051+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18220, "content_type": "image/jpeg", "elapsed_s": 0.08, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:35.267648+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19021, "content_type": "image/jpeg", "elapsed_s": 0.069, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:36.337600+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19614, "content_type": "image/jpeg", "elapsed_s": 0.076, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:37.418472+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19334, "content_type": "image/jpeg", "elapsed_s": 0.079, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:38.498277+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19347, "content_type": "image/jpeg", "elapsed_s": 0.07, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:39.579790+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19135, "content_type": "image/jpeg", "elapsed_s": 0.078, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:40.660509+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19334, "content_type": "image/jpeg", "elapsed_s": 0.067, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:41.740220+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19237, "content_type": "image/jpeg", "elapsed_s": 0.08, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:42.821385+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 20960, "content_type": "image/jpeg", "elapsed_s": 0.078, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:43.902244+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19735, "content_type": "image/jpeg", "elapsed_s": 0.066, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:44.982614+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18210, "content_type": "image/jpeg", "elapsed_s": 0.109, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:46.097940+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19697, "content_type": "image/jpeg", "elapsed_s": 0.079, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:47.179469+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19236, "content_type": "image/jpeg", "elapsed_s": 0.071, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:48.259019+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18677, "content_type": "image/jpeg", "elapsed_s": 0.081, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:49.340452+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 20023, "content_type": "image/jpeg", "elapsed_s": 0.068, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:50.421351+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18900, "content_type": "image/jpeg", "elapsed_s": 0.071, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:51.500959+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18458, "content_type": "image/jpeg", "elapsed_s": 0.077, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:52.582197+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19593, "content_type": "image/jpeg", "elapsed_s": 0.067, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:53.662616+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18437, "content_type": "image/jpeg", "elapsed_s": 0.115, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:54.778739+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19166, "content_type": "image/jpeg", "elapsed_s": 0.064, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:55.859388+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19190, "content_type": "image/jpeg", "elapsed_s": 0.079, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:56.939978+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19092, "content_type": "image/jpeg", "elapsed_s": 0.07, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:58.020504+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19155, "content_type": "image/jpeg", "elapsed_s": 0.067, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:53:59.100792+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 20151, "content_type": "image/jpeg", "elapsed_s": 0.08, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:00.181865+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19816, "content_type": "image/jpeg", "elapsed_s": 0.082, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:01.271000+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18610, "content_type": "image/jpeg", "elapsed_s": 0.066, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:02.342864+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19258, "content_type": "image/jpeg", "elapsed_s": 0.075, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:03.422987+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18639, "content_type": "image/jpeg", "elapsed_s": 0.079, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:04.503835+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18650, "content_type": "image/jpeg", "elapsed_s": 0.077, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:05.583600+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18916, "content_type": "image/jpeg", "elapsed_s": 0.085, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:06.671314+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18594, "content_type": "image/jpeg", "elapsed_s": 0.072, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:07.746138+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18814, "content_type": "image/jpeg", "elapsed_s": 0.077, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:08.825847+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19221, "content_type": "image/jpeg", "elapsed_s": 0.078, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:09.905994+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19063, "content_type": "image/jpeg", "elapsed_s": 0.065, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:10.986827+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18866, "content_type": "image/jpeg", "elapsed_s": 0.069, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:12.066656+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19189, "content_type": "image/jpeg", "elapsed_s": 0.083, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:13.153189+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18966, "content_type": "image/jpeg", "elapsed_s": 0.073, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:14.228279+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19443, "content_type": "image/jpeg", "elapsed_s": 0.078, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:15.308874+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 20862, "content_type": "image/jpeg", "elapsed_s": 0.066, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:16.390900+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 18167, "content_type": "image/jpeg", "elapsed_s": 0.071, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:17.469032+00:00", "ip": "192.168.0.221", "ok": true, "status": 200, "bytes": 19635, "content_type": "image/jpeg", "elapsed_s": 0.074, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:18.551425+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.01, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:24.562064+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.012, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:30.574690+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.038, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:36.613414+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.013, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:42.628126+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.014, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:48.643218+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.024, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:54:54.668125+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.014, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:55:00.683260+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.025, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:55:06.709570+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.013, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:55:12.723130+00:00", "ip": "192.168.0.221", "ok": false, "error": "timed out", "elapsed_s": 5.007, "mode": "persistent", "stage": "1 fps"}
+{"ts": "2026-04-17T06:55:17.730548+00:00", "stage": "1 fps", "type": "stage_abort", "reason": "10 consecutive failures"}
