@@ -40,24 +40,30 @@ logger = logging.getLogger(__name__)
 @dataclass
 class _CamState:
     lock: threading.Lock = field(default_factory=threading.Lock)
+    frame_cond: threading.Condition = field(init=False)
     worker_thread: Optional[threading.Thread] = None
     stop_event: Optional[threading.Event] = None
-    first_frame_event: Optional[threading.Event] = None
 
     last_frame: Optional[bytes] = None
     last_frame_ts: float = 0.0
     last_consumer_access: float = 0.0
 
-    frame_count: int = 0
-    byte_count: int = 0
+    # Session stats — reset on each worker restart
+    session_frame_count: int = 0
+    session_byte_count: int = 0
     stream_started_at: float = 0.0
+
+    # Lifetime stats across worker restarts
+    total_frame_count: int = 0
+    total_byte_count: int = 0
+    total_reconnects: int = 0
 
     last_error: Optional[str] = None
     consecutive_connect_fails: int = 0
     unhealthy_until: float = 0.0
 
-    # Stats
-    total_reconnects: int = 0
+    def __post_init__(self):
+        self.frame_cond = threading.Condition(self.lock)
 
 
 class HttpCameraMediator:
@@ -80,6 +86,7 @@ class HttpCameraMediator:
         self,
         idle_grace_s: float = 60.0,
         first_frame_timeout_s: float = 5.0,
+        stale_after_ms: int = 2000,
         connect_fail_threshold: int = 3,
         circuit_cooldown_s: float = 30.0,
         reconnect_backoff_s: float = 1.0,
@@ -87,6 +94,7 @@ class HttpCameraMediator:
     ):
         self.idle_grace_s = idle_grace_s
         self.first_frame_timeout_s = first_frame_timeout_s
+        self.stale_after_ms = stale_after_ms
         self.connect_fail_threshold = connect_fail_threshold
         self.circuit_cooldown_s = circuit_cooldown_s
         self.reconnect_backoff_s = reconnect_backoff_s
@@ -105,11 +113,11 @@ class HttpCameraMediator:
     def get_frame(self, ip: str, http_path: str = "/stream") -> bytes:
         """
         Return the latest JPEG frame. Starts the stream worker on demand.
-        On cold start, blocks up to first_frame_timeout_s waiting for the
-        first frame. On warm buffer, returns instantly.
+        If the cached frame is older than stale_after_ms, waits for a fresh
+        frame (up to first_frame_timeout_s). Otherwise returns instantly.
 
-        Raises requests.RequestException if circuit is open or no frame
-        arrives within the timeout.
+        Raises requests.RequestException if circuit is open or no fresh
+        frame arrives within the timeout.
         """
         s = self._state(ip)
         now = time.time()
@@ -117,22 +125,21 @@ class HttpCameraMediator:
         with s.lock:
             s.last_consumer_access = now
 
-            # Circuit open?
             if now < s.unhealthy_until:
                 raise requests.RequestException(
                     f"{ip} circuit open for {s.unhealthy_until - now:.1f}s more "
                     f"(last error: {s.last_error})"
                 )
 
-            # Ensure worker is running.
             need_start = (
                 s.worker_thread is None
                 or not s.worker_thread.is_alive()
             )
             if need_start:
                 s.stop_event = threading.Event()
-                s.first_frame_event = threading.Event()
                 s.stream_started_at = now
+                s.session_frame_count = 0
+                s.session_byte_count = 0
                 t = threading.Thread(
                     target=self._worker_loop,
                     args=(ip, http_path, s),
@@ -141,25 +148,32 @@ class HttpCameraMediator:
                 )
                 s.worker_thread = t
                 t.start()
-                ffe = s.first_frame_event
-            else:
-                ffe = s.first_frame_event
 
-            # Fast path: warm frame in buffer.
-            if s.last_frame is not None:
+            frame_age_ms = (now - s.last_frame_ts) * 1000 if s.last_frame_ts else float('inf')
+            if s.last_frame is not None and frame_age_ms < self.stale_after_ms:
                 return s.last_frame
 
-        # Cold path: wait for first frame outside the lock.
-        if ffe is not None and not ffe.wait(self.first_frame_timeout_s):
-            with s.lock:
-                err = s.last_error or "no frame arrived within timeout"
-            raise requests.RequestException(f"{ip} first-frame timeout: {err}")
+            # Either no frame yet, or the cached frame is stale — wait for a
+            # new one. Capture ts to detect arrival of a newer frame.
+            wait_after_ts = s.last_frame_ts
+            deadline = now + self.first_frame_timeout_s
 
-        with s.lock:
-            if s.last_frame is None:
-                raise requests.RequestException(
-                    f"{ip} worker started but produced no frame"
+            def fresh_frame_available():
+                return (
+                    s.last_frame is not None
+                    and s.last_frame_ts > wait_after_ts
                 )
+
+            # Wait with timeout using the Condition. The worker notifies
+            # s.frame_cond on every published frame.
+            while not fresh_frame_available():
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    raise requests.RequestException(
+                        f"{ip} fresh-frame timeout: {s.last_error or 'no frame arrived'}"
+                    )
+                s.frame_cond.wait(timeout=remaining)
+
             return s.last_frame
 
     def _worker_loop(self, ip: str, http_path: str, s: _CamState):
@@ -303,13 +317,14 @@ class HttpCameraMediator:
 
             # Publish the frame.
             now = time.time()
-            with s.lock:
+            with s.frame_cond:
                 s.last_frame = jpeg_bytes
                 s.last_frame_ts = now
-                s.frame_count += 1
-                s.byte_count += len(jpeg_bytes)
-                if s.first_frame_event is not None and not s.first_frame_event.is_set():
-                    s.first_frame_event.set()
+                s.session_frame_count += 1
+                s.session_byte_count += len(jpeg_bytes)
+                s.total_frame_count += 1
+                s.total_byte_count += len(jpeg_bytes)
+                s.frame_cond.notify_all()
 
     def status(self) -> dict:
         """Per-camera state for introspection."""
@@ -319,26 +334,29 @@ class HttpCameraMediator:
             cams = list(self._cams.items())
         for ip, s in cams:
             with s.lock:
+                worker_alive = s.worker_thread is not None and s.worker_thread.is_alive()
                 stream_uptime = (
-                    round(now - s.stream_started_at, 1) if s.stream_started_at else None
+                    round(now - s.stream_started_at, 1)
+                    if worker_alive and s.stream_started_at else None
                 )
                 fps = (
-                    round(s.frame_count / (now - s.stream_started_at), 2)
-                    if s.stream_started_at and now > s.stream_started_at
+                    round(s.session_frame_count / (now - s.stream_started_at), 2)
+                    if worker_alive and s.stream_started_at and now > s.stream_started_at
                     else None
                 )
                 out[ip] = {
-                    "worker_alive": s.worker_thread is not None and s.worker_thread.is_alive(),
+                    "worker_alive": worker_alive,
                     "has_frame": s.last_frame is not None,
                     "frame_size": len(s.last_frame) if s.last_frame else 0,
                     "frame_age_ms": round((now - s.last_frame_ts) * 1000, 1) if s.last_frame_ts else None,
-                    "frame_count": s.frame_count,
-                    "byte_count": s.byte_count,
-                    "stream_uptime_s": stream_uptime,
-                    "fps": fps,
+                    "session_frame_count": s.session_frame_count,
+                    "session_fps": fps,
+                    "session_uptime_s": stream_uptime,
+                    "total_frame_count": s.total_frame_count,
+                    "total_byte_count": s.total_byte_count,
+                    "total_reconnects": s.total_reconnects,
                     "last_consumer_age_s": round(now - s.last_consumer_access, 1) if s.last_consumer_access else None,
                     "consecutive_connect_fails": s.consecutive_connect_fails,
-                    "total_reconnects": s.total_reconnects,
                     "last_error": s.last_error,
                     "circuit_open": now < s.unhealthy_until,
                     "circuit_reopens_in_s": round(max(0, s.unhealthy_until - now), 1),
