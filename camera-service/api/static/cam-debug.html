@@ -48,11 +48,20 @@
   .file-drop.over { border-color: #6cf; background: #1a3a4a; color: #fff; }
   input[type=file] { display: none; }
   .hint { color: #666; font-size: 0.7rem; margin-top: 0.3rem; }
+  .banner { display: none; background: #6a2a2a; border: 1px solid #c33; color: #fcc; padding: 0.5rem 0.8rem; border-radius: 4px; margin-bottom: 0.8rem; font-size: 0.85rem; }
+  .banner.visible { display: block; }
+  .banner code { color: #fff; background: #4a1a1a; padding: 1px 5px; border-radius: 2px; }
 </style>
 </head>
 <body>
 
 <h1>Camera debug — <span class="ip" id="ipLabel">—</span></h1>
+
+<div class="banner" id="serviceBanner">
+  <strong>camera-service unreachable.</strong>
+  All info on this page is stale (last successful fetch shown below).
+  Check that the service is running on this host: <code id="serviceUrl"></code>.
+</div>
 
 <div class="layout">
   <!-- LEFT: live frame + frame controls -->
@@ -139,6 +148,7 @@ const IP = params.get("ip") || "127.0.0.1:8090";
 const POLL_FRAME_MS = 1000;
 const POLL_STATUS_MS = 1500;
 document.getElementById("ipLabel").textContent = IP;
+document.getElementById("serviceUrl").textContent = location.origin;
 document.title = "cam-debug " + IP;
 
 // ── Helpers
@@ -154,8 +164,35 @@ const j = obj => {
   try { return JSON.stringify(obj); } catch { return "<unstringifiable>"; }
 };
 
+// Track whether camera-service appears reachable. Distinguishes a
+// connection-level failure (banner) from an HTTP 4xx/5xx response (still
+// reachable, just an error). pollFrame.onerror also feeds this since
+// img tags fail-via-onerror for both cases without distinguishing them.
+let serviceLastOk = null;        // ms timestamp of last successful response
+let serviceConsecutiveFails = 0; // bumped on TypeError ("Failed to fetch")
+function markServiceOk() {
+  serviceLastOk = Date.now();
+  serviceConsecutiveFails = 0;
+  document.getElementById("serviceBanner").classList.remove("visible");
+}
+function markServiceUnreachable() {
+  serviceConsecutiveFails++;
+  // 1 confirmed connection-level failure is enough to show the banner —
+  // there's no benign reason fetch() should TypeError on a same-origin call.
+  document.getElementById("serviceBanner").classList.add("visible");
+}
+
 async function api(path, opts = {}) {
-  const r = await fetch(path, opts);
+  let r;
+  try {
+    r = await fetch(path, opts);
+  } catch (e) {
+    // TypeError: Failed to fetch / NetworkError — backend unreachable
+    markServiceUnreachable();
+    throw new Error(`unreachable: ${e.message}`);
+  }
+  // Got a response — service is up, even if this particular request 4xx/5xx'd
+  markServiceOk();
   if (!r.ok) {
     let detail;
     try { detail = (await r.json()).detail; } catch {}
