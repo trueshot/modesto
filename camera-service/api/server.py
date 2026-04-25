@@ -44,6 +44,8 @@ from mediator import (
 )
 from http_mediator import HttpCameraMediator
 from m5camserver_client import M5CamServerProbe
+from wedge_detector import detect_wedge
+from dataclasses import asdict as _asdict
 
 # ============================================================================
 # CAMERA CREDENTIALS (.env)
@@ -1574,6 +1576,31 @@ def http_camera_version(
 def http_cameras_m5camserver_status():
     """All cached M5CamServer /version probes (per IP[:port])."""
     return m5_probe.status()
+
+
+@app.get("/api/http-cameras/{camera_ip}/health")
+def http_camera_health(
+    camera_ip: str,
+    tcp_timeout: float = Query(2.0, description="SYN-ACK wait seconds"),
+    http_timeout: float = Query(6.0, description="HTTP response wait seconds"),
+    ping: bool = Query(True, description="Run ICMP probe to disambiguate offline vs tcp-closed"),
+):
+    """
+    Wedge-state diagnostic. Distinguishes:
+      alive | wedged_app | wedged_tcp | offline | unreachable.
+
+    Firmware-agnostic — works on stock M5PoECam, M5CamServer, anything
+    HTTP-on-W5500. Doesn't read body bytes; only checks whether the
+    application layer responds at all (the gen-42 wedge fingerprint is
+    "TCP works, HTTP never responds").
+    """
+    ip, port = _split_ip_port(camera_ip)
+    return _asdict(detect_wedge(
+        ip, port,
+        tcp_timeout=tcp_timeout,
+        http_timeout=http_timeout,
+        do_ping=ping,
+    ))
 
 
 @app.post("/api/http-cameras/{camera_ip}/ota")
