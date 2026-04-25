@@ -9,6 +9,7 @@ Provides camera images to agents, web apps, and other services
 
 import sys
 import os
+import time
 import logging
 import sqlite3
 import threading
@@ -42,6 +43,7 @@ from mediator import (
     FrameMediator, StreamManager, resolve_camera_key, clear_key_cache,
 )
 from http_mediator import HttpCameraMediator
+from m5camserver_client import M5CamServerProbe
 
 # ============================================================================
 # CAMERA CREDENTIALS (.env)
@@ -114,6 +116,11 @@ image_cache = ImageCache(default_ttl=30)  # 30 second cache
 # HTTP camera proxy (ESP32/PoE-CAM). Coalesces per-IP concurrent requests
 # onto a single upstream connection since these devices lock up otherwise.
 http_mediator = HttpCameraMediator()
+
+# M5CamServer /version probe with TTL cache. Used to fingerprint flashed
+# cams (sketch_md5, uptime, camera_ok, free_heap). Cached aggressively
+# because probing stock firmware burns W5500 socket-pool cycles.
+m5_probe = M5CamServerProbe()
 
 # ============================================================================
 # MODELS
@@ -1519,6 +1526,54 @@ def http_camera_reset_circuit(camera_ip: str):
     if not cleared:
         raise HTTPException(status_code=404, detail=f"No HTTP camera state for {camera_ip}")
     return {"camera_ip": camera_ip, "status": "reset"}
+
+
+def _split_ip_port(camera_ip: str, default_port: int = 80) -> tuple:
+    """Accept '1.2.3.4' or '1.2.3.4:8080' from path params."""
+    if ":" in camera_ip:
+        host, port_str = camera_ip.split(":", 1)
+        try:
+            return host, int(port_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"bad port in '{camera_ip}'")
+    return camera_ip, default_port
+
+
+@app.get("/api/http-cameras/{camera_ip}/version")
+def http_camera_version(
+    camera_ip: str,
+    force: bool = Query(False, description="Bypass cache and refetch"),
+):
+    """
+    Fingerprint a cam via M5CamServer /version. Returns parsed firmware info
+    (sketch, sketch_md5, build_date/time, uptime_s, free_heap, camera_ok,
+    resolutions) when the cam runs M5CamServer. Returns is_m5camserver=false
+    with an `error` reason for stock firmware, unreachable cams, or non-cam
+    devices. Cached 5 min by default — stock firmware probes burn W5500
+    socket-pool cycles, so don't hammer.
+    """
+    ip, port = _split_ip_port(camera_ip)
+    info = m5_probe.version(ip, port=port, force=force)
+    return {
+        "camera_ip": camera_ip,
+        "is_m5camserver": info.is_m5camserver,
+        "sketch": info.sketch,
+        "sketch_md5": info.sketch_md5,
+        "build_date": info.build_date,
+        "build_time": info.build_time,
+        "uptime_s": info.uptime_s,
+        "free_heap": info.free_heap,
+        "camera_ok": info.camera_ok,
+        "resolutions": info.resolutions,
+        "error": info.error,
+        "fetched_age_s": round(time.time() - info.fetched_at, 1),
+    }
+
+
+@app.get("/api/http-cameras/m5camserver-status")
+def http_cameras_m5camserver_status():
+    """All cached M5CamServer /version probes (per IP[:port])."""
+    return m5_probe.status()
 
 
 # ============================================================================
