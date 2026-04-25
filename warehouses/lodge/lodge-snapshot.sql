@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-04-17T07:50:12.245Z
+-- Generated: 2026-04-25T03:10:47.198Z
 
 BEGIN TRANSACTION;
 
@@ -215,6 +215,16 @@ INSERT INTO "linkages" VALUES(30,'fudge','38:24:F1:01:3C:AE','nvr2_ch11','2026-0
 INSERT INTO "linkages" VALUES(31,'gravy','38:24:F1:01:3C:BE','nvr2_ch12','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
 INSERT INTO "linkages" VALUES(32,'ham','38:24:F1:01:3C:AD','nvr2_ch13','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
 INSERT INTO "linkages" VALUES(33,'hashbrown','38:24:F1:01:3C:C2','nvr2_ch14','2026-03-09 11:43:54','gemcat','verified','Visual match by gemcat gen-7','2026-03-09 11:43:54');
+
+CREATE TABLE mac_prefixes (
+    prefix TEXT PRIMARY KEY,    -- e.g. '3e:8a:1f:d7' or '46:1d:64:60:8a' or future 'ac:67:b2' (Espressif)
+    label  TEXT NOT NULL,        -- human-readable description
+    role   TEXT NOT NULL,        -- 'poe-cam', 'esp32-camserver', etc — coarse categorization
+    notes  TEXT
+);
+
+INSERT INTO "mac_prefixes" VALUES('3e:8a:1f:d7','PoE-CAM (LAA, stock M5PoECam batch B)','poe-cam','Locally-administered MAC family seen on 5 PoE-CAMs at the lodge as of gen-43. Set by stock M5PoECam firmware; not a real Espressif OUI. After M5CamServer flash these cams will switch to factory ETH MACs (real Espressif OUIs).');
+INSERT INTO "mac_prefixes" VALUES('46:1d:64:60:8a','PoE-CAM (LAA, stock M5PoECam batch A — M5Stack-marked)','poe-cam','Locally-administered MAC family seen on 2 PoE-CAMs at the lodge. These two have manufacturer="M5Stack" set in the cameras table; the 3e:8a:1f:d7 batch does not. After M5CamServer flash these will switch to factory ETH MACs.');
 
 CREATE TABLE mount_fiducial_visibility (
     mount_id TEXT REFERENCES mounts(id),
