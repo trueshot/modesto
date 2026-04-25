@@ -1,5 +1,5 @@
 """
-M5CamServer protocol client — TTL-cached /version probing.
+M5CamServer protocol client — TTL-cached /version probing + streaming OTA.
 
 Why /version probing needs care: stock M5PoECam firmware returns a JPEG
 on ANY URL path (except /stream), so a GET /version on a stock cam
@@ -9,19 +9,28 @@ to avoid hammering — default TTL 300s. Cache key is the IP string the
 caller passes (so 127.0.0.1:8090 and 127.0.0.1 are distinct entries —
 useful for the emulator).
 
+OTA is exposed as a generator yielding event dicts (preflight → upload →
+verify → complete). The HTTP endpoint wraps it in an NDJSON streaming
+response. Same upload + verify pattern as the M5CamServer ota.py CLI:
+skip-if-match preflight, raw-socket upload (because http.client swallows
+progress), 3s post-upload read window (the cam usually ESP.restart()s
+before its FIN crosses the wire), and md5 verify via /version polling
+as the *primary* success signal (not the 200 from /update).
+
 Companion to http_mediator.py. Lives separately so M5CamServer-specific
-operations (version, OTA, /control, eventual POST /stream duplex) can
-accumulate here without bloating the streaming proxy.
+operations accumulate here without bloating the streaming proxy.
 
 Author: modeltcamerascat gen-43
 """
 
+import hashlib
 import json
 import http.client
+import socket
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterator, Optional
 
 
 @dataclass
@@ -122,6 +131,246 @@ class M5CamServerProbe:
                     conn.close()
                 except Exception:
                     pass
+
+    # ── OTA ────────────────────────────────────────────────────────
+
+    # Safety caps mirrored from the M5CamServer ota.py CLI. An ESP32 app
+    # partition is typically 1-2 MB; anything bigger is almost certainly
+    # the wrong file (full-flash merged image, debug binary, etc.).
+    OTA_MAX_BYTES = 2 * 1024 * 1024
+    # 3s read window after the upload completes — the cam usually
+    # ESP.restart()s before its FIN crosses the wire, leaving us with
+    # no clean response. That's expected; we fall through to /version
+    # polling for the actual success signal.
+    OTA_POST_UPLOAD_READ_TIMEOUT_S = 3.0
+    # Per-chunk HTTP send timeout; matches ota.py's connect timeout.
+    OTA_UPLOAD_TIMEOUT_S = 30.0
+    # How long to poll /version waiting for the cam to come back with the
+    # new sketch_md5. Real cams take 1-3s to reboot; 30s is a safe ceiling.
+    OTA_VERIFY_DEADLINE_S = 30.0
+
+    def do_ota(
+        self,
+        ip: str,
+        port: int,
+        firmware_bytes: bytes,
+        filename: str = "",
+    ) -> Iterator[dict]:
+        """
+        Run a full OTA against an M5CamServer cam, yielding event dicts.
+
+        Phases (each event has a "type" field): "phase" (transition),
+        "progress" (informational), "complete" (final, ok=true|false).
+
+        Validation: refuses .merged.bin filenames (full-flash images that
+        would brick the cam through OTA) and bytes > OTA_MAX_BYTES.
+
+        Pre-flight: probes /version with force=True. If the cam already
+        reports the expected sketch_md5, short-circuits with ok=true and
+        no upload (matches ota.py's skip-if-match optimization).
+
+        Upload: raw socket POST /update with chunked progress events.
+
+        Verify: polls /version (bypassing cache) until sketch_md5 matches
+        the uploaded bytes' md5, mismatches confirmed, or deadline elapses.
+
+        Cache invalidation: drops the /version cache entry on completion
+        so subsequent version() calls see the post-OTA state.
+        """
+        t_start = time.monotonic()
+        size = len(firmware_bytes)
+
+        def elapsed() -> float:
+            return round(time.monotonic() - t_start, 2)
+
+        # ── Validation
+        if filename and filename.endswith(".merged.bin"):
+            yield {"type": "complete", "ok": False,
+                   "reason": (f"refused: '{filename}' looks like a full-flash image "
+                              "(bootloader+partitions+app); OTA needs only the app .bin"),
+                   "elapsed_s": elapsed()}
+            return
+        if size == 0:
+            yield {"type": "complete", "ok": False,
+                   "reason": "refused: empty firmware payload",
+                   "elapsed_s": elapsed()}
+            return
+        if size > self.OTA_MAX_BYTES:
+            yield {"type": "complete", "ok": False,
+                   "reason": (f"refused: {size:,} bytes exceeds {self.OTA_MAX_BYTES:,} "
+                              "(typical ESP32 app partition cap)"),
+                   "elapsed_s": elapsed()}
+            return
+
+        expected_md5 = hashlib.md5(firmware_bytes).hexdigest()
+
+        # ── Pre-flight: skip-if-match
+        yield {"type": "phase", "name": "preflight"}
+        info = self._probe(ip, port)  # bypass cache
+        with self._lock:
+            self._cache[f"{ip}:{port}"] = info  # warm cache with fresh probe
+        if info.is_m5camserver:
+            cur = (info.sketch_md5 or "").lower()
+            yield {"type": "progress", "phase": "preflight",
+                   "msg": f"current /version: md5={cur[:8]}... uptime={info.uptime_s}s sketch={info.sketch}"}
+            if cur == expected_md5.lower():
+                yield {"type": "complete", "ok": True,
+                       "reason": "already running expected md5 — no upload needed",
+                       "expected_md5": expected_md5,
+                       "running_md5": info.sketch_md5,
+                       "uptime_s": info.uptime_s,
+                       "elapsed_s": elapsed()}
+                return
+        elif info.error:
+            yield {"type": "progress", "phase": "preflight",
+                   "msg": f"could not read current /version ({info.error}); proceeding anyway"}
+
+        yield {"type": "progress", "phase": "preflight",
+               "msg": f"new firmware: md5={expected_md5[:8]}... size={size:,} bytes"
+                      + (f" filename={filename}" if filename else "")}
+
+        # ── Upload
+        yield {"type": "phase", "name": "upload", "size_bytes": size}
+        upload_failed_reason = None
+        post_upload_response = None
+        try:
+            for ev in self._stream_upload(ip, port, firmware_bytes):
+                if ev.get("type") == "_upload_response":
+                    post_upload_response = ev.get("status_line")
+                    if post_upload_response:
+                        yield {"type": "progress", "phase": "upload",
+                               "msg": f"cam response: {post_upload_response}"}
+                    else:
+                        yield {"type": "progress", "phase": "upload",
+                               "msg": "no response (cam likely already restarted — verify will confirm)"}
+                else:
+                    yield ev
+        except OSError as e:
+            upload_failed_reason = f"{type(e).__name__}: {e}"
+            yield {"type": "progress", "phase": "upload",
+                   "msg": f"socket error: {upload_failed_reason}"}
+
+        if upload_failed_reason:
+            yield {"type": "complete", "ok": False,
+                   "reason": f"upload failed: {upload_failed_reason}",
+                   "elapsed_s": elapsed()}
+            self.invalidate(ip, port)
+            return
+
+        # ── Verify
+        yield {"type": "phase", "name": "verify"}
+        verify_start = time.monotonic()
+        attempt = 0
+        verify_ok = False
+        verify_md5 = None
+        verify_uptime = None
+        verify_reason = "deadline reached without match"
+        while time.monotonic() - verify_start < self.OTA_VERIFY_DEADLINE_S:
+            attempt += 1
+            v = self._probe(ip, port)
+            if v.is_m5camserver:
+                cur = (v.sketch_md5 or "").lower()
+                if cur == expected_md5.lower():
+                    yield {"type": "progress", "phase": "verify", "attempt": attempt,
+                           "msg": f"running md5={cur[:8]}... uptime={v.uptime_s}s — match"}
+                    verify_ok = True
+                    verify_md5 = v.sketch_md5
+                    verify_uptime = v.uptime_s
+                    verify_reason = "md5 verified via /version"
+                    break
+                else:
+                    yield {"type": "progress", "phase": "verify", "attempt": attempt,
+                           "msg": (f"running md5={cur[:8]}... uptime={v.uptime_s}s — "
+                                   f"mismatch (expected {expected_md5[:8]}...)")}
+                    verify_md5 = v.sketch_md5
+                    verify_uptime = v.uptime_s
+                    verify_reason = "md5 mismatch — flash may not have stuck"
+                    break
+            else:
+                yield {"type": "progress", "phase": "verify", "attempt": attempt,
+                       "msg": f"cam unreachable ({v.error or 'no response'}) — expected during reboot"}
+            time.sleep(1.0)
+
+        # Cache invalidation: post-OTA the cam's md5 (and possibly other
+        # fields) have changed. The verify probe already updated _probe
+        # state, but explicit invalidate covers the case where verify
+        # never got a successful probe.
+        self.invalidate(ip, port)
+
+        yield {"type": "complete",
+               "ok": verify_ok,
+               "reason": verify_reason,
+               "expected_md5": expected_md5,
+               "running_md5": verify_md5,
+               "uptime_s": verify_uptime,
+               "verify_attempts": attempt,
+               "post_upload_response": post_upload_response,
+               "elapsed_s": elapsed()}
+
+    def _stream_upload(self, ip: str, port: int, firmware_bytes: bytes) -> Iterator[dict]:
+        """Raw-socket POST /update with periodic progress events. Yields
+        progress dicts during upload and a final {"type": "_upload_response",
+        "status_line": str|None} once the cam's response (if any) is read.
+        Raises OSError on socket failure."""
+        size = len(firmware_bytes)
+        sock = socket.create_connection((ip, port), timeout=self.OTA_UPLOAD_TIMEOUT_S)
+        try:
+            head = (
+                f"POST /update HTTP/1.1\r\n"
+                f"Host: {ip}:{port}\r\n"
+                f"Content-Length: {size}\r\n"
+                f"Content-Type: application/octet-stream\r\n"
+                f"Connection: close\r\n"
+                f"\r\n"
+            ).encode("ascii")
+            sock.sendall(head)
+
+            start = time.monotonic()
+            sent = 0
+            last_emit = 0.0
+            CHUNK = 4096
+            view = memoryview(firmware_bytes)
+            while sent < size:
+                chunk = view[sent:sent + CHUNK]
+                sock.sendall(chunk)
+                sent += len(chunk)
+                now = time.monotonic()
+                if now - last_emit >= 0.5 or sent == size:
+                    elapsed = now - start
+                    kbps = (sent / elapsed / 1024) if elapsed > 0 else 0.0
+                    yield {"type": "progress", "phase": "upload",
+                           "sent": sent, "total": size,
+                           "pct": round(100.0 * sent / size, 1),
+                           "kbps": round(kbps, 1)}
+                    last_emit = now
+
+            # Read the cam's response, if any. Short timeout because the
+            # cam typically ESP.restart()s before its FIN crosses the wire.
+            sock.settimeout(self.OTA_POST_UPLOAD_READ_TIMEOUT_S)
+            buf = b""
+            try:
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if len(buf) > 4096:
+                        break
+            except socket.timeout:
+                pass
+
+            status_line = None
+            if buf:
+                first = buf.split(b"\r\n", 1)[0].decode("latin1", errors="replace").strip()
+                if first:
+                    status_line = first
+            yield {"type": "_upload_response", "status_line": status_line}
+
+        finally:
+            try:
+                sock.close()
+            except Exception:
+                pass
 
     def invalidate(self, ip: str, port: int = 80):
         """Drop the cached entry for this IP — next call refetches."""

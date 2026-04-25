@@ -25,10 +25,10 @@ import numpy as np
 import zmq
 import requests
 from requests.auth import HTTPDigestAuth
-from fastapi import FastAPI, HTTPException, Response, Query
+from fastapi import FastAPI, HTTPException, Response, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 
@@ -1574,6 +1574,37 @@ def http_camera_version(
 def http_cameras_m5camserver_status():
     """All cached M5CamServer /version probes (per IP[:port])."""
     return m5_probe.status()
+
+
+@app.post("/api/http-cameras/{camera_ip}/ota")
+async def http_camera_ota(camera_ip: str, firmware: UploadFile = File(...)):
+    """
+    OTA upload to an M5CamServer cam. Streams NDJSON progress events:
+
+      {"type":"phase","name":"preflight"}
+      {"type":"progress","phase":"preflight","msg":"current /version: ..."}
+      {"type":"phase","name":"upload","size_bytes":...}
+      {"type":"progress","phase":"upload","sent":...,"total":...,"pct":...,"kbps":...}
+      ...
+      {"type":"phase","name":"verify"}
+      {"type":"progress","phase":"verify","attempt":N,"msg":"..."}
+      {"type":"complete","ok":true|false,"reason":"...","elapsed_s":...,...}
+
+    Use `curl -N -X POST -F firmware=@sketch.ino.bin <url>` to see lines as
+    they arrive. Refuses .merged.bin filenames and >2 MB uploads. Pre-flight
+    md5 check skips the upload entirely if the cam is already running this
+    firmware. Final verify uses /version polling as the primary success
+    signal — even a 200 from /update isn't trusted until md5 matches.
+    """
+    ip, port = _split_ip_port(camera_ip)
+    fw_bytes = await firmware.read()
+    filename = firmware.filename or ""
+
+    def event_stream():
+        for ev in m5_probe.do_ota(ip, port, fw_bytes, filename=filename):
+            yield json.dumps(ev) + "\n"
+
+    return StreamingResponse(event_stream(), media_type="application/x-ndjson")
 
 
 # ============================================================================
