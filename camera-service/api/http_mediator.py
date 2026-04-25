@@ -18,10 +18,13 @@ Design:
   continuous streaming can overheat).
 - Circuit breaker: after connect_fail_threshold consecutive reconnect failures,
   open the circuit for circuit_cooldown_s. get_frame() raises during cooldown.
-- MJPEG parser: the M5 firmware sends a garbage Content-Length in each part
-  (1073450776 observed), so we scan for the next boundary instead.
+- MJPEG parser: stock M5PoECam firmware sends a bogus per-part Content-Length
+  (1073450776 observed); the planned M5CamServer replacement sends a correct
+  one. We ignore both and scan for the next inter-frame boundary, which is
+  firmware-agnostic — verified end-to-end against M5CamServer's protocol via
+  m5camserver-emu (gen-43, 2026-04-25): 69 frames in 10s, 0 reconnects.
 
-Author: modeltcamerascat gen-42
+Author: modeltcamerascat gen-42 (verified against M5CamServer protocol gen-43)
 """
 
 import time
