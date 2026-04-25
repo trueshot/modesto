@@ -1603,6 +1603,59 @@ def http_camera_health(
     ))
 
 
+class DuplexCommand(BaseModel):
+    cmd: dict
+
+
+@app.post("/api/http-cameras/{camera_ip}/duplex/enable")
+def http_camera_duplex_enable(camera_ip: str):
+    """
+    Switch the mediator's upstream connection for this cam to POST /stream
+    duplex mode. Verifies via /version that the cam runs M5CamServer first
+    (stock M5PoECam doesn't speak POST /stream and would misbehave).
+
+    Effective on the next stream start; if a stream is currently running
+    in GET mode it gets stopped so the next get_frame call reconnects in
+    duplex mode.
+    """
+    ip, port = _split_ip_port(camera_ip)
+    info = m5_probe.version(ip, port=port, force=True)
+    if not info.is_m5camserver:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"refused: {camera_ip} is not running M5CamServer "
+                    f"({info.error or 'no JSON /version response'}) — "
+                    "POST /stream duplex is M5CamServer-only"),
+        )
+    http_mediator.enable_duplex(camera_ip)
+    return {"camera_ip": camera_ip, "stream_mode": "POST_DUPLEX",
+            "sketch_md5": info.sketch_md5, "uptime_s": info.uptime_s}
+
+
+@app.post("/api/http-cameras/{camera_ip}/duplex/disable")
+def http_camera_duplex_disable(camera_ip: str):
+    """Revert the mediator to GET /stream mode for this cam."""
+    http_mediator.disable_duplex(camera_ip)
+    return {"camera_ip": camera_ip, "stream_mode": "GET"}
+
+
+@app.post("/api/http-cameras/{camera_ip}/command")
+def http_camera_send_command(camera_ip: str, body: DuplexCommand):
+    """
+    Queue a JSON command to be written upstream over the mediator's POST
+    /stream duplex connection. Cam must already be in duplex mode (call
+    /duplex/enable first).
+
+    Body shape: {"cmd": {...}} — the {...} object is sent verbatim as one
+    JSONL line. Example: {"cmd": {"action": "set_resolution", "preset": "VGA"}}.
+    """
+    try:
+        http_mediator.send_command(camera_ip, body.cmd)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"camera_ip": camera_ip, "queued": body.cmd}
+
+
 @app.post("/api/http-cameras/{camera_ip}/ota")
 async def http_camera_ota(camera_ip: str, firmware: UploadFile = File(...)):
     """
