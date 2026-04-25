@@ -11,9 +11,15 @@
   .layout { display: grid; grid-template-columns: minmax(420px, 1fr) 360px; gap: 1rem; max-width: 1200px; }
   .card { background: #252525; border: 1px solid #333; border-radius: 6px; padding: 0.8rem; margin-bottom: 0.8rem; }
   .card h2 { font-size: 0.9rem; margin: 0 0 0.5rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
-  .frame-wrap { position: relative; background: #000; border-radius: 4px; min-height: 240px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .frame-wrap { position: relative; background: #000; border-radius: 4px; min-height: 240px; display: flex; align-items: center; justify-content: center; overflow: hidden; border: 2px solid #333; transition: border-color 0.3s; }
+  .frame-wrap.stale { border-color: #c80; }
+  .frame-wrap.dead { border-color: #c33; }
   .frame-wrap img { max-width: 100%; max-height: 480px; display: block; }
+  .frame-wrap.stale img, .frame-wrap.dead img { opacity: 0.4; filter: grayscale(0.6); }
   .frame-wrap .empty { color: #666; padding: 2rem; }
+  .frame-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 0.4rem 0.6rem; background: rgba(0,0,0,0.85); font-family: ui-monospace, monospace; font-size: 0.75rem; display: none; }
+  .frame-wrap.stale .frame-overlay { display: block; color: #fc6; border-top: 1px solid #c80; }
+  .frame-wrap.dead .frame-overlay { display: block; color: #f88; border-top: 1px solid #c33; }
   .frame-meta { font-family: ui-monospace, monospace; font-size: 0.75rem; color: #888; margin-top: 0.4rem; }
   .row { display: grid; grid-template-columns: 110px 1fr; gap: 0.5rem; margin: 0.3rem 0; align-items: center; }
   .row label { font-size: 0.8rem; color: #999; }
@@ -53,9 +59,10 @@
   <div>
     <div class="card">
       <h2>Live frame</h2>
-      <div class="frame-wrap">
+      <div class="frame-wrap" id="frameWrap">
         <img id="frame" alt="" hidden>
         <div class="empty" id="frameEmpty">no frame yet</div>
+        <div class="frame-overlay" id="frameOverlay"></div>
       </div>
       <div class="frame-meta" id="frameMeta">poll: off</div>
     </div>
@@ -165,6 +172,18 @@ async function postCmd(cmd) {
   });
 }
 
+// ── Frame state helper — drives the .stale / .dead classes + overlay
+// text on the live-frame box. State priority (lowest to highest):
+// "ok" → "stale" → "dead". `dead` sticks until we get a fresh load.
+const FRAME_STATE_RANK = {ok: 0, stale: 1, dead: 2};
+function setFrameState(state, msg) {
+  const wrap = document.getElementById("frameWrap");
+  const overlay = document.getElementById("frameOverlay");
+  wrap.classList.remove("stale", "dead");
+  if (state !== "ok") wrap.classList.add(state);
+  overlay.textContent = msg || "";
+}
+
 // ── Frame polling — cache-busted GET to camera-service. Mediator
 // serves from buffer if stream is open, so this doesn't open a new
 // upstream cam connection per call.
@@ -179,11 +198,16 @@ function pollFrame() {
     empty.hidden = true;
     const ms = Math.round(performance.now() - start);
     setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
+    // Frame loaded fine — but the bytes might be stale from the mediator's
+    // buffer. Status poller updates the .stale class based on frame_age_ms.
+    // Don't override .stale here; just clear .dead.
+    document.getElementById("frameWrap").classList.remove("dead");
+    document.getElementById("frameOverlay").textContent = "";
   };
   img.onerror = () => {
-    img.hidden = true;
-    empty.hidden = false;
-    empty.textContent = "frame fetch failed (camera unreachable or mediator 503)";
+    // Don't hide the (stale) image — fade it via the .dead class so the
+    // user sees both "what we last had" and "we lost it"
+    setFrameState("dead", "frame fetch failed (cam unreachable or mediator 503)");
     setText("frameMeta", "frame fetch failed");
   };
   img.src = url;
@@ -214,8 +238,28 @@ async function refreshMediatorStatus() {
     } else {
       setText("mErr", "—");
     }
+
+    // Drive the frame area's degraded indicator from mediator state.
+    // Order matters: "dead" wins over "stale" wins over clean.
+    const ageMs = s.frame_age_ms ?? 0;
+    const STALE_MS = 3000;   // mediator default stale_after_ms is 2s; leave headroom
+    const wrap = document.getElementById("frameWrap");
+    if (s.last_error || s.circuit_open || (!s.worker_alive && !s.has_frame)) {
+      const reason = s.last_error || (s.circuit_open ? `circuit open (${s.circuit_reopens_in_s}s)` : "worker stopped");
+      setFrameState("dead", `OFFLINE — ${reason}`);
+    } else if (!s.worker_alive) {
+      // Worker died but we still have a buffered frame
+      setFrameState("dead", `OFFLINE — mediator worker stopped (last frame ${Math.round(ageMs)}ms ago)`);
+    } else if (ageMs > STALE_MS) {
+      setFrameState("stale", `STALE — last frame ${(ageMs/1000).toFixed(1)}s ago (mediator buffering, upstream may be lagging)`);
+    } else if (!wrap.classList.contains("dead")) {
+      // Healthy: clear stale (but don't clobber a "dead" state — that
+      // sticks until pollFrame's onload clears it)
+      setFrameState("ok");
+    }
   } catch (e) {
     setText("mMode", `error: ${e.message}`, "bad");
+    setFrameState("dead", `mediator status fetch failed: ${e.message}`);
   }
 }
 
