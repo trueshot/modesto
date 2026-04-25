@@ -172,16 +172,33 @@ async function postCmd(cmd) {
   });
 }
 
-// ── Frame state helper — drives the .stale / .dead classes + overlay
-// text on the live-frame box. State priority (lowest to highest):
-// "ok" → "stale" → "dead". `dead` sticks until we get a fresh load.
-const FRAME_STATE_RANK = {ok: 0, stale: 1, dead: 2};
-function setFrameState(state, msg) {
+// ── Frame state — two pollers (pollFrame and refreshMediatorStatus) feed
+// independent signals into one render. Avoids the two pollers fighting
+// over the overlay text every cycle.
+const frameState = {
+  pollOk: null,     // null = unknown, true = last /frame succeeded, false = last /frame failed
+  statusKind: "ok", // "ok" | "stale" | "dead" — derived from mediator status
+  statusMsg: "",    // explanatory text from mediator (last_error, circuit info, etc.)
+};
+
+function setFrameStateClass(kind, msg) {
   const wrap = document.getElementById("frameWrap");
   const overlay = document.getElementById("frameOverlay");
   wrap.classList.remove("stale", "dead");
-  if (state !== "ok") wrap.classList.add(state);
+  if (kind !== "ok") wrap.classList.add(kind);
   overlay.textContent = msg || "";
+}
+
+function recomputeFrameState() {
+  // dead wins over stale wins over ok. /frame failure forces dead even
+  // if status hasn't caught up yet (status detects failure 1-3s later).
+  if (frameState.pollOk === false || frameState.statusKind === "dead") {
+    setFrameStateClass("dead", frameState.statusMsg || "checking…");
+  } else if (frameState.statusKind === "stale") {
+    setFrameStateClass("stale", frameState.statusMsg);
+  } else {
+    setFrameStateClass("ok", "");
+  }
 }
 
 // ── Frame polling — cache-busted GET to camera-service. Mediator
@@ -198,17 +215,16 @@ function pollFrame() {
     empty.hidden = true;
     const ms = Math.round(performance.now() - start);
     setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
-    // Frame loaded fine — but the bytes might be stale from the mediator's
-    // buffer. Status poller updates the .stale class based on frame_age_ms.
-    // Don't override .stale here; just clear .dead.
-    document.getElementById("frameWrap").classList.remove("dead");
-    document.getElementById("frameOverlay").textContent = "";
+    frameState.pollOk = true;
+    recomputeFrameState();
   };
   img.onerror = () => {
-    // Don't hide the (stale) image — fade it via the .dead class so the
-    // user sees both "what we last had" and "we lost it"
-    setFrameState("dead", "frame fetch failed (cam unreachable or mediator 503)");
+    frameState.pollOk = false;
     setText("frameMeta", "frame fetch failed");
+    recomputeFrameState();
+    // Force a status refresh so the "OFFLINE — <reason>" text appears
+    // ASAP rather than waiting up to 1.5s for the next regular poll.
+    refreshMediatorStatus();
   };
   img.src = url;
 }
@@ -239,27 +255,34 @@ async function refreshMediatorStatus() {
       setText("mErr", "—");
     }
 
-    // Drive the frame area's degraded indicator from mediator state.
-    // Order matters: "dead" wins over "stale" wins over clean.
+    // Update the frame-state signal from mediator status. The render is
+    // unified in recomputeFrameState() — this function only writes the
+    // statusKind / statusMsg fields.
     const ageMs = s.frame_age_ms ?? 0;
-    const STALE_MS = 3000;   // mediator default stale_after_ms is 2s; leave headroom
-    const wrap = document.getElementById("frameWrap");
-    if (s.last_error || s.circuit_open || (!s.worker_alive && !s.has_frame)) {
-      const reason = s.last_error || (s.circuit_open ? `circuit open (${s.circuit_reopens_in_s}s)` : "worker stopped");
-      setFrameState("dead", `OFFLINE — ${reason}`);
+    const STALE_MS = 3000;
+    if (s.last_error || s.circuit_open) {
+      const reason = s.last_error || `circuit open (${s.circuit_reopens_in_s}s)`;
+      frameState.statusKind = "dead";
+      frameState.statusMsg = `OFFLINE — ${reason}`;
+    } else if (!s.worker_alive && !s.has_frame) {
+      frameState.statusKind = "dead";
+      frameState.statusMsg = "OFFLINE — mediator worker stopped, no frame buffered";
     } else if (!s.worker_alive) {
-      // Worker died but we still have a buffered frame
-      setFrameState("dead", `OFFLINE — mediator worker stopped (last frame ${Math.round(ageMs)}ms ago)`);
+      frameState.statusKind = "dead";
+      frameState.statusMsg = `OFFLINE — mediator worker stopped (last frame ${Math.round(ageMs)}ms ago)`;
     } else if (ageMs > STALE_MS) {
-      setFrameState("stale", `STALE — last frame ${(ageMs/1000).toFixed(1)}s ago (mediator buffering, upstream may be lagging)`);
-    } else if (!wrap.classList.contains("dead")) {
-      // Healthy: clear stale (but don't clobber a "dead" state — that
-      // sticks until pollFrame's onload clears it)
-      setFrameState("ok");
+      frameState.statusKind = "stale";
+      frameState.statusMsg = `STALE — last frame ${(ageMs/1000).toFixed(1)}s ago (mediator buffering, upstream may be lagging)`;
+    } else {
+      frameState.statusKind = "ok";
+      frameState.statusMsg = "";
     }
+    recomputeFrameState();
   } catch (e) {
     setText("mMode", `error: ${e.message}`, "bad");
-    setFrameState("dead", `mediator status fetch failed: ${e.message}`);
+    frameState.statusKind = "dead";
+    frameState.statusMsg = `mediator status fetch failed: ${e.message}`;
+    recomputeFrameState();
   }
 }
 
