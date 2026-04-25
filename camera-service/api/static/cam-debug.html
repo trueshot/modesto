@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Camera debug</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; background: #1a1a1a; color: #ddd; margin: 0; padding: 1rem; }
+  h1 { font-size: 1.1rem; font-weight: 600; margin: 0 0 1rem; color: #fff; }
+  h1 .ip { color: #6cf; font-family: ui-monospace, monospace; }
+  .layout { display: grid; grid-template-columns: minmax(420px, 1fr) 360px; gap: 1rem; max-width: 1200px; }
+  .card { background: #252525; border: 1px solid #333; border-radius: 6px; padding: 0.8rem; margin-bottom: 0.8rem; }
+  .card h2 { font-size: 0.9rem; margin: 0 0 0.5rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+  .frame-wrap { position: relative; background: #000; border-radius: 4px; min-height: 240px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .frame-wrap img { max-width: 100%; max-height: 480px; display: block; }
+  .frame-wrap .empty { color: #666; padding: 2rem; }
+  .frame-meta { font-family: ui-monospace, monospace; font-size: 0.75rem; color: #888; margin-top: 0.4rem; }
+  .row { display: grid; grid-template-columns: 110px 1fr; gap: 0.5rem; margin: 0.3rem 0; align-items: center; }
+  .row label { font-size: 0.8rem; color: #999; }
+  .row .val { font-family: ui-monospace, monospace; font-size: 0.8rem; color: #ddd; }
+  .row .val.ok { color: #6f6; }
+  .row .val.bad { color: #f66; }
+  .row .val.warn { color: #fc6; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; font-family: ui-monospace, monospace; }
+  .badge.ok { background: #1a4f1a; color: #afa; }
+  .badge.bad { background: #4f1a1a; color: #faa; }
+  .badge.warn { background: #4f3a1a; color: #fc6; }
+  .badge.unknown { background: #333; color: #888; }
+  button, select { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 4px 10px; font-size: 0.8rem; cursor: pointer; font-family: inherit; }
+  button:hover { background: #444; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: #2a5fa3; border-color: #3a7fc3; color: #fff; }
+  button.primary:hover { background: #3a7fc3; }
+  button.danger { background: #6a2a2a; border-color: #8a3a3a; color: #fff; }
+  .controls { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .ndjson-log { background: #111; border: 1px solid #333; border-radius: 3px; padding: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.7rem; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  .ndjson-log .ev-progress { color: #aaa; }
+  .ndjson-log .ev-phase { color: #6cf; font-weight: 600; }
+  .ndjson-log .ev-complete-ok { color: #6f6; font-weight: 600; }
+  .ndjson-log .ev-complete-bad { color: #f66; font-weight: 600; }
+  .file-drop { border: 2px dashed #555; border-radius: 4px; padding: 1.2rem; text-align: center; color: #888; cursor: pointer; transition: all 0.15s; }
+  .file-drop.over { border-color: #6cf; background: #1a3a4a; color: #fff; }
+  input[type=file] { display: none; }
+  .hint { color: #666; font-size: 0.7rem; margin-top: 0.3rem; }
+</style>
+</head>
+<body>
+
+<h1>Camera debug — <span class="ip" id="ipLabel">—</span></h1>
+
+<div class="layout">
+  <!-- LEFT: live frame + frame controls -->
+  <div>
+    <div class="card">
+      <h2>Live frame</h2>
+      <div class="frame-wrap">
+        <img id="frame" alt="" hidden>
+        <div class="empty" id="frameEmpty">no frame yet</div>
+      </div>
+      <div class="frame-meta" id="frameMeta">poll: off</div>
+    </div>
+
+    <div class="card">
+      <h2>OTA upload</h2>
+      <div class="file-drop" id="dropZone">
+        Drop a sketch.ino.bin here, or click to choose
+        <div class="hint">refused: .merged.bin / >2 MB / not M5CamServer</div>
+      </div>
+      <input type="file" id="fileInput" accept=".bin">
+      <div class="ndjson-log" id="otaLog" hidden></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: status + controls -->
+  <div>
+    <div class="card">
+      <h2>Health</h2>
+      <div class="row"><label>verdict</label><span class="val" id="hVerdict">—</span></div>
+      <div class="row"><label>ping</label><span class="val" id="hPing">—</span></div>
+      <div class="row"><label>tcp</label><span class="val" id="hTcp">—</span></div>
+      <div class="row"><label>http</label><span class="val" id="hHttp">—</span></div>
+      <button id="btnHealth" style="margin-top:0.4rem">probe (closes mediator slot briefly)</button>
+    </div>
+
+    <div class="card">
+      <h2>Sketch / version</h2>
+      <div class="row"><label>is M5CamServer</label><span class="val" id="vIs">—</span></div>
+      <div class="row"><label>sketch</label><span class="val" id="vSketch">—</span></div>
+      <div class="row"><label>md5</label><span class="val" id="vMd5">—</span></div>
+      <div class="row"><label>uptime</label><span class="val" id="vUptime">—</span></div>
+      <div class="row"><label>camera_ok</label><span class="val" id="vOk">—</span></div>
+      <div class="row"><label>free heap</label><span class="val" id="vHeap">—</span></div>
+      <button id="btnVersionRefresh" style="margin-top:0.4rem">refresh /version</button>
+    </div>
+
+    <div class="card">
+      <h2>Mediator stream</h2>
+      <div class="row"><label>mode</label><span class="val" id="mMode">—</span></div>
+      <div class="row"><label>worker</label><span class="val" id="mWorker">—</span></div>
+      <div class="row"><label>session fps</label><span class="val" id="mFps">—</span></div>
+      <div class="row"><label>session frames</label><span class="val" id="mFrames">—</span></div>
+      <div class="row"><label>cmd queue</label><span class="val" id="mQueue">—</span></div>
+      <div class="row"><label>cmd sent</label><span class="val" id="mCmdSent">—</span></div>
+      <div class="row"><label>last error</label><span class="val" id="mErr">—</span></div>
+      <div class="controls" style="margin-top:0.5rem">
+        <button id="btnEnable" class="primary">enable duplex</button>
+        <button id="btnDisable">disable duplex</button>
+        <button id="btnReset" class="danger">reset circuit</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Duplex commands</h2>
+      <div class="row" style="grid-template-columns: 110px 1fr 50px">
+        <label>resolution</label>
+        <select id="resPicker"></select>
+        <button id="btnResApply">send</button>
+      </div>
+      <div class="controls" style="margin-top:0.5rem">
+        <button id="btnDegrade">set camera_ok=false</button>
+        <button id="btnUndegrade">set camera_ok=true</button>
+      </div>
+      <div class="hint">Commands ride the mediator's persistent POST /stream socket — no new TCP connection per click.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── URL / config
+const params = new URLSearchParams(location.search);
+const IP = params.get("ip") || "127.0.0.1:8090";
+const POLL_FRAME_MS = 1000;
+const POLL_STATUS_MS = 1500;
+document.getElementById("ipLabel").textContent = IP;
+document.title = "cam-debug " + IP;
+
+// ── Helpers
+const $ = sel => document.querySelector(sel);
+const setText = (id, txt, klass) => {
+  const el = document.getElementById(id);
+  if (el) {
+    el.textContent = txt;
+    if (klass !== undefined) el.className = "val " + (klass || "");
+  }
+};
+const j = obj => {
+  try { return JSON.stringify(obj); } catch { return "<unstringifiable>"; }
+};
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    let detail;
+    try { detail = (await r.json()).detail; } catch {}
+    throw new Error(`${r.status} ${detail || r.statusText}`);
+  }
+  return r.json();
+}
+
+async function postCmd(cmd) {
+  return api(`/api/http-cameras/${encodeURIComponent(IP)}/command`, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({cmd}),
+  });
+}
+
+// ── Frame polling — cache-busted GET to camera-service. Mediator
+// serves from buffer if stream is open, so this doesn't open a new
+// upstream cam connection per call.
+let pollFrameTimer = null;
+function pollFrame() {
+  const img = document.getElementById("frame");
+  const empty = document.getElementById("frameEmpty");
+  const url = `/api/http-cameras/${encodeURIComponent(IP)}/frame?_=${Date.now()}`;
+  const start = performance.now();
+  img.onload = () => {
+    img.hidden = false;
+    empty.hidden = true;
+    const ms = Math.round(performance.now() - start);
+    setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
+  };
+  img.onerror = () => {
+    img.hidden = true;
+    empty.hidden = false;
+    empty.textContent = "frame fetch failed (camera unreachable or mediator 503)";
+    setText("frameMeta", "frame fetch failed");
+  };
+  img.src = url;
+}
+
+// ── Status polling
+async function refreshMediatorStatus() {
+  try {
+    const all = await api("/api/http-cameras/status");
+    const s = all[IP];
+    if (!s) {
+      setText("mMode", "no mediator state yet");
+      setText("mWorker", "—");
+      return;
+    }
+    setText("mMode", s.stream_mode || "—",
+      s.stream_mode === "POST_DUPLEX" ? "ok" : "");
+    setText("mWorker", s.worker_alive ? "alive" : "stopped",
+      s.worker_alive ? "ok" : "warn");
+    setText("mFps", s.session_fps != null ? `${s.session_fps} fps` : "—");
+    setText("mFrames", `${s.session_frame_count}  (total ${s.total_frame_count})`);
+    setText("mQueue", String(s.cmd_queue_depth ?? 0));
+    setText("mCmdSent", `${s.cmd_count_session ?? 0}  (total ${s.cmd_count_total ?? 0})`);
+    if (s.last_error) {
+      setText("mErr", s.last_error, "bad");
+    } else if (s.circuit_open) {
+      setText("mErr", `circuit open ${s.circuit_reopens_in_s}s`, "bad");
+    } else {
+      setText("mErr", "—");
+    }
+  } catch (e) {
+    setText("mMode", `error: ${e.message}`, "bad");
+  }
+}
+
+async function refreshVersion(force) {
+  try {
+    const url = `/api/http-cameras/${encodeURIComponent(IP)}/version` + (force ? "?force=true" : "");
+    const v = await api(url);
+    setText("vIs", v.is_m5camserver ? "yes" : "no",
+      v.is_m5camserver ? "ok" : "bad");
+    setText("vSketch", v.sketch || "—");
+    setText("vMd5", v.sketch_md5 ? v.sketch_md5.slice(0, 16) + "…" : "—");
+    setText("vUptime", v.uptime_s != null ? v.uptime_s + "s" : "—");
+    setText("vOk", v.camera_ok == null ? "—" : (v.camera_ok ? "true" : "false"),
+      v.camera_ok ? "ok" : (v.camera_ok === false ? "bad" : ""));
+    setText("vHeap", v.free_heap != null ? v.free_heap.toLocaleString() : "—");
+    if (!v.is_m5camserver && v.error) {
+      setText("vSketch", v.error, "bad");
+    }
+    populateResolutions(v.resolutions || []);
+  } catch (e) {
+    setText("vIs", `error: ${e.message}`, "bad");
+  }
+}
+
+let healthInflight = false;
+async function probeHealth() {
+  if (healthInflight) return;
+  healthInflight = true;
+  setText("hVerdict", "probing…", "warn");
+  setText("hPing", "—"); setText("hTcp", "—"); setText("hHttp", "—");
+  try {
+    const h = await api(`/api/http-cameras/${encodeURIComponent(IP)}/health`);
+    const klass = {alive: "ok", wedged_app: "warn", wedged_tcp: "warn",
+                    offline: "bad", unreachable: "bad"}[h.verdict] || "";
+    setText("hVerdict", h.verdict, klass);
+    setText("hPing", h.ping_ok == null ? "—" : (h.ping_ok ? "yes" : "no"));
+    setText("hTcp", h.tcp_open ? `open (${h.tcp_ms}ms)` : "closed");
+    setText("hHttp", h.http_ok ? `${h.http_status} (${h.http_ms}ms)` : (h.tcp_open ? "no response" : "—"));
+  } catch (e) {
+    setText("hVerdict", `error: ${e.message}`, "bad");
+  } finally {
+    healthInflight = false;
+  }
+}
+
+function populateResolutions(presets) {
+  const sel = document.getElementById("resPicker");
+  if (sel.options.length === presets.length && presets.every((p, i) => sel.options[i]?.value === p)) {
+    return;  // unchanged
+  }
+  sel.innerHTML = "";
+  presets.forEach(p => {
+    const o = document.createElement("option");
+    o.value = p; o.textContent = p;
+    sel.appendChild(o);
+  });
+}
+
+// ── Buttons
+$("#btnEnable").addEventListener("click", async () => {
+  try {
+    await api(`/api/http-cameras/${encodeURIComponent(IP)}/duplex/enable`, {method: "POST"});
+    refreshMediatorStatus();
+  } catch (e) { alert(`enable_duplex failed: ${e.message}`); }
+});
+$("#btnDisable").addEventListener("click", async () => {
+  try {
+    await api(`/api/http-cameras/${encodeURIComponent(IP)}/duplex/disable`, {method: "POST"});
+    refreshMediatorStatus();
+  } catch (e) { alert(`disable_duplex failed: ${e.message}`); }
+});
+$("#btnReset").addEventListener("click", async () => {
+  try {
+    await api(`/api/http-cameras/${encodeURIComponent(IP)}/reset-circuit`, {method: "POST"});
+    refreshMediatorStatus();
+  } catch (e) { alert(`reset_circuit failed: ${e.message}`); }
+});
+$("#btnHealth").addEventListener("click", probeHealth);
+$("#btnVersionRefresh").addEventListener("click", () => refreshVersion(true));
+
+$("#btnResApply").addEventListener("click", async () => {
+  const preset = document.getElementById("resPicker").value;
+  if (!preset) return;
+  try {
+    await postCmd({action: "set_resolution", preset});
+  } catch (e) { alert(`set_resolution failed: ${e.message}`); }
+});
+$("#btnDegrade").addEventListener("click", async () => {
+  try { await postCmd({action: "set_camera_ok", value: false}); }
+  catch (e) { alert(`set_camera_ok failed: ${e.message}`); }
+});
+$("#btnUndegrade").addEventListener("click", async () => {
+  try { await postCmd({action: "set_camera_ok", value: true}); }
+  catch (e) { alert(`set_camera_ok failed: ${e.message}`); }
+});
+
+// ── OTA
+const dropZone = document.getElementById("dropZone");
+const fileInput = document.getElementById("fileInput");
+const otaLog = document.getElementById("otaLog");
+
+dropZone.addEventListener("click", () => fileInput.click());
+dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("over"); });
+dropZone.addEventListener("dragleave", () => dropZone.classList.remove("over"));
+dropZone.addEventListener("drop", e => {
+  e.preventDefault(); dropZone.classList.remove("over");
+  if (e.dataTransfer.files.length) handleOta(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener("change", () => {
+  if (fileInput.files.length) handleOta(fileInput.files[0]);
+});
+
+async function handleOta(file) {
+  otaLog.hidden = false;
+  otaLog.innerHTML = "";
+  appendOtaLine({type: "info", msg: `uploading ${file.name} (${file.size.toLocaleString()} bytes)`});
+  const fd = new FormData();
+  fd.append("firmware", file, file.name);
+  let resp;
+  try {
+    resp = await fetch(`/api/http-cameras/${encodeURIComponent(IP)}/ota`, {method: "POST", body: fd});
+  } catch (e) {
+    appendOtaLine({type: "complete", ok: false, reason: `network: ${e.message}`});
+    return;
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, {stream: true});
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (!line) continue;
+      try { appendOtaLine(JSON.parse(line)); }
+      catch { appendOtaLine({type: "info", msg: line}); }
+    }
+  }
+}
+
+function appendOtaLine(ev) {
+  const div = document.createElement("div");
+  let cls = "ev-progress", txt;
+  if (ev.type === "phase") {
+    cls = "ev-phase"; txt = `── phase: ${ev.name}` + (ev.size_bytes ? ` (${ev.size_bytes.toLocaleString()} bytes)` : "");
+  } else if (ev.type === "complete") {
+    cls = ev.ok ? "ev-complete-ok" : "ev-complete-bad";
+    txt = `${ev.ok ? "✓" : "✗"} ${ev.reason}` + (ev.elapsed_s ? `  (${ev.elapsed_s}s)` : "");
+  } else if (ev.type === "progress") {
+    if (ev.sent != null) {
+      txt = `  upload  ${ev.pct}%  (${ev.sent.toLocaleString()}/${ev.total.toLocaleString()} bytes  ${ev.kbps} KB/s)`;
+    } else if (ev.attempt != null) {
+      txt = `  verify  attempt ${ev.attempt}: ${ev.msg}`;
+    } else {
+      txt = `  ${ev.msg}`;
+    }
+  } else {
+    txt = `  ${ev.msg || JSON.stringify(ev)}`;
+  }
+  div.className = cls;
+  div.textContent = txt;
+  otaLog.appendChild(div);
+  otaLog.scrollTop = otaLog.scrollHeight;
+}
+
+// ── Init
+refreshVersion(false);
+probeHealth();
+pollFrameTimer = setInterval(pollFrame, POLL_FRAME_MS);
+pollFrame();
+setInterval(refreshMediatorStatus, POLL_STATUS_MS);
+refreshMediatorStatus();
+</script>
+</body>
+</html>

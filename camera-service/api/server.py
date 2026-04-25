@@ -1521,6 +1521,21 @@ def http_cameras_status():
     return http_mediator.status()
 
 
+@app.get("/api/http-cameras/{camera_ip}/frame")
+def http_camera_frame_via_mediator(
+    camera_ip: str,
+    http_path: str = Query("/stream", description="Upstream MJPEG path"),
+):
+    """Mediator-proxied frame fetch — no lodge.db lookup, useful for ad-hoc
+    IPs (the m5camserver-emu, a freshly-flashed cam not yet in the DB, etc.).
+    Returns the buffered JPEG; starts the persistent stream worker on demand."""
+    try:
+        image_data = http_mediator.get_frame(camera_ip, http_path)
+    except requests.RequestException as e:
+        raise HTTPException(status_code=503, detail=f"HTTP camera {camera_ip} failed: {e}")
+    return Response(content=image_data, media_type="image/jpeg")
+
+
 @app.post("/api/http-cameras/{camera_ip}/reset-circuit")
 def http_camera_reset_circuit(camera_ip: str):
     """Clear a locked-open circuit breaker after a camera has been power-cycled."""
@@ -1619,13 +1634,19 @@ def http_camera_duplex_enable(camera_ip: str):
     duplex mode.
     """
     ip, port = _split_ip_port(camera_ip)
-    info = m5_probe.version(ip, port=port, force=True)
+    # Use cached /version when available — a force=True probe would race
+    # the mediator's persistent stream for the cam's single TCP slot and
+    # fail with "connection refused" (correctly: the mediator is holding it).
+    # Caller should hit /version first if the cache is cold.
+    info = m5_probe.version(ip, port=port, force=False)
     if not info.is_m5camserver:
         raise HTTPException(
             status_code=400,
             detail=(f"refused: {camera_ip} is not running M5CamServer "
                     f"({info.error or 'no JSON /version response'}) — "
-                    "POST /stream duplex is M5CamServer-only"),
+                    "POST /stream duplex is M5CamServer-only. "
+                    "If the /version cache is empty, hit /api/http-cameras/{ip}/version "
+                    "before enabling duplex (don't run while another stream is active)."),
         )
     http_mediator.enable_duplex(camera_ip)
     return {"camera_ip": camera_ip, "stream_mode": "POST_DUPLEX",
@@ -2882,6 +2903,18 @@ def camera_viewer():
         return test_html.read_text()
     else:
         return "<h1>Camera Viewer not found</h1><p>Create static/test.html</p>"
+
+
+@app.get("/cam-debug", response_class=HTMLResponse)
+def cam_debug_page():
+    """Single-cam debug UI — exercises every M5CamServer/mediator endpoint
+    we added (frame poll, /version, /health, mediator status, /duplex/enable,
+    /command, /ota streaming). Pass ?ip=<host[:port]> to target a specific
+    cam; defaults to 127.0.0.1:8090 (the m5camserver-emu default)."""
+    p = STATIC_DIR / "cam-debug.html"
+    if p.exists():
+        return p.read_text(encoding="utf-8")
+    return "<h1>cam-debug.html not found</h1><p>Expected at " + str(p) + "</p>"
 
 @app.get("/monitor", response_class=HTMLResponse)
 def monitor_page():
