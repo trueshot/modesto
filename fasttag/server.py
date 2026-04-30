@@ -344,6 +344,14 @@ REAP_INTERVAL_S = 10
 STARTING_TIMEOUT_S = 30
 reaper_running = False
 
+# Stagger between multiprocessing.Process.start() calls in /start. Mass
+# back-to-back spawns on Windows trigger native-init races (cv2 DLL load,
+# pupil_apriltags Detector instantiation) that segfault children before
+# they execute any Python — bypasses the per-worker try/except. ~100ms
+# gap is enough to avoid the race; total added startup for 30 workers
+# is ~3s, negligible vs the cost of half the workers dying.
+SPAWN_STAGGER_S = 0.15
+
 
 def worker_reaper():
     """Background thread — periodically clean dead/wedged workers."""
@@ -637,6 +645,10 @@ def start_cameras(request: StartRequest):
 
         started.append(ip)
         logger.info(f"Started {protocol} worker for {ip} (pid {proc.pid}, model {cam.get('model')}, access {access_label}, fps {worker_config['target_fps']})")
+
+        # Stagger to avoid native-init races (see SPAWN_STAGGER_S comment).
+        if SPAWN_STAGGER_S > 0:
+            time.sleep(SPAWN_STAGGER_S)
 
     # Schedule auto-stop if requested (only when starting at least one worker;
     # if everyone errored or already-running, don't reset an existing timer).
