@@ -16,15 +16,18 @@ import sqlite3
 import logging
 import threading
 import multiprocessing
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional, List
 from urllib.parse import quote
 from collections import deque
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 import uvicorn
+
+import cv2
 
 from worker import detection_worker
 
@@ -249,10 +252,21 @@ def build_rtsp_url(cam: dict) -> str:
 # FASTAPI APP
 # ============================================================================
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: launch the worker reaper. (worker_reaper is defined later in
+    # this module; name resolution happens at call time, not decoration time.)
+    threading.Thread(target=worker_reaper, daemon=True, name="worker-reaper").start()
+    yield
+    # Shutdown: nothing — the reaper is a daemon thread and dies with the
+    # process. result_collector is also daemon.
+
+
 app = FastAPI(
     title="FastTag — AprilTag Detection",
     description="High-speed continuous AprilTag detection via direct RTSP",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # ============================================================================
@@ -309,6 +323,71 @@ def result_collector():
                 detection_buffer.append(msg)
 
     logger.info("Result collector stopped")
+
+
+# ============================================================================
+# WORKER REAPER (cleans dead/wedged workers; runs continuously)
+# ============================================================================
+#
+# In production FastTag is expected to run 24/7. Workers can crash silently
+# (RTSP timeout, NVR reboot, decoder fault, OOM) or wedge during cv2 startup
+# without ever transitioning past status='starting'. Without a reaper they
+# stay tracked, holding stats slots and (if alive but wedged) holding NVR
+# slots and memory. The reaper periodically:
+#   1. Removes workers whose process is dead (proc.is_alive() False)
+#   2. Force-kills workers stuck in 'starting' status past STARTING_TIMEOUT_S
+
+REAP_INTERVAL_S = 10
+STARTING_TIMEOUT_S = 30
+reaper_running = False
+
+
+def worker_reaper():
+    """Background thread — periodically clean dead/wedged workers."""
+    global reaper_running
+    reaper_running = True
+    logger.info("Worker reaper started")
+
+    while reaper_running:
+        time.sleep(REAP_INTERVAL_S)
+        try:
+            now = time.time()
+            with workers_lock:
+                items = list(workers.items())
+
+            for ip, w in items:
+                proc = w["process"]
+                started_at = w["started_at"]
+                age = now - started_at
+
+                # Case 1: process is dead — drop from tracking
+                if not proc.is_alive():
+                    logger.info(f"reaper: removing dead worker for {ip} (pid {proc.pid}, age {age:.0f}s)")
+                    with workers_lock:
+                        workers.pop(ip, None)
+                    with stats_lock:
+                        camera_stats.pop(ip, None)
+                    continue
+
+                # Case 2: still 'starting' past the timeout — kill it
+                with stats_lock:
+                    hb = camera_stats.get(ip)
+                status = hb.get("status") if hb else "starting"
+                if age > STARTING_TIMEOUT_S and status == "starting":
+                    logger.warning(f"reaper: killing stuck worker for {ip} (pid {proc.pid}, age {age:.0f}s, status=starting)")
+                    w["stop_event"].set()
+                    proc.join(timeout=2)
+                    if proc.is_alive():
+                        proc.kill()
+                    with workers_lock:
+                        workers.pop(ip, None)
+                    with stats_lock:
+                        camera_stats.pop(ip, None)
+
+        except Exception as e:
+            logger.exception(f"worker_reaper iteration error: {e}")
+
+    logger.info("Worker reaper stopped")
 
 # ============================================================================
 # MODELS
@@ -692,6 +771,127 @@ def restart_service():
         os._exit(0)
     threading.Thread(target=delayed_exit, daemon=True).start()
     return {"message": "Restarting..."}
+
+
+# ============================================================================
+# LIVE OVERLAY (debug — server-side cv2 drawing + multipart MJPEG)
+# ============================================================================
+#
+# Opens its OWN RTSP connection to the camera (separate from any FastTag
+# detection worker). Intended for ad-hoc debug viewing — close the browser
+# tab to drop the connection.
+
+_overlay_detectors = {}
+_overlay_detectors_lock = threading.Lock()
+
+
+def _get_overlay_detector(family: str):
+    """Module-level cache of one Detector per family (per-process)."""
+    with _overlay_detectors_lock:
+        det = _overlay_detectors.get(family)
+        if det is None:
+            from pupil_apriltags import Detector
+            det = Detector(
+                families=family,
+                nthreads=4,
+                quad_decimate=2.0,
+                quad_sigma=0.0,
+                decode_sharpening=0.25,
+            )
+            _overlay_detectors[family] = det
+        return det
+
+
+def _draw_overlay(frame, detections):
+    """Draw tag border, center, ID, and decision margin on the frame in-place."""
+    for det in detections:
+        corners = det.corners.astype(int)
+        for i in range(4):
+            cv2.line(frame, tuple(corners[i]), tuple(corners[(i + 1) % 4]), (0, 255, 0), 3)
+        cx, cy = int(det.center[0]), int(det.center[1])
+        cv2.circle(frame, (cx, cy), 8, (0, 0, 255), -1)
+        cv2.putText(frame, f"#{det.tag_id}", (cx - 50, cy - 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+        cv2.putText(frame, f"Q:{det.decision_margin:.0f}", (cx - 50, cy + 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+
+
+@app.get("/live-overlay/{camera_ip}")
+def live_overlay(
+    camera_ip: str,
+    family: Optional[str] = Query(None, description="Tag family (defaults to current DEFAULT_CONFIG)"),
+    fps: float = Query(10.0, description="Max frames per second to detect+encode (rate-limit guard); production-tuned default"),
+    max_seconds: float = Query(300, description="Auto-close stream after N seconds (forgotten-tab guard)"),
+):
+    """Live MJPEG stream with detection overlay drawn server-side.
+
+    Opens its own RTSP connection — independent of any FastTag worker.
+    Closes on:
+      - HTTP client disconnect (browser closes tab / removes <img>)
+      - Frame read failure (RTSP drop)
+      - max_seconds elapsed (default 300s = 5 min; forgotten-tab guard)
+
+    Rate-limited to `fps` (default 5) so a single overlay viewer can't
+    saturate CPU running detection at full stream rate.
+    """
+    cams = {c["ip"]: c for c in get_all_active_cameras()}
+    cam = cams.get(camera_ip)
+    if cam is None:
+        raise HTTPException(status_code=404, detail=f"camera {camera_ip} not in lodge.db")
+
+    rtsp_url = build_rtsp_url(cam)
+    if not rtsp_url:
+        raise HTTPException(status_code=400, detail=f"no RTSP path available for {camera_ip}")
+
+    fam = family or DEFAULT_CONFIG["families"]
+    detector = _get_overlay_detector(fam)
+    frame_interval = 1.0 / fps if fps > 0 else 0
+    deadline = time.time() + max_seconds
+
+    def generate():
+        cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        if not cap.isOpened():
+            logger.warning(f"live-overlay: failed to open {camera_ip}")
+            return
+        last_emit = 0.0
+        try:
+            while time.time() < deadline:
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    break
+                if frame.std() < 10:
+                    continue
+                now = time.time()
+                # Rate limit: skip frames between emissions
+                if frame_interval > 0 and (now - last_emit) < frame_interval:
+                    continue
+                last_emit = now
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                dets = detector.detect(gray)
+                _draw_overlay(frame, dets)
+                ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                if not ok:
+                    continue
+                yield (b"--frame\r\n"
+                       b"Content-Type: image/jpeg\r\n\r\n"
+                       + jpeg.tobytes() + b"\r\n")
+            logger.info(f"live-overlay: {camera_ip} closed (max_seconds={max_seconds}s reached or stream ended)")
+        finally:
+            cap.release()
+
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+# ============================================================================
+# TAG-DEBUG PAGE (live tag↔camera pairs + drill-in)
+# ============================================================================
+
+@app.get("/tag-debug")
+def tag_debug_page():
+    """Live debug page — tag IDs in view paired with cameras seeing them."""
+    return FileResponse(Path(__file__).parent / "tag-debug.html",
+                        media_type="text/html")
 
 
 # ============================================================================

@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>FastTag — Live Tag Debug</title>
+<style>
+  :root {
+    --bg: #0e1014;
+    --panel: #181b22;
+    --panel2: #20242d;
+    --border: #2a2f3a;
+    --text: #d8dde6;
+    --muted: #7c8597;
+    --accent: #5fd0ff;
+    --green: #4ade80;
+    --amber: #f59e0b;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
+    background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+    font-size: 14px;
+  }
+  .header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    height: 50px;
+  }
+  .header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  .header .status { color: var(--muted); font-size: 12px; }
+  .header .status.ok { color: var(--green); }
+  .header .status.err { color: var(--red); }
+  #filter {
+    flex: 1; max-width: 300px;
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 6px 10px; font: inherit; font-size: 13px;
+  }
+  #filter:focus { outline: none; border-color: var(--accent); }
+  .stats { color: var(--muted); font-size: 12px; }
+
+  .main {
+    display: flex; height: calc(100vh - 50px);
+  }
+  .left {
+    flex: 0 0 480px; min-width: 380px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    background: var(--panel);
+  }
+  .right { flex: 1; overflow: auto; padding: 16px; }
+
+  table {
+    width: 100%; border-collapse: collapse;
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 13px;
+  }
+  thead th {
+    position: sticky; top: 0;
+    text-align: left; padding: 8px 12px;
+    background: var(--panel2); color: var(--muted);
+    font-weight: 500; font-size: 11px; text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody td { padding: 7px 12px; border-bottom: 1px solid var(--border); }
+  tbody tr.row { cursor: default; }
+  tbody tr.row:hover { background: rgba(95, 208, 255, 0.05); }
+  .tag-cell, .cam-cell {
+    cursor: pointer; user-select: none;
+    padding: 2px 6px; border-radius: 3px;
+  }
+  .tag-cell:hover, .cam-cell:hover { background: rgba(95, 208, 255, 0.15); color: var(--accent); }
+  .tag-cell.selected, .cam-cell.selected { background: rgba(95, 208, 255, 0.25); color: var(--accent); }
+  .multi { color: var(--amber); font-size: 11px; margin-left: 6px; }
+  .age { color: var(--muted); font-size: 11px; }
+  .age.fresh { color: var(--green); }
+  .age.stale { color: var(--amber); }
+  .quality { color: var(--muted); font-size: 11px; }
+
+  .empty {
+    text-align: center; color: var(--muted);
+    padding: 60px 20px; font-size: 13px;
+  }
+
+  .right h2 {
+    margin: 0 0 12px 0; font-size: 14px; font-weight: 500;
+    color: var(--accent);
+  }
+  .right .hint { color: var(--muted); font-size: 13px; line-height: 1.6; }
+  .right .hint code {
+    background: var(--panel); padding: 1px 6px; border-radius: 3px;
+    font-size: 12px;
+  }
+  .overlay-img {
+    max-width: 100%; max-height: calc(100vh - 130px);
+    border: 1px solid var(--border); border-radius: 4px;
+    background: #000;
+  }
+  .detail-meta {
+    color: var(--muted); font-size: 12px; margin-bottom: 12px;
+  }
+  .history-table { font-size: 12px; }
+  .history-table td { padding: 5px 10px; }
+
+  .close-btn {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+    padding: 4px 12px; border-radius: 3px; cursor: pointer;
+    font: inherit; font-size: 13px; font-weight: 500;
+    margin-left: 14px;
+  }
+  .close-btn:hover { border-color: var(--red); color: var(--red); background: rgba(239, 68, 68, 0.1); }
+  .close-btn::before { content: "✕ "; }
+
+  .running-footer {
+    position: fixed;
+    bottom: 8px; right: 8px;
+    background: rgba(24, 27, 34, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 10px;
+    max-width: 60%;
+    font-size: 11px;
+    color: var(--muted);
+    backdrop-filter: blur(2px);
+    z-index: 10;
+  }
+  .running-footer .label {
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-right: 8px; color: var(--muted);
+  }
+  .running-footer .chip {
+    display: inline-block;
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border);
+    padding: 2px 8px; margin: 2px;
+    border-radius: 10px; cursor: pointer;
+    font-family: "Cascadia Mono", "Consolas", monospace;
+    font-size: 11px; user-select: none;
+  }
+  .running-footer .chip:hover {
+    border-color: var(--accent); color: var(--accent);
+  }
+  .running-footer .chip.selected {
+    border-color: var(--accent); background: rgba(95, 208, 255, 0.15);
+    color: var(--accent);
+  }
+  .running-footer .chip .fps {
+    color: var(--muted); margin-left: 4px; font-size: 10px;
+  }
+  .running-footer .none { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>FastTag — Live Tag Debug</h1>
+  <input id="filter" placeholder="filter: tag id or .ip">
+  <span class="stats" id="stats">0 tags</span>
+  <span class="status" id="sse-status">SSE: connecting…</span>
+</div>
+<div class="main">
+  <div class="left">
+    <table>
+      <thead>
+        <tr>
+          <th>Tag</th>
+          <th>Camera</th>
+          <th>Q</th>
+          <th>Age</th>
+        </tr>
+      </thead>
+      <tbody id="tag-rows"></tbody>
+    </table>
+    <div class="empty" id="empty-msg">no tags currently in view</div>
+  </div>
+  <div class="right" id="detail">
+    <h2>Drill-in</h2>
+    <p class="hint">
+      Click a <strong>tag id</strong> in the left list to see its recent detection history across cameras.<br>
+      Click a <strong>camera ip</strong> to open a live overlay stream of that camera.<br><br>
+      Stale tags fall off after <code>?stale=N</code> seconds (default <code>2</code>). Filter matches both tag id and camera ip.
+    </p>
+  </div>
+</div>
+<div class="running-footer" id="runningFooter">
+  <span class="label">Running cams:</span>
+  <span id="runningChips" class="none">checking…</span>
+</div>
+
+<script>
+(() => {
+  const params = new URLSearchParams(location.search);
+  const STALE_S = parseFloat(params.get("stale") || "2");
+  const RENDER_MS = 250;
+  const HISTORY_KEEP_S = 30;  // for the drill-in tag-history panel
+
+  // tag_id -> {
+  //   cameras: Map<ip, {last_ts, margin, count}>,
+  //   history: [{ts, ip, margin}, ...]   // capped to HISTORY_KEEP_S
+  // }
+  const state = new Map();
+  let totalSeen = 0;
+  let selected = null;  // {kind: "tag"|"camera", value}
+
+  const tagRowsEl = document.getElementById("tag-rows");
+  const emptyEl = document.getElementById("empty-msg");
+  const statsEl = document.getElementById("stats");
+  const sseStatusEl = document.getElementById("sse-status");
+  const filterEl = document.getElementById("filter");
+  const detailEl = document.getElementById("detail");
+
+  // ── SSE connection ────────────────────────────────────────────────────
+  function connectSSE() {
+    const sse = new EventSource("/detections/stream");
+    sse.onopen = () => {
+      sseStatusEl.textContent = "SSE: live";
+      sseStatusEl.className = "status ok";
+    };
+    sse.onmessage = (e) => {
+      let det;
+      try { det = JSON.parse(e.data); } catch { return; }
+      if (det.type !== "detection") return;
+      ingest(det);
+    };
+    sse.onerror = () => {
+      sseStatusEl.textContent = "SSE: reconnecting…";
+      sseStatusEl.className = "status err";
+    };
+  }
+  connectSSE();
+
+  // ── State updates ──────────────────────────────────────────────────────
+  function ingest(det) {
+    const id = det.tag_id;
+    let entry = state.get(id);
+    if (!entry) {
+      entry = { cameras: new Map(), history: [] };
+      state.set(id, entry);
+    }
+    const cam = entry.cameras.get(det.camera_ip) || { count: 0 };
+    cam.last_ts = det.timestamp;
+    cam.margin = det.decision_margin;
+    cam.count = (cam.count || 0) + 1;
+    entry.cameras.set(det.camera_ip, cam);
+    entry.history.push({
+      ts: det.timestamp, ip: det.camera_ip,
+      margin: det.decision_margin,
+    });
+    totalSeen++;
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────
+  function ageClass(seconds) {
+    if (seconds < 0.5) return "fresh";
+    if (seconds < 1.5) return "";
+    return "stale";
+  }
+  function fmtAge(seconds) {
+    if (seconds < 1) return seconds.toFixed(1) + "s";
+    if (seconds < 60) return seconds.toFixed(1) + "s";
+    return (seconds / 60).toFixed(1) + "m";
+  }
+
+  function pruneAndCollect(now) {
+    const stale_cutoff = now - STALE_S;
+    const hist_cutoff = now - HISTORY_KEEP_S;
+    const live = [];
+
+    for (const [tagId, entry] of state) {
+      // prune stale cameras
+      for (const [ip, cam] of entry.cameras) {
+        if (cam.last_ts < stale_cutoff) entry.cameras.delete(ip);
+      }
+      // prune old history
+      while (entry.history.length && entry.history[0].ts < hist_cutoff) {
+        entry.history.shift();
+      }
+      if (entry.cameras.size === 0 && entry.history.length === 0) {
+        state.delete(tagId);
+      } else if (entry.cameras.size > 0) {
+        // tag is currently visible
+        let bestIp = null, bestTs = 0, bestMargin = 0;
+        for (const [ip, cam] of entry.cameras) {
+          if (cam.last_ts > bestTs) {
+            bestTs = cam.last_ts; bestIp = ip; bestMargin = cam.margin;
+          }
+        }
+        live.push({
+          tagId,
+          primaryIp: bestIp,
+          primaryTs: bestTs,
+          primaryMargin: bestMargin,
+          camCount: entry.cameras.size,
+        });
+      }
+    }
+    live.sort((a, b) => a.tagId - b.tagId);
+    return live;
+  }
+
+  function applyFilter(rows, f) {
+    if (!f) return rows;
+    const fl = f.toLowerCase();
+    return rows.filter(r =>
+      String(r.tagId).includes(fl) ||
+      r.primaryIp.toLowerCase().includes(fl)
+    );
+  }
+
+  function render() {
+    const now = Date.now() / 1000;
+    let rows = pruneAndCollect(now);
+    rows = applyFilter(rows, filterEl.value.trim());
+
+    tagRowsEl.innerHTML = "";
+    if (rows.length === 0) {
+      emptyEl.style.display = "block";
+    } else {
+      emptyEl.style.display = "none";
+      const frag = document.createDocumentFragment();
+      for (const r of rows) {
+        const tr = document.createElement("tr");
+        tr.className = "row";
+        const age = now - r.primaryTs;
+        tr.innerHTML = `
+          <td><span class="tag-cell ${selected && selected.kind==='tag' && selected.value===r.tagId ? 'selected' : ''}" data-tag="${r.tagId}">#${r.tagId}</span></td>
+          <td>
+            <span class="cam-cell ${selected && selected.kind==='camera' && selected.value===r.primaryIp ? 'selected' : ''}" data-ip="${r.primaryIp}">${r.primaryIp}</span>
+            ${r.camCount > 1 ? `<span class="multi">+${r.camCount-1}</span>` : ''}
+          </td>
+          <td><span class="quality">${r.primaryMargin.toFixed(0)}</span></td>
+          <td><span class="age ${ageClass(age)}">${fmtAge(age)}</span></td>
+        `;
+        frag.appendChild(tr);
+      }
+      tagRowsEl.appendChild(frag);
+    }
+    statsEl.textContent =
+      `${rows.length} live · ${totalSeen.toLocaleString()} total`;
+
+    // Refresh detail panel if showing tag history (live data)
+    if (selected && selected.kind === "tag") renderTagDetail(selected.value);
+  }
+
+  // ── Detail panel ───────────────────────────────────────────────────────
+  function renderTagDetail(tagId) {
+    const entry = state.get(tagId);
+    if (!entry) {
+      selected = null;
+      detailEl.innerHTML = `
+        <h2>Tag #${tagId}</h2>
+        <p class="hint">No recent detections.</p>`;
+      return;
+    }
+    const now = Date.now() / 1000;
+    const recent = entry.history.slice(-50).reverse();
+    const camRows = [];
+    for (const [ip, cam] of entry.cameras) {
+      camRows.push({ ip, age: now - cam.last_ts, margin: cam.margin, count: cam.count });
+    }
+    camRows.sort((a, b) => a.age - b.age);
+
+    detailEl.innerHTML = `
+      <h2>Tag #${tagId}
+        <button class="close-btn" id="closeDetail">close</button>
+      </h2>
+      <div class="detail-meta">
+        Currently seen by ${camRows.length} camera${camRows.length===1?'':'s'} · ${entry.history.length} detections in last ${HISTORY_KEEP_S}s
+      </div>
+      <h2 style="margin-top:18px">Cameras Seeing It</h2>
+      <table class="history-table">
+        <thead><tr><th>Camera</th><th>Age</th><th>Q</th><th>Count</th></tr></thead>
+        <tbody>
+          ${camRows.map(c => `
+            <tr><td><span class="cam-cell" data-ip="${c.ip}">${c.ip}</span></td>
+                <td><span class="age ${ageClass(c.age)}">${fmtAge(c.age)}</span></td>
+                <td>${c.margin.toFixed(0)}</td>
+                <td>${c.count}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <h2 style="margin-top:18px">Recent History (last 50)</h2>
+      <table class="history-table">
+        <thead><tr><th>Age</th><th>Camera</th><th>Q</th></tr></thead>
+        <tbody>
+          ${recent.map(h => `
+            <tr><td><span class="age">${fmtAge(now - h.ts)}</span></td>
+                <td>${h.ip}</td>
+                <td>${h.margin.toFixed(0)}</td></tr>`).join("")}
+        </tbody>
+      </table>`;
+    document.getElementById("closeDetail").onclick = () => clearDetail();
+  }
+
+  function renderCameraDetail(ip) {
+    detailEl.innerHTML = `
+      <h2>Camera ${ip} — live overlay
+        <button class="close-btn" id="closeDetail">close</button>
+      </h2>
+      <div class="detail-meta">Direct RTSP probe · separate connection from any FastTag worker on this cam.</div>
+      <img class="overlay-img" src="/live-overlay/${encodeURIComponent(ip)}" alt="live overlay for ${ip}">`;
+    document.getElementById("closeDetail").onclick = () => clearDetail();
+  }
+
+  function clearDetail() {
+    selected = null;
+    detailEl.innerHTML = `
+      <h2>Drill-in</h2>
+      <p class="hint">
+        Click a <strong>tag id</strong> in the left list to see its recent detection history across cameras.<br>
+        Click a <strong>camera ip</strong> to open a live overlay stream of that camera.<br><br>
+        Stale tags fall off after <code>?stale=N</code> seconds (default <code>${STALE_S}</code>).
+      </p>`;
+  }
+
+  // ── Click delegation ───────────────────────────────────────────────────
+  document.addEventListener("click", (e) => {
+    const tagEl = e.target.closest(".tag-cell");
+    const camEl = e.target.closest(".cam-cell, .chip[data-ip]");
+    if (tagEl) {
+      const tagId = parseInt(tagEl.dataset.tag, 10);
+      // Toggle: clicking the same selected tag closes the detail.
+      if (selected && selected.kind === "tag" && selected.value === tagId) {
+        clearDetail();
+      } else {
+        selected = { kind: "tag", value: tagId };
+        renderTagDetail(tagId);
+      }
+    } else if (camEl) {
+      const ip = camEl.dataset.ip;
+      // Toggle: clicking the same selected camera closes the overlay.
+      if (selected && selected.kind === "camera" && selected.value === ip) {
+        clearDetail();
+      } else {
+        selected = { kind: "camera", value: ip };
+        renderCameraDetail(ip);
+      }
+    }
+  });
+
+  // Escape key closes the drill-in panel.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && selected) {
+      // Don't steal Esc from the filter input mid-edit (browsers clear input on Esc).
+      if (document.activeElement === filterEl) return;
+      clearDetail();
+    }
+  });
+
+  filterEl.addEventListener("input", render);
+
+  // ── Running-cams footer ────────────────────────────────────────────────
+  const chipsEl = document.getElementById("runningChips");
+  async function refreshRunning() {
+    try {
+      const r = await fetch("/status");
+      if (!r.ok) throw new Error("status " + r.status);
+      const data = await r.json();
+      const cams = data.cameras || {};
+      const running = [];
+      for (const [ip, c] of Object.entries(cams)) {
+        if (c.status === "running" && c.fps > 0) {
+          running.push({ ip, fps: c.fps });
+        }
+      }
+      running.sort((a, b) => a.ip.localeCompare(b.ip,
+        undefined, { numeric: true }));
+      if (running.length === 0) {
+        chipsEl.className = "none";
+        chipsEl.textContent = "(no workers reading frames)";
+        return;
+      }
+      chipsEl.className = "";
+      chipsEl.innerHTML = running.map(c => {
+        const sel = (selected && selected.kind === "camera" && selected.value === c.ip)
+          ? "selected" : "";
+        return `<span class="chip ${sel}" data-ip="${c.ip}">${c.ip}<span class="fps">${c.fps.toFixed(1)}</span></span>`;
+      }).join("");
+    } catch (e) {
+      chipsEl.className = "none";
+      chipsEl.textContent = "(/status unreachable)";
+    }
+  }
+  refreshRunning();
+  setInterval(refreshRunning, 3000);
+
+  // ── Render loop ────────────────────────────────────────────────────────
+  setInterval(render, RENDER_MS);
+  render();
+})();
+</script>
+</body>
+</html>
