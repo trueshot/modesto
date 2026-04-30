@@ -4,7 +4,7 @@ services:
     command: node server.js
     cwd: server
     port: 5173
-    autostart: true
+    autostart: false
 
   nvr-service:
     name: NVR Probe
@@ -31,4 +31,11 @@ services:
     name: AprilTag Detection
     command: python detection-service.py
     port: 8002
+    autostart: false
+
+  fasttag:
+    name: FastTag
+    command: python server.py
+    cwd: fasttag
+    port: 8003
     autostart: false
