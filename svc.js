@@ -125,6 +125,17 @@ function startService(svc) {
     svc.proc = child;
     svc.pid = child.pid;
     svc.status = 'RUNNING';
+
+    child.on('exit', () => {
+      svc.proc = null;
+      svc.pid = null;
+      if (svc.status !== 'DISABLED') {
+        svc.status = 'STOPPED';
+        svc.restartTimer = setTimeout(() => startService(svc), 1000);
+      }
+      draw();
+    });
+
     child.unref();
     draw();
   } catch (e) {
