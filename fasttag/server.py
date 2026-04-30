@@ -699,6 +699,10 @@ def restart_service():
 # ============================================================================
 
 if __name__ == "__main__":
+    # Distinctive Windows Terminal tab title via OSC escape (conhost handles ANSI natively on Win10+)
+    sys.stdout.write("\033]0;FastTag (8003)\007")
+    sys.stdout.flush()
+
     print("=" * 60)
     print("  FastTag — AprilTag Detection Server")
     print("=" * 60)

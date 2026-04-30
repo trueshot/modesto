@@ -3288,6 +3288,10 @@ def monitor_page():
 # ============================================================================
 
 if __name__ == "__main__":
+    # Distinctive Windows Terminal tab title via OSC escape (conhost handles ANSI natively on Win10+)
+    sys.stdout.write("\033]0;Camera Service (8001)\007")
+    sys.stdout.flush()
+
     print("="*70)
     print("  Camera Capture Service")
     print("="*70)
