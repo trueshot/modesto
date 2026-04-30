@@ -50,6 +50,10 @@ class VersionInfo:
     resolutions: Optional[list] = field(default=None)
     error: Optional[str] = None
     fetched_at: float = 0.0
+    # True if the probe got past TCP open and read an HTTP response (even a
+    # non-M5CamServer one). False only on transport-layer failure
+    # (ConnectionRefused, timeout, network unreachable).
+    transport_ok: bool = False
 
 
 class M5CamServerProbe:
@@ -60,7 +64,7 @@ class M5CamServerProbe:
     # JSON-returning device.
     _REQUIRED_FIELDS = frozenset({"sketch", "sketch_md5", "camera_ok"})
 
-    def __init__(self, ttl_s: float = 300.0, timeout_s: float = 3.0):
+    def __init__(self, ttl_s: float = 86400.0, timeout_s: float = 3.0):
         self.ttl_s = ttl_s
         self.timeout_s = timeout_s
         self._cache: dict[str, VersionInfo] = {}
@@ -74,6 +78,11 @@ class M5CamServerProbe:
         Return cached VersionInfo if still fresh; otherwise probe and cache.
         Pass force=True to bypass cache and refetch (e.g. after a known firmware
         flash or power cycle).
+
+        On probe failure, prior successful info is preserved (timestamp bumped)
+        rather than overwritten with the failure — transient connection issues
+        (e.g. mediator holding the W5500 single-client slot) shouldn't erase
+        known-good firmware info.
         """
         cache_key = f"{ip}:{port}"
         with self._lock:
@@ -83,8 +92,20 @@ class M5CamServerProbe:
 
         info = self._probe(ip, port)
         with self._lock:
+            prior = self._cache.get(cache_key)
+            # Preserve a prior probe that reached the application layer
+            # ("stock firmware detected" counts as informative) when the
+            # current probe failed at transport (ConnectionRefused / timeout).
+            if not info.transport_ok and prior is not None and prior.transport_ok:
+                prior.fetched_at = time.time()
+                return prior
             self._cache[cache_key] = info
         return info
+
+    def get_cached(self, ip: str, port: int = 80) -> Optional[VersionInfo]:
+        """Return cached VersionInfo without probing. None if no entry."""
+        with self._lock:
+            return self._cache.get(f"{ip}:{port}")
 
     def _probe(self, ip: str, port: int) -> VersionInfo:
         info = VersionInfo(is_m5camserver=False, fetched_at=time.time())
@@ -93,6 +114,7 @@ class M5CamServerProbe:
             conn = http.client.HTTPConnection(ip, port=port, timeout=self.timeout_s)
             conn.request("GET", "/version")
             resp = conn.getresponse()
+            info.transport_ok = True  # got past TCP open + first HTTP byte
             if resp.status != 200:
                 info.error = f"HTTP {resp.status}"
                 return info

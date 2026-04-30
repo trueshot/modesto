@@ -111,6 +111,7 @@ class HttpCameraMediator:
         circuit_cooldown_s: float = 30.0,
         reconnect_backoff_s: float = 1.0,
         read_timeout_s: float = 10.0,
+        version_probe=None,
     ):
         self.idle_grace_s = idle_grace_s
         self.first_frame_timeout_s = first_frame_timeout_s
@@ -119,6 +120,13 @@ class HttpCameraMediator:
         self.circuit_cooldown_s = circuit_cooldown_s
         self.reconnect_backoff_s = reconnect_backoff_s
         self.read_timeout_s = read_timeout_s
+        # Optional callable(ip, port=80, force=False) -> VersionInfo. If set,
+        # invoked at the start of each worker loop, before the streaming
+        # connection — the worker holds the W5500 single-client slot at that
+        # moment, so this is the only window where /version can probe without
+        # contending with the stream. Failures are swallowed; streaming
+        # proceeds either way.
+        self.version_probe = version_probe
         self._cams: dict[str, _CamState] = {}
         self._cams_lock = threading.Lock()
 
@@ -205,6 +213,15 @@ class HttpCameraMediator:
         """Maintain a persistent MJPEG stream, update the buffer on each frame.
         Dispatches to GET or POST-duplex implementation based on stream_mode."""
         logger.info(f"HTTP camera {ip}: stream worker starting ({http_path}, mode={s.stream_mode})")
+
+        # Warm the /version cache while we still own the W5500 slot. The
+        # probe respects its own TTL — repeat workers within TTL no-op
+        # against cache. Failures are swallowed; streaming proceeds.
+        if self.version_probe is not None:
+            try:
+                self.version_probe(ip)
+            except Exception as e:
+                logger.warning(f"HTTP camera {ip}: pre-stream /version probe failed: {e}")
 
         while not s.stop_event.is_set():
             now = time.time()

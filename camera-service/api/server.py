@@ -115,14 +115,17 @@ app.add_middleware(
 camera_capture = CameraCapture(warehouses_path="../warehouses")
 image_cache = ImageCache(default_ttl=30)  # 30 second cache
 
-# HTTP camera proxy (ESP32/PoE-CAM). Coalesces per-IP concurrent requests
-# onto a single upstream connection since these devices lock up otherwise.
-http_mediator = HttpCameraMediator()
-
 # M5CamServer /version probe with TTL cache. Used to fingerprint flashed
 # cams (sketch_md5, uptime, camera_ok, free_heap). Cached aggressively
 # because probing stock firmware burns W5500 socket-pool cycles.
 m5_probe = M5CamServerProbe()
+
+# HTTP camera proxy (ESP32/PoE-CAM). Coalesces per-IP concurrent requests
+# onto a single upstream connection since these devices lock up otherwise.
+# Hooks m5_probe.version into the worker startup so the /version cache gets
+# warmed during the only window where the W5500 single-client slot is free
+# (right before the stream connect).
+http_mediator = HttpCameraMediator(version_probe=m5_probe.version)
 
 # ============================================================================
 # MODELS
@@ -1538,11 +1541,15 @@ def http_camera_frame_via_mediator(
 
 @app.post("/api/http-cameras/{camera_ip}/reset-circuit")
 def http_camera_reset_circuit(camera_ip: str):
-    """Clear a locked-open circuit breaker after a camera has been power-cycled."""
+    """Clear a locked-open circuit breaker after a camera has been power-cycled.
+    Also invalidates the /version cache — firmware could have been changed
+    while the cam was off (manual flash, factory reset, board swap)."""
+    ip, port = _split_ip_port(camera_ip)
     cleared = http_mediator.reset_circuit(camera_ip)
     if not cleared:
         raise HTTPException(status_code=404, detail=f"No HTTP camera state for {camera_ip}")
-    return {"camera_ip": camera_ip, "status": "reset"}
+    m5_probe.invalidate(ip, port)
+    return {"camera_ip": camera_ip, "status": "reset", "version_cache": "invalidated"}
 
 
 def _split_ip_port(camera_ip: str, default_port: int = 80) -> tuple:
@@ -1559,7 +1566,7 @@ def _split_ip_port(camera_ip: str, default_port: int = 80) -> tuple:
 @app.get("/api/http-cameras/{camera_ip}/version")
 def http_camera_version(
     camera_ip: str,
-    force: bool = Query(False, description="Bypass cache and refetch"),
+    force: bool = Query(False, description="Bypass cache and refetch (will fail with ConnectionRefused if the mediator is streaming)"),
 ):
     """
     Fingerprint a cam via M5CamServer /version. Returns parsed firmware info
@@ -1568,8 +1575,59 @@ def http_camera_version(
     with an `error` reason for stock firmware, unreachable cams, or non-cam
     devices. Cached 5 min by default — stock firmware probes burn W5500
     socket-pool cycles, so don't hammer.
+
+    If the mediator is actively streaming this cam, a fresh /version probe
+    would contend for the W5500 single-client slot and fail. We return cached
+    info (even past TTL) in that case — firmware doesn't change without an
+    explicit OTA, which invalidates the cache on success.
     """
     ip, port = _split_ip_port(camera_ip)
+
+    if not force:
+        med = http_mediator.status().get(ip)
+        mediator_streaming = bool(med and med.get("worker_alive") and med.get("has_frame"))
+        if mediator_streaming:
+            cached = m5_probe.get_cached(ip, port)
+            if cached is not None and cached.transport_ok:
+                return {
+                    "camera_ip": camera_ip,
+                    "is_m5camserver": cached.is_m5camserver,
+                    "sketch": cached.sketch,
+                    "sketch_md5": cached.sketch_md5,
+                    "build_date": cached.build_date,
+                    "build_time": cached.build_time,
+                    "uptime_s": cached.uptime_s,
+                    "free_heap": cached.free_heap,
+                    "camera_ok": cached.camera_ok,
+                    "resolutions": cached.resolutions,
+                    "error": cached.error,
+                    "fetched_age_s": round(time.time() - cached.fetched_at, 1),
+                    "source": "cache (mediator streaming — probe skipped)",
+                }
+            # No transport-OK cache and mediator owns the W5500 slot. A probe
+            # would fail with ConnectionRefused; report honestly instead.
+            frame_age_ms = med.get("frame_age_ms")
+            return {
+                "camera_ip": camera_ip,
+                "is_m5camserver": None,
+                "sketch": None,
+                "sketch_md5": None,
+                "build_date": None,
+                "build_time": None,
+                "uptime_s": None,
+                "free_heap": None,
+                "camera_ok": None,
+                "resolutions": None,
+                "error": (
+                    f"firmware unprobeable while mediator streams (worker alive, "
+                    f"frame age {frame_age_ms:.0f}ms): /version contends for the W5500 "
+                    f"single-client slot. Stop the mediator stream to probe, or use "
+                    f"?force=true (will likely fail until the slot frees)."
+                ),
+                "fetched_age_s": None,
+                "source": "mediator-busy",
+            }
+
     info = m5_probe.version(ip, port=port, force=force)
     return {
         "camera_ip": camera_ip,
@@ -1584,6 +1642,7 @@ def http_camera_version(
         "resolutions": info.resolutions,
         "error": info.error,
         "fetched_age_s": round(time.time() - info.fetched_at, 1),
+        "source": "probe",
     }
 
 
@@ -1599,23 +1658,53 @@ def http_camera_health(
     tcp_timeout: float = Query(2.0, description="SYN-ACK wait seconds"),
     http_timeout: float = Query(6.0, description="HTTP response wait seconds"),
     ping: bool = Query(True, description="Run ICMP probe to disambiguate offline vs tcp-closed"),
+    force_probe: bool = Query(False, description="Skip the mediator-proxied shortcut and run the active wedge probe even if the mediator is streaming"),
+    fresh_ms: float = Query(5000, description="Max frame age (ms) for mediator-proxied alive verdict"),
 ):
     """
     Wedge-state diagnostic. Distinguishes:
       alive | wedged_app | wedged_tcp | offline | unreachable.
 
-    Firmware-agnostic — works on stock M5PoECam, M5CamServer, anything
-    HTTP-on-W5500. Doesn't read body bytes; only checks whether the
-    application layer responds at all (the gen-42 wedge fingerprint is
-    "TCP works, HTTP never responds").
+    If the mediator is actively streaming this cam with a fresh frame, we
+    short-circuit to alive without probing — the W5500 holds one client
+    slot, and a fresh TCP probe while the mediator owns it would falsely
+    report wedged_tcp. Use force_probe=true to override.
+
+    Active probe is firmware-agnostic — works on stock M5PoECam,
+    M5CamServer, anything HTTP-on-W5500. Doesn't read body bytes; only
+    checks whether the application layer responds at all (the gen-42
+    wedge fingerprint is "TCP works, HTTP never responds").
     """
     ip, port = _split_ip_port(camera_ip)
-    return _asdict(detect_wedge(
+
+    if not force_probe:
+        med = http_mediator.status().get(ip)
+        if med and med.get("worker_alive") and med.get("has_frame"):
+            age_ms = med.get("frame_age_ms")
+            if age_ms is not None and age_ms < fresh_ms:
+                return {
+                    "ip": ip,
+                    "port": port,
+                    "verdict": "alive",
+                    "ping_ok": None,
+                    "tcp_open": True,
+                    "http_ok": True,
+                    "tcp_ms": None,
+                    "http_ms": None,
+                    "http_status": 200,
+                    "error": None,
+                    "recommendation": f"alive — mediator streaming (frame age {age_ms:.0f}ms); active probe skipped to avoid contending for the W5500 single-client slot",
+                    "source": "mediator",
+                }
+
+    report = _asdict(detect_wedge(
         ip, port,
         tcp_timeout=tcp_timeout,
         http_timeout=http_timeout,
         do_ping=ping,
     ))
+    report["source"] = "probe"
+    return report
 
 
 class DuplexCommand(BaseModel):
