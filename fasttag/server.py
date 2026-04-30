@@ -28,8 +28,11 @@ from pydantic import BaseModel
 import uvicorn
 
 import cv2
+import numpy as np
+import requests
 
 from worker import detection_worker
+from http_worker import http_detection_worker
 
 # ============================================================================
 # CREDENTIALS (same pattern as camera-service)
@@ -254,12 +257,12 @@ def build_rtsp_url(cam: dict) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: launch the worker reaper. (worker_reaper is defined later in
-    # this module; name resolution happens at call time, not decoration time.)
+    # Startup: launch background daemons. Names resolved at call time, so
+    # forward references to functions defined later in the module are fine.
     threading.Thread(target=worker_reaper, daemon=True, name="worker-reaper").start()
+    threading.Thread(target=camera_service_pinger, daemon=True, name="camera-svc-ping").start()
     yield
-    # Shutdown: nothing — the reaper is a daemon thread and dies with the
-    # process. result_collector is also daemon.
+    # Shutdown: nothing — daemon threads die with the process.
 
 
 app = FastAPI(
@@ -389,6 +392,69 @@ def worker_reaper():
 
     logger.info("Worker reaper stopped")
 
+
+# ============================================================================
+# CAMERA-SERVICE HEALTH PING
+# ============================================================================
+#
+# Some cameras (PoE-CAMs / M5CamServer) speak HTTP/MJPEG only — single
+# W5500 client slot. Detection workers for those cams ride camera-service's
+# http_mediator (port 8001) so they don't contend with the mediator's
+# stream. If camera-service is down, those workers can't function. We
+# need fast detection of that state so:
+#   1. workers can fail-fast instead of busy-looping on dead requests
+#   2. /tag-debug can surface a clear indicator
+
+CAMERA_SERVICE_URL = os.environ.get("CAMERA_SERVICE_URL", "http://127.0.0.1:8001")
+CAMERA_SERVICE_PING_INTERVAL_S = 5
+CAMERA_SERVICE_PING_TIMEOUT_S = 2
+
+camera_service_status = {
+    "reachable": None,        # None = haven't checked yet
+    "url": CAMERA_SERVICE_URL,
+    "last_check_at": 0.0,
+    "last_ok_at": 0.0,
+    "last_error": None,
+}
+
+
+def camera_service_pinger():
+    """Background thread: periodic ping to camera-service /api/health."""
+    logger.info(f"Camera-service pinger started (target {CAMERA_SERVICE_URL})")
+    while True:
+        try:
+            r = requests.get(f"{CAMERA_SERVICE_URL}/api/health",
+                             timeout=CAMERA_SERVICE_PING_TIMEOUT_S)
+            now = time.time()
+            camera_service_status["last_check_at"] = now
+            if r.status_code == 200:
+                if camera_service_status["reachable"] is False:
+                    logger.info("Camera-service back UP")
+                camera_service_status["reachable"] = True
+                camera_service_status["last_ok_at"] = now
+                camera_service_status["last_error"] = None
+            else:
+                if camera_service_status["reachable"] is True:
+                    logger.warning(f"Camera-service unhealthy: HTTP {r.status_code}")
+                camera_service_status["reachable"] = False
+                camera_service_status["last_error"] = f"HTTP {r.status_code}"
+        except requests.exceptions.RequestException as e:
+            now = time.time()
+            camera_service_status["last_check_at"] = now
+            if camera_service_status["reachable"] is True:
+                logger.warning(f"Camera-service DOWN: {type(e).__name__}: {e}")
+            camera_service_status["reachable"] = False
+            camera_service_status["last_error"] = f"{type(e).__name__}: {e}"
+        except Exception as e:
+            logger.exception(f"camera_service_pinger unexpected error: {e}")
+
+        time.sleep(CAMERA_SERVICE_PING_INTERVAL_S)
+
+
+def is_camera_service_up() -> bool:
+    """Synchronous read of the most recent ping state. False if unknown."""
+    return camera_service_status.get("reachable") is True
+
 # ============================================================================
 # MODELS
 # ============================================================================
@@ -396,9 +462,67 @@ def worker_reaper():
 class StartRequest(BaseModel):
     cameras: List[str] = []  # list of camera IPs, or empty for "all"
     config: Optional[dict] = None  # override default config
+    auto_stop_seconds: float = 0  # 0 = no auto-stop; >0 schedules /stop after N seconds
 
 class StopRequest(BaseModel):
     cameras: List[str] = []  # list of camera IPs, or empty for "all"
+
+
+# ============================================================================
+# AUTO-STOP TIMER
+# ============================================================================
+#
+# /start can specify auto_stop_seconds; we schedule a single-shot timer to
+# call the stop logic when it fires. Server-side so closing the page
+# doesn't strand workers running indefinitely. The tag-debug page sets 20
+# minutes by default — debug session safety net.
+
+_auto_stop_timer: Optional[threading.Timer] = None
+_auto_stop_deadline: float = 0.0  # epoch seconds; 0 = disabled
+
+
+def _cancel_auto_stop():
+    global _auto_stop_timer, _auto_stop_deadline
+    if _auto_stop_timer is not None:
+        _auto_stop_timer.cancel()
+        _auto_stop_timer = None
+    _auto_stop_deadline = 0.0
+
+
+def _schedule_auto_stop(seconds: float):
+    global _auto_stop_timer, _auto_stop_deadline
+    _cancel_auto_stop()
+    if seconds <= 0:
+        return
+
+    def _fire():
+        logger.info(f"auto-stop firing — stopping all workers")
+        _stop_all_workers()
+        global _auto_stop_timer, _auto_stop_deadline
+        _auto_stop_timer = None
+        _auto_stop_deadline = 0.0
+
+    _auto_stop_deadline = time.time() + seconds
+    _auto_stop_timer = threading.Timer(seconds, _fire)
+    _auto_stop_timer.daemon = True
+    _auto_stop_timer.start()
+    logger.info(f"auto-stop scheduled in {seconds:.0f}s")
+
+
+def _stop_all_workers():
+    """Internal: stop every running worker (called by auto-stop timer and /stop)."""
+    with workers_lock:
+        cam_ips = list(workers.keys())
+    for ip in cam_ips:
+        with workers_lock:
+            w = workers.pop(ip, None)
+        if w:
+            w["stop_event"].set()
+            w["process"].join(timeout=5)
+            if w["process"].is_alive():
+                w["process"].kill()
+        with stats_lock:
+            camera_stats.pop(ip, None)
 
 # ============================================================================
 # ENDPOINTS
@@ -465,11 +589,6 @@ def start_cameras(request: StartRequest):
             skipped.append(ip)
             continue
 
-        rtsp_url = build_rtsp_url(cam)
-        if not rtsp_url:
-            errors.append({"ip": ip, "error": "no RTSP path available (direct or NVR)"})
-            continue
-
         # Merge detection config with per-camera settings
         worker_config = {
             **config,
@@ -477,13 +596,32 @@ def start_cameras(request: StartRequest):
             "flip": cam_cfg.get("flip", None),
         }
 
+        # Dispatch by protocol: RTSP cams open their own connection;
+        # HTTP cams (PoE-CAM / M5CamServer) ride camera-service's
+        # http_mediator since their W5500 chip allows only one client.
+        protocol = (cam.get("protocol") or "rtsp").lower()
         stop_event = multiprocessing.Event()
 
-        proc = multiprocessing.Process(
-            target=detection_worker,
-            args=(ip, rtsp_url, result_queue, stop_event, worker_config),
-            daemon=True,
-        )
+        if protocol == "http":
+            if not is_camera_service_up():
+                errors.append({
+                    "ip": ip,
+                    "error": f"http camera, but camera-service unreachable at {CAMERA_SERVICE_URL}"
+                })
+                continue
+            target = http_detection_worker
+            worker_args = (ip, CAMERA_SERVICE_URL, result_queue, stop_event, worker_config)
+            access_label = "http-mediator"
+        else:
+            rtsp_url = build_rtsp_url(cam)
+            if not rtsp_url:
+                errors.append({"ip": ip, "error": "no RTSP path available (direct or NVR)"})
+                continue
+            target = detection_worker
+            worker_args = (ip, rtsp_url, result_queue, stop_event, worker_config)
+            access_label = cam.get("access")
+
+        proc = multiprocessing.Process(target=target, args=worker_args, daemon=True)
         proc.start()
 
         with workers_lock:
@@ -493,11 +631,17 @@ def start_cameras(request: StartRequest):
                 "started_at": time.time(),
                 "config": worker_config,
                 "model": cam.get("model"),
-                "access": cam.get("access"),
+                "access": access_label,
+                "protocol": protocol,
             }
 
         started.append(ip)
-        logger.info(f"Started worker for {ip} (pid {proc.pid}, model {cam.get('model')}, access {cam.get('access')}, fps {worker_config['target_fps']})")
+        logger.info(f"Started {protocol} worker for {ip} (pid {proc.pid}, model {cam.get('model')}, access {access_label}, fps {worker_config['target_fps']})")
+
+    # Schedule auto-stop if requested (only when starting at least one worker;
+    # if everyone errored or already-running, don't reset an existing timer).
+    if request.auto_stop_seconds > 0 and started:
+        _schedule_auto_stop(request.auto_stop_seconds)
 
     return {
         "started": started,
@@ -505,12 +649,21 @@ def start_cameras(request: StartRequest):
         "skipped_disabled": skipped,
         "errors": errors,
         "total_active": len(workers),
+        "auto_stop_in_seconds": (
+            round(_auto_stop_deadline - time.time(), 1)
+            if _auto_stop_deadline else None
+        ),
     }
 
 
 @app.post("/stop")
 def stop_cameras(request: StopRequest):
     """Stop detection on cameras. Pass IPs or empty list for all."""
+    # Stop-all cancels any pending auto-stop timer; per-camera stops do not
+    # (the rest of the batch may still want the timer to apply).
+    if not request.cameras:
+        _cancel_auto_stop()
+
     if request.cameras:
         cam_ips = request.cameras
     else:
@@ -567,6 +720,8 @@ def get_status():
             "alive": proc.is_alive(),
             "uptime_sec": round(now - w["started_at"], 1),
             "model": w.get("model"),
+            "protocol": w.get("protocol", "rtsp"),
+            "access": w.get("access"),
             "fps": hb["fps"] if hb else 0,
             "frame_seq": hb["frame_seq"] if hb else 0,
             "detect_count": hb["detect_count"] if hb else 0,
@@ -579,11 +734,24 @@ def get_status():
     with detection_lock:
         buf_size = len(detection_buffer)
 
+    cs = dict(camera_service_status)
+    if cs["last_check_at"]:
+        cs["last_check_age_s"] = round(now - cs["last_check_at"], 1)
+    if cs["last_ok_at"]:
+        cs["last_ok_age_s"] = round(now - cs["last_ok_at"], 1)
+
+    auto_stop_in = (
+        round(_auto_stop_deadline - now, 1)
+        if _auto_stop_deadline > now else None
+    )
+
     return {
         "active_cameras": len(cameras),
         "cameras": cameras,
         "detection_buffer_size": buf_size,
         "detection_buffer_capacity": DETECTION_BUFFER_SIZE,
+        "camera_service": cs,
+        "auto_stop_in_seconds": auto_stop_in,
     }
 
 
@@ -825,30 +993,92 @@ def live_overlay(
 ):
     """Live MJPEG stream with detection overlay drawn server-side.
 
-    Opens its own RTSP connection — independent of any FastTag worker.
+    Dispatch:
+      RTSP cams — opens its own VideoCapture (independent of any FastTag
+        worker on this cam).
+      HTTP cams (PoE-CAM / M5CamServer) — fetches JPEG frames from
+        camera-service's http_mediator. Single-client W5500 chip means
+        we cannot open a fresh stream; ride the mediator.
+
     Closes on:
       - HTTP client disconnect (browser closes tab / removes <img>)
-      - Frame read failure (RTSP drop)
-      - max_seconds elapsed (default 300s = 5 min; forgotten-tab guard)
+      - Frame read failure (RTSP drop / camera-service unreachable)
+      - max_seconds elapsed (default 300s; forgotten-tab guard)
 
-    Rate-limited to `fps` (default 5) so a single overlay viewer can't
-    saturate CPU running detection at full stream rate.
+    Rate-limited to `fps` so a single overlay viewer can't saturate
+    CPU running detection at full stream rate.
     """
     cams = {c["ip"]: c for c in get_all_active_cameras()}
     cam = cams.get(camera_ip)
     if cam is None:
         raise HTTPException(status_code=404, detail=f"camera {camera_ip} not in lodge.db")
 
-    rtsp_url = build_rtsp_url(cam)
-    if not rtsp_url:
-        raise HTTPException(status_code=400, detail=f"no RTSP path available for {camera_ip}")
-
     fam = family or DEFAULT_CONFIG["families"]
     detector = _get_overlay_detector(fam)
     frame_interval = 1.0 / fps if fps > 0 else 0
     deadline = time.time() + max_seconds
+    protocol = (cam.get("protocol") or "rtsp").lower()
 
-    def generate():
+    if protocol == "http":
+        if not is_camera_service_up():
+            raise HTTPException(
+                status_code=503,
+                detail=f"camera-service unreachable at {CAMERA_SERVICE_URL}; cannot stream HTTP camera"
+            )
+
+        frame_url = f"{CAMERA_SERVICE_URL}/api/http-cameras/{camera_ip}/frame"
+
+        def generate_http():
+            session = requests.Session()
+            last_emit = 0.0
+            consecutive_fail = 0
+            try:
+                while time.time() < deadline:
+                    now = time.time()
+                    if frame_interval > 0 and (now - last_emit) < frame_interval:
+                        time.sleep(max(0.01, frame_interval - (now - last_emit)))
+                        continue
+                    try:
+                        r = session.get(frame_url, timeout=2)
+                    except requests.exceptions.RequestException:
+                        consecutive_fail += 1
+                        if consecutive_fail >= 5:
+                            break
+                        time.sleep(0.5)
+                        continue
+                    if r.status_code != 200:
+                        consecutive_fail += 1
+                        if consecutive_fail >= 5:
+                            break
+                        time.sleep(0.5)
+                        continue
+                    consecutive_fail = 0
+                    arr = np.frombuffer(r.content, dtype=np.uint8)
+                    frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if frame is None or frame.std() < 10:
+                        continue
+                    last_emit = time.time()
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    dets = detector.detect(gray)
+                    _draw_overlay(frame, dets)
+                    ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                    if not ok:
+                        continue
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n\r\n"
+                           + jpeg.tobytes() + b"\r\n")
+                logger.info(f"live-overlay (http): {camera_ip} closed")
+            finally:
+                session.close()
+
+        return StreamingResponse(generate_http(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+    # RTSP path
+    rtsp_url = build_rtsp_url(cam)
+    if not rtsp_url:
+        raise HTTPException(status_code=400, detail=f"no RTSP path available for {camera_ip}")
+
+    def generate_rtsp():
         cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         if not cap.isOpened():
@@ -863,7 +1093,6 @@ def live_overlay(
                 if frame.std() < 10:
                     continue
                 now = time.time()
-                # Rate limit: skip frames between emissions
                 if frame_interval > 0 and (now - last_emit) < frame_interval:
                     continue
                 last_emit = now
@@ -876,11 +1105,11 @@ def live_overlay(
                 yield (b"--frame\r\n"
                        b"Content-Type: image/jpeg\r\n\r\n"
                        + jpeg.tobytes() + b"\r\n")
-            logger.info(f"live-overlay: {camera_ip} closed (max_seconds={max_seconds}s reached or stream ended)")
+            logger.info(f"live-overlay (rtsp): {camera_ip} closed")
         finally:
             cap.release()
 
-    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+    return StreamingResponse(generate_rtsp(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 # ============================================================================

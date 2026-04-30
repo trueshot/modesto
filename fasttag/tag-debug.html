@@ -150,14 +150,37 @@
     color: var(--muted); margin-left: 4px; font-size: 10px;
   }
   .running-footer .none { color: var(--muted); font-style: italic; }
+
+  .ctrl-btn {
+    background: var(--panel2); color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px 12px; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 500;
+    margin-left: 6px;
+  }
+  .ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .ctrl-btn.start:hover { border-color: var(--green); color: var(--green); }
+  .ctrl-btn.stop:hover { border-color: var(--red); color: var(--red); }
+  .ctrl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ctrl-btn:disabled:hover { border-color: var(--border); color: var(--text); }
+  .countdown {
+    display: inline-block; margin-left: 8px;
+    color: var(--amber); font-size: 11px;
+    font-family: "Cascadia Mono", "Consolas", monospace;
+  }
+  .countdown.hidden { display: none; }
 </style>
 </head>
 <body>
 <div class="header">
   <h1>FastTag — Live Tag Debug</h1>
+  <button id="startBtn" class="ctrl-btn start" title="Start detection on all enabled cameras (auto-stops in 20 min)">Start</button>
+  <button id="stopBtn" class="ctrl-btn stop" title="Stop all detection workers">Stop</button>
+  <span class="countdown hidden" id="countdown" title="Auto-stop deadline; click Start again to extend"></span>
   <input id="filter" placeholder="filter: tag id or .ip">
   <span class="stats" id="stats">0 tags</span>
   <span class="status" id="sse-status">SSE: connecting…</span>
+  <span class="status" id="cs-status" title="camera-service (port 8001) reachability — required for HTTP-camera detection">8001: ?</span>
 </div>
 <div class="main">
   <div class="left">
@@ -392,17 +415,60 @@
     document.getElementById("closeDetail").onclick = () => clearDetail();
   }
 
+  // Live-overlay default auto-close (mirrors server default unless overridden).
+  // Override with ?overlay_max=N in the page URL.
+  const OVERLAY_MAX_S = parseFloat(params.get("overlay_max") || "300");
+  let overlayCountdownTimer = null;
+
   function renderCameraDetail(ip) {
+    const url = `/live-overlay/${encodeURIComponent(ip)}?max_seconds=${OVERLAY_MAX_S}`;
+    const startedAt = Date.now() / 1000;
     detailEl.innerHTML = `
       <h2>Camera ${ip} — live overlay
+        <span id="overlayCountdown" class="countdown" style="margin-left:10px"></span>
         <button class="close-btn" id="closeDetail">close</button>
       </h2>
-      <div class="detail-meta">Direct RTSP probe · separate connection from any FastTag worker on this cam.</div>
-      <img class="overlay-img" src="/live-overlay/${encodeURIComponent(ip)}" alt="live overlay for ${ip}">`;
+      <div class="detail-meta">Separate connection from any FastTag worker on this cam. Auto-closes after ${Math.round(OVERLAY_MAX_S)}s.</div>
+      <img class="overlay-img" id="overlayImg" src="${url}" alt="live overlay for ${ip}">`;
     document.getElementById("closeDetail").onclick = () => clearDetail();
+
+    // Countdown: tick every 1s; replace the img with a "stopped" notice when we hit 0.
+    if (overlayCountdownTimer) clearInterval(overlayCountdownTimer);
+    overlayCountdownTimer = setInterval(() => {
+      const cdEl = document.getElementById("overlayCountdown");
+      const imgEl = document.getElementById("overlayImg");
+      if (!cdEl) {  // detail panel was replaced; bail
+        clearInterval(overlayCountdownTimer);
+        overlayCountdownTimer = null;
+        return;
+      }
+      const remaining = OVERLAY_MAX_S - (Date.now() / 1000 - startedAt);
+      if (remaining > 0) {
+        cdEl.textContent = `closes in ${fmtCountdown(remaining)}`;
+      } else {
+        cdEl.textContent = "stream ended";
+        cdEl.style.color = "var(--red)";
+        if (imgEl) {
+          imgEl.removeAttribute("src");  // tear down stale stream
+          imgEl.outerHTML = `
+            <div style="border:1px dashed var(--border); border-radius:4px; padding:24px; text-align:center; color:var(--muted);">
+              <div style="margin-bottom:10px">Live overlay auto-stopped after ${Math.round(OVERLAY_MAX_S)}s.</div>
+              <button class="ctrl-btn" id="reopenOverlay">Reopen</button>
+            </div>`;
+          const reopenBtn = document.getElementById("reopenOverlay");
+          if (reopenBtn) reopenBtn.onclick = () => renderCameraDetail(ip);
+        }
+        clearInterval(overlayCountdownTimer);
+        overlayCountdownTimer = null;
+      }
+    }, 1000);
   }
 
   function clearDetail() {
+    if (overlayCountdownTimer) {
+      clearInterval(overlayCountdownTimer);
+      overlayCountdownTimer = null;
+    }
     selected = null;
     detailEl.innerHTML = `
       <h2>Drill-in</h2>
@@ -449,13 +515,92 @@
 
   filterEl.addEventListener("input", render);
 
-  // ── Running-cams footer ────────────────────────────────────────────────
+  // ── Start / Stop buttons ───────────────────────────────────────────────
+  const AUTO_STOP_SECONDS = parseFloat(params.get("auto_stop") || "1200");  // 20 min default
+  const startBtn = document.getElementById("startBtn");
+  const stopBtn = document.getElementById("stopBtn");
+  const countdownEl = document.getElementById("countdown");
+
+  async function doStart() {
+    startBtn.disabled = true;
+    try {
+      const r = await fetch("/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auto_stop_seconds: AUTO_STOP_SECONDS }),
+      });
+      const d = await r.json();
+      const n = (d.started || []).length;
+      const errs = (d.errors || []).length;
+      console.log(`/start → ${n} workers (${errs} errors)`, d);
+    } catch (e) {
+      console.error("/start failed", e);
+    } finally {
+      // Re-enable after a short cooldown so the next refreshStatus can update
+      setTimeout(() => { startBtn.disabled = false; }, 1500);
+    }
+  }
+
+  async function doStop() {
+    stopBtn.disabled = true;
+    try {
+      const r = await fetch("/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const d = await r.json();
+      console.log(`/stop → ${(d.stopped || []).length} workers stopped`, d);
+    } catch (e) {
+      console.error("/stop failed", e);
+    } finally {
+      setTimeout(() => { stopBtn.disabled = false; }, 1500);
+    }
+  }
+
+  startBtn.addEventListener("click", doStart);
+  stopBtn.addEventListener("click", doStop);
+
+  function fmtCountdown(seconds) {
+    if (seconds <= 0) return "0:00";
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60).toString().padStart(2, "0");
+    return `${m}:${s}`;
+  }
+
+  // ── Status poll: running-cams footer + camera-service indicator ────────
   const chipsEl = document.getElementById("runningChips");
-  async function refreshRunning() {
+  const csStatusEl = document.getElementById("cs-status");
+  async function refreshStatus() {
     try {
       const r = await fetch("/status");
       if (!r.ok) throw new Error("status " + r.status);
       const data = await r.json();
+
+      // ── auto-stop countdown ──
+      const remaining = data.auto_stop_in_seconds;
+      if (remaining !== null && remaining !== undefined && remaining > 0) {
+        countdownEl.textContent = `auto-stop in ${fmtCountdown(remaining)}`;
+        countdownEl.classList.remove("hidden");
+      } else {
+        countdownEl.classList.add("hidden");
+      }
+
+      // ── camera-service indicator ──
+      const cs = data.camera_service || {};
+      if (cs.reachable === true) {
+        csStatusEl.textContent = "8001: up";
+        csStatusEl.className = "status ok";
+      } else if (cs.reachable === false) {
+        const err = cs.last_error ? ` (${cs.last_error.split(':')[0]})` : "";
+        csStatusEl.textContent = `8001: down${err}`;
+        csStatusEl.className = "status err";
+      } else {
+        csStatusEl.textContent = "8001: ?";
+        csStatusEl.className = "status";
+      }
+
+      // ── running-cams chips ──
       const cams = data.cameras || {};
       const running = [];
       for (const [ip, c] of Object.entries(cams)) {
@@ -468,21 +613,23 @@
       if (running.length === 0) {
         chipsEl.className = "none";
         chipsEl.textContent = "(no workers reading frames)";
-        return;
+      } else {
+        chipsEl.className = "";
+        chipsEl.innerHTML = running.map(c => {
+          const sel = (selected && selected.kind === "camera" && selected.value === c.ip)
+            ? "selected" : "";
+          return `<span class="chip ${sel}" data-ip="${c.ip}">${c.ip}<span class="fps">${c.fps.toFixed(1)}</span></span>`;
+        }).join("");
       }
-      chipsEl.className = "";
-      chipsEl.innerHTML = running.map(c => {
-        const sel = (selected && selected.kind === "camera" && selected.value === c.ip)
-          ? "selected" : "";
-        return `<span class="chip ${sel}" data-ip="${c.ip}">${c.ip}<span class="fps">${c.fps.toFixed(1)}</span></span>`;
-      }).join("");
     } catch (e) {
       chipsEl.className = "none";
       chipsEl.textContent = "(/status unreachable)";
+      csStatusEl.textContent = "8003: down";
+      csStatusEl.className = "status err";
     }
   }
-  refreshRunning();
-  setInterval(refreshRunning, 3000);
+  refreshStatus();
+  setInterval(refreshStatus, 3000);
 
   // ── Render loop ────────────────────────────────────────────────────────
   setInterval(render, RENDER_MS);
