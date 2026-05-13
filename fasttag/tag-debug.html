@@ -740,6 +740,7 @@
   // ── Status poll: running-cams footer + camera-service indicator ────────
   const chipsEl = document.getElementById("runningChips");
   const csStatusEl = document.getElementById("cs-status");
+  let prevWorkerKey = "";  // track worker set for subnet refresh
   async function refreshStatus() {
     try {
       const r = await fetch("/status");
@@ -792,6 +793,26 @@
           const label = abbrev ? "." + c.ip.split(".").pop() : c.ip;
           return `<span class="chip ${sel} ${stale}" data-ip="${c.ip}" title="${c.ip}">${dot}${label}<span class="fps">${fpsVal}</span></span>`;
         }).join("");
+      }
+
+      // refresh subnet grid if worker set changed while viewing it
+      const workerKey = workers.map(w => w.ip + ":" + w.status).sort().join(",");
+      if (workerKey !== prevWorkerKey) {
+        prevWorkerKey = workerKey;
+        if (selected && selected.kind === "subnet") {
+          fetchSubnet(false).then(data => {
+            const grid = document.getElementById("subnetGrid");
+            if (!grid) return;
+            grid.querySelectorAll(".cell").forEach(cell => {
+              const ip = cell.dataset.ip;
+              const c = data.cells.find(x => x.ip === ip);
+              if (c) {
+                cell.className = "cell " + c.state;
+                cell.title = [c.ip, c.state, c.model, c.fps != null ? `fps: ${c.fps}` : null].filter(Boolean).join(" | ");
+              }
+            });
+          }).catch(() => {});
+        }
       }
     } catch (e) {
       chipsEl.className = "none";
