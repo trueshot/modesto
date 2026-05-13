@@ -148,7 +148,18 @@
   }
   .running-footer .chip .fps {
     color: var(--muted); margin-left: 4px; font-size: 10px;
+    display: inline-block; min-width: 2.5em; text-align: right;
   }
+  .running-footer .chip.stale {
+    opacity: 0.5; border-style: dashed;
+  }
+  .running-footer .chip .status-dot {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; margin-right: 4px; vertical-align: middle;
+  }
+  .running-footer .chip .status-dot.running { background: #4a4; }
+  .running-footer .chip .status-dot.reconnecting { background: #a84; }
+  .running-footer .chip .status-dot.starting { background: #888; }
   .running-footer .none { color: var(--muted); font-style: italic; }
 
   .ctrl-btn {
@@ -760,23 +771,26 @@
 
       // ── running-cams chips ──
       const cams = data.cameras || {};
-      const running = [];
+      const workers = [];
       for (const [ip, c] of Object.entries(cams)) {
-        if (c.status === "running" && c.fps > 0) {
-          running.push({ ip, fps: c.fps });
-        }
+        workers.push({ ip, fps: c.fps, status: c.status || "unknown" });
       }
-      running.sort((a, b) => a.ip.localeCompare(b.ip,
+      workers.sort((a, b) => a.ip.localeCompare(b.ip,
         undefined, { numeric: true }));
-      if (running.length === 0) {
+      if (workers.length === 0) {
         chipsEl.className = "none";
-        chipsEl.textContent = "(no workers reading frames)";
+        chipsEl.textContent = "(no workers)";
       } else {
         chipsEl.className = "";
-        chipsEl.innerHTML = running.map(c => {
+        const abbrev = workers.length > 10;
+        chipsEl.innerHTML = workers.map(c => {
           const sel = (selected && selected.kind === "camera" && selected.value === c.ip)
             ? "selected" : "";
-          return `<span class="chip ${sel}" data-ip="${c.ip}">${c.ip}<span class="fps">${c.fps.toFixed(1)}</span></span>`;
+          const stale = c.status !== "running" ? "stale" : "";
+          const dot = `<span class="status-dot ${c.status}"></span>`;
+          const fpsVal = (c.status === "running" && c.fps > 0) ? c.fps.toFixed(1) : "—";
+          const label = abbrev ? "." + c.ip.split(".").pop() : c.ip;
+          return `<span class="chip ${sel} ${stale}" data-ip="${c.ip}" title="${c.ip}">${dot}${label}<span class="fps">${fpsVal}</span></span>`;
         }).join("");
       }
     } catch (e) {
