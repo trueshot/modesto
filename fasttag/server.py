@@ -12,6 +12,7 @@ import os
 import sys
 import time
 import json
+import random
 import sqlite3
 import logging
 import threading
@@ -341,8 +342,13 @@ def result_collector():
 #   2. Force-kills workers stuck in 'starting' status past STARTING_TIMEOUT_S
 
 REAP_INTERVAL_S = 10
-STARTING_TIMEOUT_S = 30
+STARTING_TIMEOUT_MIN = 15
+STARTING_TIMEOUT_MAX = 20
 reaper_running = False
+
+# Wave spawning: start N workers, wait for them to stabilize, then next wave
+WAVE_SIZE = 5
+WAVE_SETTLE_S = 3  # seconds to wait between waves
 
 # Stagger between multiprocessing.Process.start() calls in /start. Mass
 # back-to-back spawns on Windows trigger native-init races (cv2 DLL load,
@@ -361,6 +367,8 @@ RESPAWN_MAX = 3
 RESPAWN_AGE_S = 30
 _respawn_attempts: dict = {}
 _respawn_lock = threading.Lock()
+_exhausted_ips: set = set()  # IPs that hit respawn limit — shown as "exhausted" in subnet-state
+_spawn_offset: int = 0  # rotates each /start so different cameras get priority
 
 
 def worker_reaper():
@@ -401,6 +409,7 @@ def worker_reaper():
                             count = _respawn_attempts.get(ip, 0)
                             if count >= RESPAWN_MAX:
                                 logger.warning(f"reaper: {ip} hit respawn limit ({RESPAWN_MAX}) — giving up")
+                                _exhausted_ips.add(ip)
                                 continue
                             _respawn_attempts[ip] = count + 1
                             new_count = count + 1
@@ -431,8 +440,9 @@ def worker_reaper():
                     with _respawn_lock:
                         _respawn_attempts.pop(ip, None)
 
-                if age > STARTING_TIMEOUT_S and status == "starting":
-                    logger.warning(f"reaper: killing stuck worker for {ip} (pid {proc.pid}, age {age:.0f}s, status=starting)")
+                starting_timeout = w.get("starting_timeout", STARTING_TIMEOUT_MIN)
+                if age > starting_timeout and status == "starting":
+                    logger.warning(f"reaper: killing stuck worker for {ip} (pid {proc.pid}, age {age:.0f}s, timeout {starting_timeout:.0f}s)")
                     w["stop_event"].set()
                     proc.join(timeout=2)
                     if proc.is_alive():
@@ -441,6 +451,27 @@ def worker_reaper():
                         workers.pop(ip, None)
                     with stats_lock:
                         camera_stats.pop(ip, None)
+
+                    # Respawn stuck workers same as native-crash deaths
+                    with _respawn_lock:
+                        count = _respawn_attempts.get(ip, 0)
+                        if count >= RESPAWN_MAX:
+                            logger.warning(f"reaper: {ip} hit respawn limit ({RESPAWN_MAX}) after stuck-kill — giving up")
+                            _exhausted_ips.add(ip)
+                            continue
+                        _respawn_attempts[ip] = count + 1
+                        new_count = count + 1
+
+                    cams = {c["ip"]: c for c in get_all_active_cameras()}
+                    cam = cams.get(ip)
+                    if not cam:
+                        logger.warning(f"reaper: {ip} no longer in lodge.db, dropping")
+                        continue
+                    ok, err = _spawn_one_worker(ip, cam, saved_config, respawn_count=new_count)
+                    if ok:
+                        logger.info(f"reaper: respawned {ip} after stuck-kill (attempt {new_count}/{RESPAWN_MAX})")
+                    else:
+                        logger.warning(f"reaper: respawn failed for {ip}: {err}")
 
         except Exception as e:
             logger.exception(f"worker_reaper iteration error: {e}")
@@ -632,6 +663,7 @@ def _spawn_one_worker(ip: str, cam: dict, worker_config: dict, *, respawn_count:
             "process": proc,
             "stop_event": stop_event,
             "started_at": time.time(),
+            "starting_timeout": random.uniform(STARTING_TIMEOUT_MIN, STARTING_TIMEOUT_MAX),
             "config": worker_config,
             "model": cam.get("model"),
             "access": access_label,
@@ -647,9 +679,12 @@ def _spawn_one_worker(ip: str, cam: dict, worker_config: dict, *, respawn_count:
 @app.post("/start")
 def start_cameras(request: StartRequest):
     """Start detection on cameras. Pass IPs or empty list for all."""
-    global result_queue
+    global result_queue, _spawn_offset
 
     config = {**DEFAULT_CONFIG, **(request.config or {})}
+
+    # Clear exhausted set — fresh /start gives everyone a new chance
+    _exhausted_ips.clear()
 
     # Build lookup of all reachable cameras (includes NVR fallback info)
     all_cams = get_all_active_cameras()
@@ -665,6 +700,12 @@ def start_cameras(request: StartRequest):
     if not cam_ips:
         raise HTTPException(status_code=400, detail="No cameras found")
 
+    # Rotate spawn order so different cameras get priority each time
+    if len(cam_ips) > 1 and not request.cameras:
+        offset = _spawn_offset % len(cam_ips)
+        cam_ips = cam_ips[offset:] + cam_ips[:offset]
+        _spawn_offset += 1
+
     # Ensure result queue + collector
     if result_queue is None:
         result_queue = multiprocessing.Queue()
@@ -676,6 +717,8 @@ def start_cameras(request: StartRequest):
     skipped = []
     errors = []
 
+    # Build list of cameras to spawn (filter out already-running, disabled, not-found)
+    to_spawn = []
     for ip in cam_ips:
         with workers_lock:
             if ip in workers:
@@ -687,31 +730,40 @@ def start_cameras(request: StartRequest):
             errors.append({"ip": ip, "error": "not found in lodge.db"})
             continue
 
-        # Check per-camera config
         cam_cfg = load_camera_config(ip)
         if not cam_cfg.get("enabled", True):
             skipped.append(ip)
             continue
 
-        # Merge detection config with per-camera settings
         worker_config = {
             **config,
             "target_fps": cam_cfg.get("target_fps", 5.0),
             "flip": cam_cfg.get("flip", None),
         }
+        to_spawn.append((ip, cam, worker_config))
 
-        # Reset any prior respawn budget — fresh /start gets a clean slate.
-        with _respawn_lock:
-            _respawn_attempts.pop(ip, None)
+    # Spawn in waves to avoid RAM stampede
+    wave_num = 0
+    for i in range(0, len(to_spawn), WAVE_SIZE):
+        wave = to_spawn[i:i + WAVE_SIZE]
+        wave_num += 1
 
-        ok, err = _spawn_one_worker(ip, cam, worker_config)
-        if ok:
-            started.append(ip)
-            # Stagger to avoid native-init races (see SPAWN_STAGGER_S comment).
-            if SPAWN_STAGGER_S > 0:
-                time.sleep(SPAWN_STAGGER_S)
-        else:
-            errors.append({"ip": ip, "error": err})
+        for ip, cam, worker_config in wave:
+            with _respawn_lock:
+                _respawn_attempts.pop(ip, None)
+
+            ok, err = _spawn_one_worker(ip, cam, worker_config)
+            if ok:
+                started.append(ip)
+                if SPAWN_STAGGER_S > 0:
+                    time.sleep(SPAWN_STAGGER_S)
+            else:
+                errors.append({"ip": ip, "error": err})
+
+        # Wait between waves (except after the last one)
+        if i + WAVE_SIZE < len(to_spawn):
+            logger.info(f"Wave {wave_num} complete ({len(wave)} spawned), waiting {WAVE_SETTLE_S}s before next wave")
+            time.sleep(WAVE_SETTLE_S)
 
     # Schedule auto-stop if requested (only when starting at least one worker;
     # if everyone errored or already-running, don't reset an existing timer).
@@ -1037,7 +1089,12 @@ def get_subnet_state(
             else:
                 state = "starting"
         elif cam:
-            state = "known_idle" if mac else "known_offline"
+            if ip in _exhausted_ips:
+                state = "exhausted"
+            elif mac:
+                state = "known_idle"
+            else:
+                state = "known_offline"
         elif mac:
             state = "discovered" if _mac_is_cam_like(mac, mac_prefixes) else "non_cam"
         else:

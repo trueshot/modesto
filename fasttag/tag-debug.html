@@ -204,10 +204,15 @@
   .cell.starting:hover { border-color: #5fd0ff; }
   .cell.wedged        { background: #92400e; color: #fed7aa; cursor: pointer; }
   .cell.wedged:hover  { border-color: #f59e0b; }
-  .cell.known_idle    { background: #713f12; color: #fef3c7; cursor: pointer; }
-  .cell.known_idle:hover { border-color: #facc15; }
+  .cell.known_idle    { background: #334155; color: #cbd5e1; cursor: pointer; }
+  .cell.known_idle:hover { border-color: #94a3b8; }
   .cell.known_offline { background: #7f1d1d; color: #fecaca; cursor: pointer; }
   .cell.known_offline:hover { border-color: #ef4444; }
+  .cell.exhausted     {
+    background: repeating-linear-gradient(45deg, #854d0e, #854d0e 3px, #ca8a04 3px, #ca8a04 6px);
+    color: #fef9c3; cursor: pointer;
+  }
+  .cell.exhausted:hover { border-color: #facc15; }
   .cell.discovered    { background: #581c87; color: #e9d5ff; cursor: pointer; }
   .cell.discovered:hover { border-color: #a855f7; }
   .cell.non_cam       { background: #1f2937; color: #6b7280; }
@@ -642,14 +647,15 @@
       </h2>
       <div class="subnet-meta" id="subnetMeta">probing…</div>
       <div class="legend">
-        <span class="legend-item"><span class="legend-swatch" style="background:#166534"></span>active</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#155e75"></span>starting</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#92400e"></span>wedged</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#713f12"></span>known idle</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#7f1d1d"></span>known offline</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#581c87"></span>discovered (new)</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#1f2937"></span>non-cam</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#0f1115"></span>empty</span>
+        <span class="legend-item" title="In lodge.db, worker running and producing frames"><span class="legend-swatch" style="background:#166534"></span>active</span>
+        <span class="legend-item" title="In lodge.db, worker spawned but not yet reading frames"><span class="legend-swatch" style="background:#155e75"></span>starting</span>
+        <span class="legend-item" title="In lodge.db, worker running but can't get frames (reconnecting)"><span class="legend-swatch" style="background:#92400e"></span>wedged</span>
+        <span class="legend-item" title="In lodge.db, worker died and hit respawn limit"><span class="legend-swatch" style="background:repeating-linear-gradient(45deg, #854d0e, #854d0e 3px, #ca8a04 3px, #ca8a04 6px)"></span>exhausted</span>
+        <span class="legend-item" title="In lodge.db, online (ARP), detection not started"><span class="legend-swatch" style="background:#334155"></span>idle</span>
+        <span class="legend-item" title="In lodge.db, not in ARP table (powered off or unreachable)"><span class="legend-swatch" style="background:#7f1d1d"></span>known offline</span>
+        <span class="legend-item" title="NOT in lodge.db, MAC looks like a camera — candidate for registration"><span class="legend-swatch" style="background:#581c87"></span>discovered</span>
+        <span class="legend-item" title="NOT in lodge.db, MAC doesn't match camera prefixes (NVR, switch, server, etc)"><span class="legend-swatch" style="background:#1f2937"></span>non-cam</span>
+        <span class="legend-item" title="No device at this IP"><span class="legend-swatch" style="background:#0f1115"></span>empty</span>
       </div>
       <div class="subnet-grid" id="subnetGrid"></div>
       <div id="subnetSelected" style="margin-top:14px; min-height:60px; color:var(--muted); font-size:12px;"></div>`;
