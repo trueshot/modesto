@@ -126,20 +126,26 @@ def detection_worker(
             last_frame_time = 0.0
 
             while not stop_event.is_set():
-                ret, frame = cap.read()
-                if not ret or frame is None:
-                    send_heartbeat(calc_fps(), status="reconnecting", error="read() failed")
+                # grab() advances stream without decoding — prevents buffer bloat
+                if not cap.grab():
+                    send_heartbeat(calc_fps(), status="reconnecting", error="grab() failed")
                     break
+
+                now = time.time()
+
+                # Rate limiting: skip frames to hit target_fps (no decode yet)
+                if frame_interval > 0 and (now - last_frame_time) < frame_interval:
+                    continue
+
+                # Only decode when we're ready to process
+                ret, frame = cap.retrieve()
+                if not ret or frame is None:
+                    continue
 
                 # Skip grey frames
                 if frame.std() < 10:
                     continue
 
-                now = time.time()
-
-                # Rate limiting: skip frames to hit target_fps
-                if frame_interval > 0 and (now - last_frame_time) < frame_interval:
-                    continue
                 last_frame_time = now
 
                 frame_seq += 1

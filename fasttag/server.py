@@ -34,6 +34,7 @@ import requests
 
 from worker import detection_worker
 from http_worker import http_detection_worker
+from pool import DetectionPool
 
 # ============================================================================
 # CREDENTIALS (same pattern as camera-service)
@@ -262,6 +263,7 @@ async def lifespan(app: FastAPI):
     # forward references to functions defined later in the module are fine.
     threading.Thread(target=worker_reaper, daemon=True, name="worker-reaper").start()
     threading.Thread(target=camera_service_pinger, daemon=True, name="camera-svc-ping").start()
+    threading.Thread(target=_prewarm_overlay_detector, daemon=True, name="overlay-prewarm").start()
     yield
     # Shutdown: nothing — daemon threads die with the process.
 
@@ -277,7 +279,11 @@ app = FastAPI(
 # STATE
 # ============================================================================
 
-# Per-camera worker tracking
+# Pooled detection (RTSP cameras) — 3 detectors sharing all cameras
+pool: Optional[DetectionPool] = None
+pool_lock = threading.Lock()
+
+# Per-camera worker tracking — HTTP cameras only (PoE-CAM / M5CamServer)
 # camera_ip -> {process, stop_event, started_at, config, last_heartbeat}
 workers: dict = {}
 workers_lock = threading.Lock()
@@ -287,11 +293,11 @@ DETECTION_BUFFER_SIZE = 10000
 detection_buffer: deque = deque(maxlen=DETECTION_BUFFER_SIZE)
 detection_lock = threading.Lock()
 
-# Per-camera stats (updated from heartbeats)
+# Per-camera stats (updated from heartbeats — HTTP workers only)
 camera_stats: dict = {}  # camera_ip -> latest heartbeat dict
 stats_lock = threading.Lock()
 
-# Shared queue for all workers
+# Shared queue for HTTP workers only
 result_queue: Optional[multiprocessing.Queue] = None
 
 # Default detection config
@@ -299,6 +305,11 @@ DEFAULT_CONFIG = {
     "families": "tagCustom48h12",
     "quad_decimate": 2.0,
 }
+
+# Pool config
+POOL_NUM_DETECTORS = 3
+POOL_NUM_SLOTS = 50
+POOL_SLOT_SIZE = 50_000_000  # 50MB per slot (handles 5K+ frames)
 
 # ============================================================================
 # RESULT COLLECTOR THREAD
@@ -308,38 +319,47 @@ collector_running = False
 
 
 def result_collector():
-    """Drain result_queue into detection_buffer and camera_stats."""
+    """Drain results from pool (RTSP) and result_queue (HTTP) into detection_buffer."""
     global collector_running
     collector_running = True
     logger.info("Result collector started")
 
     while collector_running:
-        try:
-            msg = result_queue.get(timeout=0.5)
-        except Exception:
-            continue
+        # Drain pool results (RTSP cameras)
+        if pool is not None:
+            for msg in pool.get_results(max_items=100):
+                if msg.get("type") == "detection":
+                    with detection_lock:
+                        detection_buffer.append(msg)
 
-        if msg.get("type") == "heartbeat":
-            with stats_lock:
-                camera_stats[msg["camera_ip"]] = msg
-        elif msg.get("type") == "detection":
-            with detection_lock:
-                detection_buffer.append(msg)
+        # Drain HTTP worker queue
+        if result_queue is not None:
+            while True:
+                try:
+                    msg = result_queue.get_nowait()
+                except Exception:
+                    break
+                if msg.get("type") == "heartbeat":
+                    with stats_lock:
+                        camera_stats[msg["camera_ip"]] = msg
+                elif msg.get("type") == "detection":
+                    with detection_lock:
+                        detection_buffer.append(msg)
+
+        time.sleep(0.1)
 
     logger.info("Result collector stopped")
 
 
 # ============================================================================
-# WORKER REAPER (cleans dead/wedged workers; runs continuously)
+# WORKER REAPER (HTTP workers only — pool handles its own detectors)
 # ============================================================================
 #
-# In production FastTag is expected to run 24/7. Workers can crash silently
-# (RTSP timeout, NVR reboot, decoder fault, OOM) or wedge during cv2 startup
-# without ever transitioning past status='starting'. Without a reaper they
-# stay tracked, holding stats slots and (if alive but wedged) holding NVR
-# slots and memory. The reaper periodically:
-#   1. Removes workers whose process is dead (proc.is_alive() False)
-#   2. Force-kills workers stuck in 'starting' status past STARTING_TIMEOUT_S
+# HTTP workers (PoE-CAM / M5CamServer) still use per-camera processes. The
+# reaper manages only these — the pool handles RTSP camera lifecycle internally.
+# The reaper periodically:
+#   1. Removes HTTP workers whose process is dead (proc.is_alive() False)
+#   2. Force-kills HTTP workers stuck in 'starting' status past STARTING_TIMEOUT_S
 
 REAP_INTERVAL_S = 10
 STARTING_TIMEOUT_MIN = 15
@@ -597,6 +617,16 @@ def _schedule_auto_stop(seconds: float):
 
 def _stop_all_workers():
     """Internal: stop every running worker (called by auto-stop timer and /stop)."""
+    global pool
+
+    # Stop pool
+    with pool_lock:
+        if pool is not None:
+            pool.stop()
+            pool = None
+            logger.info("Auto-stop: released DetectionPool")
+
+    # Stop HTTP workers
     with workers_lock:
         cam_ips = list(workers.keys())
     for ip in cam_ips:
@@ -616,13 +646,16 @@ def _stop_all_workers():
 
 @app.get("/")
 def root():
+    pool_status = pool.get_status() if pool else {}
+    pool_count = len(pool_status.get("readers", {}))
     with workers_lock:
-        n = len(workers)
+        http_count = len(workers)
     return {
         "service": "FastTag",
         "version": "1.0.0",
         "port": 8003,
-        "active_cameras": n,
+        "active_cameras": pool_count + http_count,
+        "pool_active": pool is not None,
     }
 
 
@@ -679,7 +712,7 @@ def _spawn_one_worker(ip: str, cam: dict, worker_config: dict, *, respawn_count:
 @app.post("/start")
 def start_cameras(request: StartRequest):
     """Start detection on cameras. Pass IPs or empty list for all."""
-    global result_queue, _spawn_offset
+    global result_queue, pool, _spawn_offset
 
     config = {**DEFAULT_CONFIG, **(request.config or {})}
 
@@ -700,13 +733,19 @@ def start_cameras(request: StartRequest):
     if not cam_ips:
         raise HTTPException(status_code=400, detail="No cameras found")
 
-    # Rotate spawn order so different cameras get priority each time
-    if len(cam_ips) > 1 and not request.cameras:
-        offset = _spawn_offset % len(cam_ips)
-        cam_ips = cam_ips[offset:] + cam_ips[:offset]
-        _spawn_offset += 1
+    # Ensure pool for RTSP cameras (creates 3 detector processes)
+    with pool_lock:
+        if pool is None:
+            logger.info(f"Creating DetectionPool ({POOL_NUM_DETECTORS} detectors, {POOL_NUM_SLOTS} slots)")
+            pool = DetectionPool(
+                num_detectors=POOL_NUM_DETECTORS,
+                num_slots=POOL_NUM_SLOTS,
+                slot_size=POOL_SLOT_SIZE,
+                config=config,
+            )
+            pool.start()
 
-    # Ensure result queue + collector
+    # Ensure result queue + collector for HTTP workers
     if result_queue is None:
         result_queue = multiprocessing.Queue()
         t = threading.Thread(target=result_collector, daemon=True)
@@ -717,14 +756,11 @@ def start_cameras(request: StartRequest):
     skipped = []
     errors = []
 
-    # Build list of cameras to spawn (filter out already-running, disabled, not-found)
-    to_spawn = []
-    for ip in cam_ips:
-        with workers_lock:
-            if ip in workers:
-                already_running.append(ip)
-                continue
+    # Get current pool readers to check already-running
+    pool_status = pool.get_status() if pool else {}
+    pool_readers = set(pool_status.get("readers", {}).keys())
 
+    for ip in cam_ips:
         cam = cam_lookup.get(ip)
         if not cam:
             errors.append({"ip": ip, "error": "not found in lodge.db"})
@@ -735,38 +771,50 @@ def start_cameras(request: StartRequest):
             skipped.append(ip)
             continue
 
-        worker_config = {
-            **config,
-            "target_fps": cam_cfg.get("target_fps", 5.0),
-            "flip": cam_cfg.get("flip", None),
-        }
-        to_spawn.append((ip, cam, worker_config))
+        protocol = (cam.get("protocol") or "rtsp").lower()
 
-    # Spawn in waves to avoid RAM stampede
-    wave_num = 0
-    for i in range(0, len(to_spawn), WAVE_SIZE):
-        wave = to_spawn[i:i + WAVE_SIZE]
-        wave_num += 1
+        if protocol == "http":
+            # HTTP cameras use individual workers (PoE-CAM / M5CamServer via mediator)
+            with workers_lock:
+                if ip in workers:
+                    already_running.append(ip)
+                    continue
 
-        for ip, cam, worker_config in wave:
+            worker_config = {
+                **config,
+                "target_fps": cam_cfg.get("target_fps", 5.0),
+                "flip": cam_cfg.get("flip", None),
+            }
+
             with _respawn_lock:
                 _respawn_attempts.pop(ip, None)
 
             ok, err = _spawn_one_worker(ip, cam, worker_config)
             if ok:
                 started.append(ip)
-                if SPAWN_STAGGER_S > 0:
-                    time.sleep(SPAWN_STAGGER_S)
             else:
                 errors.append({"ip": ip, "error": err})
+        else:
+            # RTSP cameras use the pool
+            if ip in pool_readers:
+                already_running.append(ip)
+                continue
 
-        # Wait between waves (except after the last one)
-        if i + WAVE_SIZE < len(to_spawn):
-            logger.info(f"Wave {wave_num} complete ({len(wave)} spawned), waiting {WAVE_SETTLE_S}s before next wave")
-            time.sleep(WAVE_SETTLE_S)
+            rtsp_url = build_rtsp_url(cam)
+            if not rtsp_url:
+                errors.append({"ip": ip, "error": "no RTSP path available"})
+                continue
 
-    # Schedule auto-stop if requested (only when starting at least one worker;
-    # if everyone errored or already-running, don't reset an existing timer).
+            target_fps = cam_cfg.get("target_fps", 5.0)
+            pool.add_camera(ip, rtsp_url, target_fps=target_fps)
+            started.append(ip)
+            logger.info(f"Added {ip} to pool (fps {target_fps})")
+
+    # Count total active
+    pool_status = pool.get_status() if pool else {}
+    total_active = len(pool_status.get("readers", {})) + len(workers)
+
+    # Schedule auto-stop if requested
     if request.auto_stop_seconds > 0 and started:
         _schedule_auto_stop(request.auto_stop_seconds)
 
@@ -775,7 +823,8 @@ def start_cameras(request: StartRequest):
         "already_running": already_running,
         "skipped_disabled": skipped,
         "errors": errors,
-        "total_active": len(workers),
+        "total_active": total_active,
+        "pool_detectors": len([d for d in pool_status.get("detectors", []) if d.get("alive")]),
         "auto_stop_in_seconds": (
             round(_auto_stop_deadline - time.time(), 1)
             if _auto_stop_deadline else None
@@ -786,21 +835,38 @@ def start_cameras(request: StartRequest):
 @app.post("/stop")
 def stop_cameras(request: StopRequest):
     """Stop detection on cameras. Pass IPs or empty list for all."""
+    global pool
+
     # Stop-all cancels any pending auto-stop timer; per-camera stops do not
     # (the rest of the batch may still want the timer to apply).
-    if not request.cameras:
+    stop_all = not request.cameras
+    if stop_all:
         _cancel_auto_stop()
+
+    # Get current pool readers
+    pool_status = pool.get_status() if pool else {}
+    pool_readers = set(pool_status.get("readers", {}).keys())
 
     if request.cameras:
         cam_ips = request.cameras
     else:
+        # All cameras: pool + HTTP workers
         with workers_lock:
-            cam_ips = list(workers.keys())
+            http_ips = list(workers.keys())
+        cam_ips = list(pool_readers) + http_ips
 
     stopped = []
     not_running = []
 
     for ip in cam_ips:
+        # Check pool first
+        if ip in pool_readers:
+            pool.remove_camera(ip)
+            stopped.append(ip)
+            logger.info(f"Removed {ip} from pool")
+            continue
+
+        # Then HTTP workers
         with workers_lock:
             w = workers.pop(ip, None)
 
@@ -812,19 +878,30 @@ def stop_cameras(request: StopRequest):
         w["process"].join(timeout=5)
         if w["process"].is_alive():
             w["process"].kill()
-            logger.warning(f"Force-killed worker for {ip}")
+            logger.warning(f"Force-killed HTTP worker for {ip}")
 
         stopped.append(ip)
-        logger.info(f"Stopped worker for {ip}")
+        logger.info(f"Stopped HTTP worker for {ip}")
 
         # Clear stats
         with stats_lock:
             camera_stats.pop(ip, None)
 
+    # If stop-all, also stop the pool entirely
+    if stop_all and pool is not None:
+        with pool_lock:
+            pool.stop()
+            pool = None
+        logger.info("Stopped and released DetectionPool")
+
+    # Count remaining
+    pool_status = pool.get_status() if pool else {}
+    total_active = len(pool_status.get("readers", {})) + len(workers)
+
     return {
         "stopped": stopped,
         "not_running": not_running,
-        "total_active": len(workers),
+        "total_active": total_active,
     }
 
 
@@ -834,6 +911,29 @@ def get_status():
     now = time.time()
     cameras = {}
 
+    # Pool cameras (RTSP)
+    pool_status = pool.get_status() if pool else {}
+    for ip, reader in pool_status.get("readers", {}).items():
+        cameras[ip] = {
+            "pid": None,  # pool readers are threads, not processes
+            "alive": reader.get("status") != "stopped",
+            "uptime_sec": round(now - reader.get("started_at", now), 1) if reader.get("started_at") else 0,
+            "model": None,  # pool doesn't track model
+            "protocol": "rtsp",
+            "access": "pool",
+            "respawn_count": 0,
+            "fps": reader.get("fps", 0),
+            "frame_seq": reader.get("frame_count", 0),
+            "detect_count": 0,  # pool tracks this per-detector, not per-camera
+            "status": reader.get("status", "starting"),
+            "error": reader.get("error"),
+            "flip_mode": "normal",  # pool doesn't track flip per-camera yet
+            "last_heartbeat_age": None,
+            "grabs": reader.get("grabs", 0),
+            "skipped_grey": reader.get("skipped_grey", 0),
+        }
+
+    # HTTP workers
     with workers_lock:
         worker_ips = dict(workers)
 
@@ -847,7 +947,7 @@ def get_status():
             "alive": proc.is_alive(),
             "uptime_sec": round(now - w["started_at"], 1),
             "model": w.get("model"),
-            "protocol": w.get("protocol", "rtsp"),
+            "protocol": w.get("protocol", "http"),
             "access": w.get("access"),
             "respawn_count": w.get("respawn_count", 0),
             "fps": hb["fps"] if hb else 0,
@@ -873,6 +973,10 @@ def get_status():
         if _auto_stop_deadline > now else None
     )
 
+    # Pool detector stats
+    detectors = pool_status.get("detectors", []) if pool_status else []
+    alive_detectors = [d for d in detectors if d.get("alive")]
+
     return {
         "active_cameras": len(cameras),
         "cameras": cameras,
@@ -880,6 +984,12 @@ def get_status():
         "detection_buffer_capacity": DETECTION_BUFFER_SIZE,
         "camera_service": cs,
         "auto_stop_in_seconds": auto_stop_in,
+        "pool": {
+            "detectors_alive": len(alive_detectors),
+            "detectors_total": len(detectors),
+            "total_frames_processed": sum(d.get("frames_processed", 0) for d in detectors),
+            "detectors": detectors,
+        } if pool else None,
     }
 
 
@@ -1068,18 +1178,36 @@ def get_subnet_state(
             db_cams[row["ip"]] = dict(row)
         conn.close()
 
+    # Pool readers (RTSP) + HTTP workers
+    pool_status = pool.get_status() if pool else {}
+    pool_readers = pool_status.get("readers", {})
+
     with workers_lock:
-        active = set(workers.keys())
+        http_workers = set(workers.keys())
     with stats_lock:
-        stats = dict(camera_stats)
+        http_stats = dict(camera_stats)
+
+    # Combine active IPs from both sources
+    active = set(pool_readers.keys()) | http_workers
 
     cells = []
     for i in range(256):
         ip = f"{subnet}.{i}"
         mac = arp.get(ip)
         cam = db_cams.get(ip)
-        hb = stats.get(ip)
-        worker_status = hb.get("status") if hb else None
+
+        # Get status from pool or HTTP stats
+        if ip in pool_readers:
+            reader = pool_readers[ip]
+            worker_status = reader.get("status")
+            fps = reader.get("fps")
+        elif ip in http_stats:
+            hb = http_stats[ip]
+            worker_status = hb.get("status")
+            fps = hb.get("fps")
+        else:
+            worker_status = None
+            fps = None
 
         if cam and ip in active:
             if worker_status == "running":
@@ -1108,7 +1236,7 @@ def get_subnet_state(
             "model": cam.get("model") if cam else None,
             "protocol": cam.get("protocol") if cam else None,
             "worker_status": worker_status,
-            "fps": hb.get("fps") if hb else None,
+            "fps": fps,
         })
 
     out = {
@@ -1126,8 +1254,13 @@ def get_subnet_state(
 def list_available_cameras():
     """List all cameras from lodge.db with their config and detection status."""
     cams = get_all_active_cameras()
+
+    # Active IPs from pool + HTTP workers
+    pool_status = pool.get_status() if pool else {}
+    pool_readers = set(pool_status.get("readers", {}).keys())
     with workers_lock:
-        active_ips = set(workers.keys())
+        http_active = set(workers.keys())
+    active_ips = pool_readers | http_active
 
     return {
         "count": len(cams),
@@ -1265,6 +1398,7 @@ def restart_service():
 
 _overlay_detectors = {}
 _overlay_detectors_lock = threading.Lock()
+_overlay_prewarm_done = threading.Event()
 
 
 def _get_overlay_detector(family: str):
@@ -1272,6 +1406,8 @@ def _get_overlay_detector(family: str):
     with _overlay_detectors_lock:
         det = _overlay_detectors.get(family)
         if det is None:
+            logger.info(f"Loading overlay detector for {family} (first call, ~60s)...")
+            start = time.time()
             from pupil_apriltags import Detector
             det = Detector(
                 families=family,
@@ -1281,7 +1417,17 @@ def _get_overlay_detector(family: str):
                 decode_sharpening=0.25,
             )
             _overlay_detectors[family] = det
+            logger.info(f"Overlay detector loaded in {time.time()-start:.1f}s")
         return det
+
+
+def _prewarm_overlay_detector():
+    """Background pre-warm of overlay detector so first /live-overlay is instant."""
+    try:
+        _get_overlay_detector(DEFAULT_CONFIG["families"])
+        _overlay_prewarm_done.set()
+    except Exception as e:
+        logger.warning(f"Overlay detector pre-warm failed: {e}")
 
 
 def _draw_overlay(frame, detections):
