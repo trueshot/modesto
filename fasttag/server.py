@@ -352,6 +352,16 @@ reaper_running = False
 # is ~3s, negligible vs the cost of half the workers dying.
 SPAWN_STAGGER_S = 0.15
 
+# Respawn budget for workers that die a native death (no Python crash log,
+# proc dead within RESPAWN_AGE_S). The reaper retries up to RESPAWN_MAX
+# times; subsequent reaper iterations naturally space out respawns. Reset
+# on /start. Workers that exit via Python exception (crash_log written) or
+# that ran past RESPAWN_AGE_S are NOT respawned — those are real failures.
+RESPAWN_MAX = 3
+RESPAWN_AGE_S = 30
+_respawn_attempts: dict = {}
+_respawn_lock = threading.Lock()
+
 
 def worker_reaper():
     """Background thread — periodically clean dead/wedged workers."""
@@ -370,20 +380,57 @@ def worker_reaper():
                 proc = w["process"]
                 started_at = w["started_at"]
                 age = now - started_at
+                saved_config = w.get("config", {})
 
-                # Case 1: process is dead — drop from tracking
+                # Case 1: process is dead — possibly respawn
                 if not proc.is_alive():
-                    logger.info(f"reaper: removing dead worker for {ip} (pid {proc.pid}, age {age:.0f}s)")
+                    crash_log = CAMERAS_DIR / ip / "worker_crash.log"
+                    has_python_crash = crash_log.exists() and crash_log.stat().st_size > 0
+
+                    # Drop from tracking first
                     with workers_lock:
                         workers.pop(ip, None)
                     with stats_lock:
                         camera_stats.pop(ip, None)
+
+                    # Respawn if: native crash (no Python trace) AND died
+                    # quickly (within RESPAWN_AGE_S) AND budget left.
+                    # Otherwise it's a real failure or worn-out spawn slot.
+                    if not has_python_crash and age < RESPAWN_AGE_S:
+                        with _respawn_lock:
+                            count = _respawn_attempts.get(ip, 0)
+                            if count >= RESPAWN_MAX:
+                                logger.warning(f"reaper: {ip} hit respawn limit ({RESPAWN_MAX}) — giving up")
+                                continue
+                            _respawn_attempts[ip] = count + 1
+                            new_count = count + 1
+
+                        # Re-resolve cam from lodge.db (handles metadata changes)
+                        cams = {c["ip"]: c for c in get_all_active_cameras()}
+                        cam = cams.get(ip)
+                        if not cam:
+                            logger.warning(f"reaper: {ip} no longer in lodge.db, dropping")
+                            continue
+                        ok, err = _spawn_one_worker(ip, cam, saved_config, respawn_count=new_count)
+                        if ok:
+                            logger.info(f"reaper: respawned {ip} after native death (attempt {new_count}/{RESPAWN_MAX})")
+                        else:
+                            logger.warning(f"reaper: respawn failed for {ip}: {err}")
+                    else:
+                        reason = "Python exception" if has_python_crash else f"died after {age:.0f}s (past RESPAWN_AGE_S)"
+                        logger.info(f"reaper: removed dead worker for {ip} (pid {proc.pid}, {reason})")
                     continue
 
                 # Case 2: still 'starting' past the timeout — kill it
                 with stats_lock:
                     hb = camera_stats.get(ip)
                 status = hb.get("status") if hb else "starting"
+
+                # If a worker successfully reached running, clear its respawn budget.
+                if status == "running":
+                    with _respawn_lock:
+                        _respawn_attempts.pop(ip, None)
+
                 if age > STARTING_TIMEOUT_S and status == "starting":
                     logger.warning(f"reaper: killing stuck worker for {ip} (pid {proc.pid}, age {age:.0f}s, status=starting)")
                     w["stop_event"].set()
@@ -548,6 +595,55 @@ def root():
     }
 
 
+def _spawn_one_worker(ip: str, cam: dict, worker_config: dict, *, respawn_count: int = 0):
+    """
+    Spawn a single detection worker for `cam`. Caller must hold no locks
+    and must have verified `ip` is not already in `workers`. Returns
+    (success, error_or_None).
+
+    Used by both /start (initial spawns) and the reaper (auto-respawn on
+    native crash).
+    """
+    if result_queue is None:
+        return False, "result_queue not initialized — call /start first"
+
+    protocol = (cam.get("protocol") or "rtsp").lower()
+    stop_event = multiprocessing.Event()
+
+    if protocol == "http":
+        if not is_camera_service_up():
+            return False, f"camera-service unreachable at {CAMERA_SERVICE_URL}"
+        target = http_detection_worker
+        worker_args = (ip, CAMERA_SERVICE_URL, result_queue, stop_event, worker_config)
+        access_label = "http-mediator"
+    else:
+        rtsp_url = build_rtsp_url(cam)
+        if not rtsp_url:
+            return False, "no RTSP path available (direct or NVR)"
+        target = detection_worker
+        worker_args = (ip, rtsp_url, result_queue, stop_event, worker_config)
+        access_label = cam.get("access")
+
+    proc = multiprocessing.Process(target=target, args=worker_args, daemon=True)
+    proc.start()
+
+    with workers_lock:
+        workers[ip] = {
+            "process": proc,
+            "stop_event": stop_event,
+            "started_at": time.time(),
+            "config": worker_config,
+            "model": cam.get("model"),
+            "access": access_label,
+            "protocol": protocol,
+            "respawn_count": respawn_count,
+        }
+
+    suffix = f" [respawn {respawn_count}/{RESPAWN_MAX}]" if respawn_count else ""
+    logger.info(f"Started {protocol} worker for {ip} (pid {proc.pid}, model {cam.get('model')}, access {access_label}, fps {worker_config['target_fps']}){suffix}")
+    return True, None
+
+
 @app.post("/start")
 def start_cameras(request: StartRequest):
     """Start detection on cameras. Pass IPs or empty list for all."""
@@ -604,51 +700,18 @@ def start_cameras(request: StartRequest):
             "flip": cam_cfg.get("flip", None),
         }
 
-        # Dispatch by protocol: RTSP cams open their own connection;
-        # HTTP cams (PoE-CAM / M5CamServer) ride camera-service's
-        # http_mediator since their W5500 chip allows only one client.
-        protocol = (cam.get("protocol") or "rtsp").lower()
-        stop_event = multiprocessing.Event()
+        # Reset any prior respawn budget — fresh /start gets a clean slate.
+        with _respawn_lock:
+            _respawn_attempts.pop(ip, None)
 
-        if protocol == "http":
-            if not is_camera_service_up():
-                errors.append({
-                    "ip": ip,
-                    "error": f"http camera, but camera-service unreachable at {CAMERA_SERVICE_URL}"
-                })
-                continue
-            target = http_detection_worker
-            worker_args = (ip, CAMERA_SERVICE_URL, result_queue, stop_event, worker_config)
-            access_label = "http-mediator"
+        ok, err = _spawn_one_worker(ip, cam, worker_config)
+        if ok:
+            started.append(ip)
+            # Stagger to avoid native-init races (see SPAWN_STAGGER_S comment).
+            if SPAWN_STAGGER_S > 0:
+                time.sleep(SPAWN_STAGGER_S)
         else:
-            rtsp_url = build_rtsp_url(cam)
-            if not rtsp_url:
-                errors.append({"ip": ip, "error": "no RTSP path available (direct or NVR)"})
-                continue
-            target = detection_worker
-            worker_args = (ip, rtsp_url, result_queue, stop_event, worker_config)
-            access_label = cam.get("access")
-
-        proc = multiprocessing.Process(target=target, args=worker_args, daemon=True)
-        proc.start()
-
-        with workers_lock:
-            workers[ip] = {
-                "process": proc,
-                "stop_event": stop_event,
-                "started_at": time.time(),
-                "config": worker_config,
-                "model": cam.get("model"),
-                "access": access_label,
-                "protocol": protocol,
-            }
-
-        started.append(ip)
-        logger.info(f"Started {protocol} worker for {ip} (pid {proc.pid}, model {cam.get('model')}, access {access_label}, fps {worker_config['target_fps']})")
-
-        # Stagger to avoid native-init races (see SPAWN_STAGGER_S comment).
-        if SPAWN_STAGGER_S > 0:
-            time.sleep(SPAWN_STAGGER_S)
+            errors.append({"ip": ip, "error": err})
 
     # Schedule auto-stop if requested (only when starting at least one worker;
     # if everyone errored or already-running, don't reset an existing timer).
@@ -734,6 +797,7 @@ def get_status():
             "model": w.get("model"),
             "protocol": w.get("protocol", "rtsp"),
             "access": w.get("access"),
+            "respawn_count": w.get("respawn_count", 0),
             "fps": hb["fps"] if hb else 0,
             "frame_seq": hb["frame_seq"] if hb else 0,
             "detect_count": hb["detect_count"] if hb else 0,
@@ -818,6 +882,187 @@ def detection_stream(
                 yield f"data: {json.dumps(det)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ============================================================================
+# SUBNET STATE (live grid view of /24)
+# ============================================================================
+
+import re as _re
+import subprocess as _subprocess
+
+_subnet_cache = {"data": None, "fetched_at": 0.0}
+SUBNET_CACHE_TTL_S = 5
+
+
+def _detect_subnet() -> str:
+    """Most common /24 prefix among lodge.db cams."""
+    if not DB_PATH.exists():
+        return "192.168.0"
+    conn = sqlite3.connect(str(DB_PATH), timeout=2)
+    cur = conn.cursor()
+    cur.execute("SELECT ip FROM cameras WHERE ip IS NOT NULL")
+    counts = {}
+    for (ip,) in cur.fetchall():
+        m = _re.match(r"^(\d+\.\d+\.\d+)\.", ip)
+        if m:
+            counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    conn.close()
+    if not counts:
+        return "192.168.0"
+    return max(counts.items(), key=lambda x: x[1])[0]
+
+
+def _read_arp_table() -> dict:
+    """Returns {ip: mac} from `arp -a` for IPv4 entries (Windows-format output)."""
+    try:
+        result = _subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=2)
+    except Exception:
+        return {}
+    arp = {}
+    for line in result.stdout.splitlines():
+        m = _re.match(r"\s*(\d+\.\d+\.\d+\.\d+)\s+([\da-f]{2}(?:[-:][\da-f]{2}){5})\s+", line, _re.I)
+        if m:
+            arp[m.group(1)] = m.group(2).lower().replace("-", ":")
+    return arp
+
+
+def _ping_sweep(subnet: str):
+    """Fire ping at all .1-.254 in parallel to populate the ARP table.
+    ~3-5s on a /24 with concurrency 64."""
+    import concurrent.futures
+
+    def ping_one(ip):
+        try:
+            _subprocess.run(["ping", "-n", "1", "-w", "300", ip],
+                            stdout=_subprocess.DEVNULL,
+                            stderr=_subprocess.DEVNULL,
+                            timeout=1.5)
+        except Exception:
+            pass
+
+    ips = [f"{subnet}.{i}" for i in range(1, 255)]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=64) as ex:
+        list(ex.map(ping_one, ips))
+
+
+def _load_mac_prefixes() -> list:
+    """Cam-like MAC prefixes from lodge.db mac_prefixes table."""
+    if not DB_PATH.exists():
+        return []
+    conn = sqlite3.connect(str(DB_PATH), timeout=2)
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT prefix FROM mac_prefixes")
+        return [p.lower() for (p,) in cur.fetchall()]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+
+def _mac_is_cam_like(mac: str, prefixes: list) -> bool:
+    if not mac:
+        return False
+    m = mac.lower()
+    for p in prefixes:
+        if m.startswith(p):
+            return True
+    return False
+
+
+@app.get("/subnet-state")
+def get_subnet_state(
+    ping: bool = Query(False, description="Run a ping sweep first to refresh ARP (~3-5s); otherwise uses stale ARP table"),
+):
+    """Per-IP state for the local /24 subnet.
+
+    Combines four signals:
+      - lodge.db cameras (which IPs are known cams)
+      - ARP table (which IPs have recently communicated; gives MAC)
+      - FastTag /status workers (which cams have detection running)
+      - mac_prefixes (which MACs look cam-like, to flag potential new cams)
+
+    Returns an array of 256 cells (octets 0..255), each tagged with a state:
+      active     — cam in lodge.db, FastTag worker running
+      starting   — cam in lodge.db, FastTag worker still starting
+      wedged     — cam in lodge.db, FastTag worker reconnecting
+      known_idle — cam in lodge.db, on network (ARP hit), no FastTag worker
+      known_offline — cam in lodge.db, not on network
+      discovered — IP responds with cam-like MAC, NOT in lodge.db
+      non_cam    — IP responds, MAC not cam-like (NVR, server, switch)
+      empty      — nothing on this IP
+    """
+    now = time.time()
+    cached = _subnet_cache["data"]
+    if not ping and cached and (now - _subnet_cache["fetched_at"] < SUBNET_CACHE_TTL_S):
+        return cached
+
+    subnet = _detect_subnet()
+
+    if ping:
+        _ping_sweep(subnet)
+
+    arp = _read_arp_table()
+    mac_prefixes = _load_mac_prefixes()
+
+    db_cams = {}
+    if DB_PATH.exists():
+        conn = sqlite3.connect(str(DB_PATH), timeout=2)
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("SELECT ip, mac, model, protocol FROM cameras WHERE ip IS NOT NULL")
+        for row in cur.fetchall():
+            db_cams[row["ip"]] = dict(row)
+        conn.close()
+
+    with workers_lock:
+        active = set(workers.keys())
+    with stats_lock:
+        stats = dict(camera_stats)
+
+    cells = []
+    for i in range(256):
+        ip = f"{subnet}.{i}"
+        mac = arp.get(ip)
+        cam = db_cams.get(ip)
+        hb = stats.get(ip)
+        worker_status = hb.get("status") if hb else None
+
+        if cam and ip in active:
+            if worker_status == "running":
+                state = "active"
+            elif worker_status == "reconnecting":
+                state = "wedged"
+            else:
+                state = "starting"
+        elif cam:
+            state = "known_idle" if mac else "known_offline"
+        elif mac:
+            state = "discovered" if _mac_is_cam_like(mac, mac_prefixes) else "non_cam"
+        else:
+            state = "empty"
+
+        cells.append({
+            "ip": ip,
+            "octet": i,
+            "state": state,
+            "mac": mac,
+            "model": cam.get("model") if cam else None,
+            "protocol": cam.get("protocol") if cam else None,
+            "worker_status": worker_status,
+            "fps": hb.get("fps") if hb else None,
+        })
+
+    out = {
+        "subnet": subnet,
+        "fetched_at": now,
+        "ping_swept": ping,
+        "cells": cells,
+    }
+    _subnet_cache["data"] = out
+    _subnet_cache["fetched_at"] = now
+    return out
 
 
 @app.get("/cameras")
