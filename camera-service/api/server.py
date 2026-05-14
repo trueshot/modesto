@@ -1432,6 +1432,37 @@ class AddCameraRequest(BaseModel):
     http_path: Optional[str] = None
 
 
+def _is_laa(mac: str) -> bool:
+    """Check if MAC is Locally Administered (bit 1 of first byte set)."""
+    try:
+        first_byte = int(mac.split(":")[0], 16)
+        return bool(first_byte & 0x02)
+    except:
+        return False
+
+
+def _check_and_add_prefix(cur, mac: str, model: str) -> Optional[str]:
+    """Check if MAC prefix exists, add if LAA and missing. Returns prefix if added."""
+    mac_lower = mac.lower()
+    prefix_3 = ":".join(mac_lower.split(":")[:3])
+
+    # Check if any existing prefix matches
+    cur.execute("SELECT prefix FROM mac_prefixes")
+    for (existing,) in cur.fetchall():
+        if mac_lower.startswith(existing.lower()):
+            return None  # Already covered
+
+    # Not covered - add if LAA
+    if _is_laa(mac):
+        cur.execute(
+            "INSERT INTO mac_prefixes (prefix, label, role, notes) VALUES (?, ?, ?, ?)",
+            (prefix_3, f"{model} (LAA, auto-added)", "poe-cam",
+             f"Auto-added when camera {mac} was registered via cam-debug.")
+        )
+        return prefix_3
+    return None
+
+
 @app.post("/api/cameras/add")
 def add_camera_to_db(request: AddCameraRequest):
     """Add a PoE-CAM to lodge.db. For RTSP cameras, use fasttag's endpoint."""
@@ -1447,6 +1478,9 @@ def add_camera_to_db(request: AddCameraRequest):
         conn.close()
         raise HTTPException(status_code=409, detail=f"Camera already exists: {existing[0]}")
 
+    # Auto-add MAC prefix if LAA and not already in mac_prefixes
+    added_prefix = _check_and_add_prefix(cur, request.mac, request.model)
+
     http_path = request.http_path or "/stream"
     cur.execute(
         "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
@@ -1455,13 +1489,15 @@ def add_camera_to_db(request: AddCameraRequest):
     conn.commit()
     conn.close()
 
-    logger.info(f"Added PoE-CAM {request.ip} ({request.mac}, {request.model}) to lodge.db")
+    logger.info(f"Added {request.model} {request.ip} ({request.mac}) to lodge.db" +
+                (f", registered prefix {added_prefix}" if added_prefix else ""))
 
     return {
         "added": request.ip,
         "mac": request.mac,
         "model": request.model,
         "protocol": request.protocol,
+        "prefix_added": added_prefix,
     }
 
 

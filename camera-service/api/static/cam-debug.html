@@ -361,6 +361,10 @@ async function refreshVersion(force) {
       setText("vSketch", v.error, "bad");
     }
     populateResolutions(v.resolutions || []);
+    // Update model based on sketch for add button
+    dbState.model = sketchToModel(v.sketch);
+    const btn = document.getElementById("btnAddToDB");
+    if (btn) btn.textContent = `Add as ${dbState.model}`;
   } catch (e) {
     setText("vIs", `error: ${e.message}`, "bad");
   }
@@ -530,7 +534,15 @@ function appendOtaLine(ev) {
 }
 
 // ── Database check
-let dbState = { exists: null, mac: null };
+let dbState = { exists: null, mac: null, model: "PoE-CAM" };
+
+// Map sketch name to model
+function sketchToModel(sketch) {
+  if (!sketch) return "PoE-CAM";
+  if (sketch.includes("unit_cams3")) return "Unit-CamS3";
+  if (sketch.includes("poe_cam")) return "PoE-CAM";
+  return "PoE-CAM";
+}
 
 async function checkDatabaseStatus() {
   try {
@@ -581,12 +593,13 @@ async function addCameraToDB() {
       body: JSON.stringify({
         ip: IP,
         mac: mac.toLowerCase(),
-        model: "PoE-CAM",
+        model: dbState.model,
         protocol: "http",
         http_path: "/stream",
       }),
     });
-    result.innerHTML = `<span class="val ok">Added! ${data.ip} (${data.mac})</span>`;
+    const prefixNote = data.prefix_added ? ` + registered prefix ${data.prefix_added}` : "";
+    result.innerHTML = `<span class="val ok">Added! ${data.ip} (${data.mac})${prefixNote}</span>`;
     checkDatabaseStatus();
   } catch (e) {
     result.innerHTML = `<span class="val bad">${e.message}</span>`;
