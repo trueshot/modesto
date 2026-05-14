@@ -405,8 +405,20 @@
         });
       }
     }
-    // sort by most recently seen first
-    rows.sort((a, b) => b.primaryTs - a.primaryTs);
+    // Live tags: stable sort by ID then IP. Stale tags: by recency.
+    rows.sort((a, b) => {
+      if (a.isLive && b.isLive) {
+        // Both live: sort by tag ID, then IP
+        if (a.tagId !== b.tagId) return a.tagId - b.tagId;
+        return a.primaryIp.localeCompare(b.primaryIp, undefined, { numeric: true });
+      }
+      if (a.isLive !== b.isLive) {
+        // Live tags come first
+        return a.isLive ? -1 : 1;
+      }
+      // Both stale: most recent first
+      return b.primaryTs - a.primaryTs;
+    });
     return rows;
   }
 
