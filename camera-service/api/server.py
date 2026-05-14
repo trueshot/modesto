@@ -42,7 +42,7 @@ from playback import capture_playback_frame
 from mediator import (
     FrameMediator, StreamManager, resolve_camera_key, clear_key_cache,
 )
-from http_mediator import HttpCameraMediator
+from http_mediator import HttpCameraMediator, AuthenticationError
 from m5camserver_client import M5CamServerProbe
 from wedge_detector import detect_wedge
 from dataclasses import asdict as _asdict
@@ -1522,6 +1522,336 @@ def lookup_arp(camera_ip: str):
         return {"ip": camera_ip, "mac": None, "error": str(e)}
 
 
+@app.get("/api/cameras/{camera_ip}/verify")
+def verify_camera_mac(camera_ip: str):
+    """
+    Compare MAC in lodge.db vs ARP table to detect device mismatch.
+    Also attempts to identify the actual device at the IP.
+
+    Returns:
+      - match: true if MACs match or camera not in DB
+      - mismatch: true if different device at this IP
+      - db_mac / arp_mac: the actual values
+      - verdict: "match" | "mismatch" | "not_in_db" | "not_in_arp" | "unknown"
+      - detected: {manufacturer, device_type, confidence} if mismatch
+    """
+    import subprocess
+    import requests as req
+
+    # Known camera OUI prefixes (first 3 octets)
+    OUI_MAP = {
+        "c4:79:05": ("Uniview", "IP Camera"),
+        "24:28:fd": ("Uniview", "IP Camera"),
+        "44:19:b6": ("Uniview", "IP Camera"),
+        "e0:50:8b": ("Hikvision", "IP Camera"),
+        "c0:56:e3": ("Hikvision", "IP Camera"),
+        "54:c4:15": ("Hikvision", "IP Camera"),
+        "44:47:cc": ("Hikvision", "IP Camera"),
+        "28:57:be": ("Hikvision", "IP Camera"),
+        "c4:2f:90": ("Dahua", "IP Camera"),
+        "3c:ef:8c": ("Dahua", "IP Camera"),
+        "a0:bd:1d": ("Dahua", "IP Camera"),
+        "f0:00:00": ("Reolink", "IP Camera"),
+        "f4:00:00": ("Reolink", "IP Camera"),
+        "2c:6f:51": ("Reolink", "IP Camera"),
+        "38:24:f1": ("GW Security", "IP Camera"),
+        "ac:67:b2": ("Espressif", "ESP32 Device"),
+        "cc:50:e3": ("Espressif", "ESP32 Device"),
+        "24:6f:28": ("Espressif", "ESP32 Device"),
+        "44:1d:64": ("M5Stack", "PoE-CAM"),
+        "46:1d:64": ("M5Stack", "PoE-CAM"),
+    }
+
+    def lookup_oui(mac: str):
+        if not mac:
+            return None, None
+        prefix = mac[:8].lower()
+        if prefix in OUI_MAP:
+            return OUI_MAP[prefix]
+        # Check for LAA (locally administered) — common for ESP32
+        first_byte = int(mac[:2], 16)
+        if first_byte & 0x02:
+            return ("Unknown (LAA)", "Possibly ESP32")
+        return None, None
+
+    def probe_http_signature(ip: str):
+        """Probe HTTP for device signature."""
+        try:
+            r = req.get(f"http://{ip}/", timeout=2)
+            body = r.text[:2000].lower()
+            # Uniview signatures
+            if "uniview" in body or "videomanagesystem" in body or "防止浏览器缓存" in body:
+                return "Uniview", "IP Camera (Web UI detected)"
+            # Hikvision signatures
+            if "hikvision" in body or "doc/page/login.asp" in body:
+                return "Hikvision", "IP Camera (Web UI detected)"
+            # Dahua signatures
+            if "dahua" in body or "dhwebclientplugin" in body:
+                return "Dahua", "IP Camera (Web UI detected)"
+            # M5CamServer (our custom firmware)
+            if "m5camserver" in body or "poe_cam" in body:
+                return "M5Stack", "PoE-CAM (M5CamServer)"
+        except Exception:
+            pass
+        return None, None
+
+    # Get DB record
+    cam = _get_camera_by_ip(camera_ip)
+    db_mac = cam["mac"].lower() if cam and cam.get("mac") else None
+
+    # Get ARP MAC
+    arp_mac = None
+    try:
+        result = subprocess.run(
+            ["arp", "-a", camera_ip],
+            capture_output=True, text=True, timeout=2
+        )
+        for line in result.stdout.splitlines():
+            if camera_ip in line:
+                parts = line.split()
+                for part in parts:
+                    if len(part) == 17 and (part.count("-") == 5 or part.count(":") == 5):
+                        arp_mac = part.replace("-", ":").lower()
+                        break
+    except Exception:
+        pass
+
+    # Determine verdict
+    if not cam:
+        verdict = "not_in_db"
+        match = True  # nothing to mismatch against
+        mismatch = False
+    elif not arp_mac:
+        verdict = "not_in_arp"
+        match = False
+        mismatch = False  # can't confirm mismatch without ARP
+    elif db_mac == arp_mac:
+        verdict = "match"
+        match = True
+        mismatch = False
+    elif db_mac and arp_mac and db_mac != arp_mac:
+        verdict = "mismatch"
+        match = False
+        mismatch = True
+    else:
+        verdict = "unknown"
+        match = False
+        mismatch = False
+
+    # If mismatch, try to identify the actual device
+    detected = None
+    if mismatch:
+        oui_mfr, oui_type = lookup_oui(arp_mac)
+        http_mfr, http_type = probe_http_signature(camera_ip)
+        # Prefer HTTP probe (more specific) over OUI
+        if http_mfr:
+            detected = {"manufacturer": http_mfr, "device_type": http_type, "confidence": "high", "source": "http_probe"}
+        elif oui_mfr:
+            detected = {"manufacturer": oui_mfr, "device_type": oui_type, "confidence": "medium", "source": "oui_lookup"}
+        else:
+            detected = {"manufacturer": "Unknown", "device_type": "Unknown device", "confidence": "low", "source": "none"}
+
+    return {
+        "ip": camera_ip,
+        "verdict": verdict,
+        "match": match,
+        "mismatch": mismatch,
+        "db_mac": db_mac,
+        "arp_mac": arp_mac,
+        "db_model": cam.get("model") if cam else None,
+        "detected": detected,
+    }
+
+
+@app.delete("/api/cameras/{camera_ip}")
+def remove_camera_entry(camera_ip: str):
+    """Remove a camera entry from lodge.db by IP."""
+    import sqlite3
+
+    cam = _get_camera_by_ip(camera_ip)
+    if not cam:
+        raise HTTPException(status_code=404, detail=f"No camera at IP {camera_ip}")
+
+    conn = sqlite3.connect(str(DB_PATH), timeout=5)
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM cameras WHERE ip = ?", (camera_ip,))
+        conn.commit()
+        return {
+            "removed": True,
+            "ip": camera_ip,
+            "mac": cam["mac"],
+            "model": cam.get("model"),
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+# Manufacturer-specific defaults for auto-adding detected devices
+MANUFACTURER_DEFAULTS = {
+    "Uniview": {"protocol": "rtsp", "rtsp_path": "/Streaming/Channels/101", "model": "Uniview"},
+    "Hikvision": {"protocol": "rtsp", "rtsp_path": "/Streaming/Channels/101", "model": "Hikvision"},
+    "Dahua": {"protocol": "rtsp", "rtsp_path": "/cam/realmonitor?channel=1&subtype=0", "model": "Dahua"},
+    "Reolink": {"protocol": "rtsp", "rtsp_path": "/h264Preview_01_main", "model": "Reolink"},
+    "GW Security": {"protocol": "rtsp", "rtsp_path": "/Streaming/Channels/101", "model": "GW Security"},
+    "M5Stack": {"protocol": "http", "http_path": "/stream", "model": "PoE-CAM"},
+    "Espressif": {"protocol": "http", "http_path": "/stream", "model": "ESP32-CAM"},
+}
+
+
+class AddDetectedRequest(BaseModel):
+    mac: str
+    manufacturer: str
+    model: Optional[str] = None  # override auto-detected model
+    protocol: Optional[str] = None  # override default protocol
+    rtsp_path: Optional[str] = None  # override default path
+    http_path: Optional[str] = None
+    remove_stale: bool = True  # remove the mismatched entry first
+
+
+@app.post("/api/cameras/{camera_ip}/add-detected")
+def add_detected_camera(camera_ip: str, request: AddDetectedRequest):
+    """
+    Replace a stale entry with the detected device.
+    Uses manufacturer defaults for protocol/path, can be overridden.
+    """
+    import sqlite3
+
+    mac = request.mac.lower().strip()
+    if not mac or len(mac) != 17:
+        raise HTTPException(status_code=400, detail="Invalid MAC format")
+
+    # Check if MAC already exists elsewhere
+    conn = sqlite3.connect(str(DB_PATH), timeout=5)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("SELECT ip FROM cameras WHERE mac = ?", (mac,))
+    existing = cur.fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(
+            status_code=409,
+            detail=f"MAC {mac} already registered at IP {existing['ip']}"
+        )
+
+    # Get defaults for this manufacturer
+    defaults = MANUFACTURER_DEFAULTS.get(request.manufacturer, {
+        "protocol": "rtsp",
+        "rtsp_path": "/Streaming/Channels/101",
+        "model": request.manufacturer or "IP Camera"
+    })
+
+    protocol = request.protocol or defaults.get("protocol", "rtsp")
+    model = request.model or defaults.get("model", "IP Camera")
+    rtsp_path = request.rtsp_path or defaults.get("rtsp_path")
+    http_path = request.http_path or defaults.get("http_path")
+
+    try:
+        # Remove stale entry if requested
+        removed_old = None
+        if request.remove_stale:
+            cur.execute("SELECT mac, model FROM cameras WHERE ip = ?", (camera_ip,))
+            old = cur.fetchone()
+            if old:
+                removed_old = {"mac": old["mac"], "model": old["model"]}
+                cur.execute("DELETE FROM cameras WHERE ip = ?", (camera_ip,))
+
+        # Insert new entry
+        if protocol == "http":
+            cur.execute(
+                "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
+                (mac, camera_ip, model, protocol, http_path)
+            )
+        else:
+            cur.execute(
+                "INSERT INTO cameras (mac, ip, model, protocol, rtsp_path) VALUES (?, ?, ?, ?, ?)",
+                (mac, camera_ip, model, protocol, rtsp_path)
+            )
+
+        conn.commit()
+
+        # Check if credentials exist for this model
+        cred_warning = None
+        cred_prefix = CAM_CRED_GROUPS.get(model)
+        if not cred_prefix and protocol == "rtsp":
+            cred_warning = f"No credentials configured for model '{model}'. Add to cam-cred-groups.json + .env"
+
+        return {
+            "added": True,
+            "ip": camera_ip,
+            "mac": mac,
+            "model": model,
+            "protocol": protocol,
+            "rtsp_path": rtsp_path if protocol == "rtsp" else None,
+            "http_path": http_path if protocol == "http" else None,
+            "removed_old": removed_old,
+            "credential_warning": cred_warning,
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
+class UpdateMacRequest(BaseModel):
+    new_mac: str
+    clear_old_entry: bool = False  # if True, delete the old MAC's row (device swapped)
+
+
+@app.post("/api/cameras/{camera_ip}/update-mac")
+def update_camera_mac(camera_ip: str, request: UpdateMacRequest):
+    """
+    Update the MAC address for a camera IP in lodge.db.
+
+    Use case: a different device now occupies this IP (DHCP drift or device swap).
+    - new_mac: the MAC currently at this IP (from ARP)
+    - clear_old_entry: if True, also delete the row with the old MAC (device was replaced)
+    """
+    import sqlite3
+
+    new_mac = request.new_mac.lower().strip()
+    if not new_mac or len(new_mac) != 17:
+        raise HTTPException(status_code=400, detail="Invalid MAC format")
+
+    cam = _get_camera_by_ip(camera_ip)
+    if not cam:
+        raise HTTPException(status_code=404, detail=f"No camera at IP {camera_ip} in lodge.db")
+
+    old_mac = cam["mac"]
+    if old_mac.lower() == new_mac:
+        return {"ip": camera_ip, "updated": False, "reason": "MAC already matches"}
+
+    conn = sqlite3.connect(str(DB_PATH), timeout=5)
+    cur = conn.cursor()
+    try:
+        # Update the IP's row to use the new MAC
+        cur.execute("UPDATE cameras SET mac = ? WHERE ip = ?", (new_mac, camera_ip))
+
+        cleared = False
+        if request.clear_old_entry:
+            # Delete the old MAC's row if it exists and isn't the same row
+            cur.execute("DELETE FROM cameras WHERE mac = ? AND ip != ?", (old_mac, camera_ip))
+            cleared = cur.rowcount > 0
+
+        conn.commit()
+        return {
+            "ip": camera_ip,
+            "updated": True,
+            "old_mac": old_mac,
+            "new_mac": new_mac,
+            "cleared_old_entry": cleared,
+        }
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
+
+
 @app.get("/api/camera/{camera_ip}/frame")
 def get_camera_frame_by_ip(
     camera_ip: str,
@@ -1560,6 +1890,8 @@ def get_camera_frame_by_ip(
         http_path = cam.get("http_path") or "/"
         try:
             image_data = http_mediator.get_frame(camera_ip, http_path)
+        except AuthenticationError as e:
+            raise HTTPException(status_code=401, detail=f"HTTP camera {camera_ip} auth failed: {e}")
         except requests.RequestException as e:
             raise HTTPException(status_code=503, detail=f"HTTP camera {camera_ip} failed: {e}")
         media_type = "image/jpeg"  # PoE-CAM firmware serves JPEG only
@@ -1647,6 +1979,8 @@ def http_camera_frame_via_mediator(
     Returns the buffered JPEG; starts the persistent stream worker on demand."""
     try:
         image_data = http_mediator.get_frame(camera_ip, http_path)
+    except AuthenticationError as e:
+        raise HTTPException(status_code=401, detail=f"HTTP camera {camera_ip} auth failed: {e}")
     except requests.RequestException as e:
         raise HTTPException(status_code=503, detail=f"HTTP camera {camera_ip} failed: {e}")
     return Response(content=image_data, media_type="image/jpeg")

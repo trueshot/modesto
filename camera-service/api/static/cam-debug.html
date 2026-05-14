@@ -65,6 +65,21 @@
   Check that the service is running on this host: <code id="serviceUrl"></code>.
 </div>
 
+<div class="banner" id="mismatchBanner" style="background:#4a3a1a;border-color:#c90">
+  <strong style="color:#fc6">⚠ Different device at this IP</strong><br>
+  <div style="font-size:0.85rem;margin:0.3rem 0">
+    <div>lodge.db expects: <code id="mismatchDbMac">—</code> (<span id="mismatchDbModel">—</span>)</div>
+    <div>Actual device: <code id="mismatchArpMac">—</code></div>
+    <div id="detectedDevice" style="margin-top:0.3rem;color:#6cf"></div>
+  </div>
+  <div style="margin-top:0.5rem">
+    <button id="btnAddDetected" class="primary" style="display:none">Add as <span id="btnAddDetectedLabel">—</span></button>
+    <button id="btnRemoveStale" class="danger">Remove stale entry</button>
+    <span id="mismatchResult" style="margin-left:0.5rem;font-size:0.8rem"></span>
+  </div>
+  <div id="credWarning" style="margin-top:0.3rem;font-size:0.8rem;color:#fc6;display:none"></div>
+</div>
+
 <div class="layout">
   <!-- LEFT: live frame + frame controls -->
   <div>
@@ -105,6 +120,7 @@
       <h2>Database</h2>
       <div class="row"><label>in lodge.db</label><span class="val" id="dbExists">—</span></div>
       <div class="row"><label>model</label><span class="val" id="dbModel">—</span></div>
+      <div class="row"><label>expected MAC</label><span class="val" id="dbMac">—</span></div>
       <div id="dbAddSection" style="display:none; margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid #444">
         <div class="row"><label>MAC</label><input type="text" id="dbMacInput" style="width:160px;font-family:monospace;font-size:0.8rem" placeholder="aa:bb:cc:dd:ee:ff"></div>
         <div class="hint">MAC will be auto-filled if mediator has seen frames from this camera.</div>
@@ -296,6 +312,8 @@ function pollFrame() {
     // Force a status refresh so the "OFFLINE — <reason>" text appears
     // ASAP rather than waiting up to 1.5s for the next regular poll.
     refreshMediatorStatus();
+    // Check if this might be a MAC mismatch (different device at IP)
+    if (!mismatchState.checked) verifyMac();
   };
   img.src = url;
 }
@@ -545,6 +563,115 @@ function appendOtaLine(ev) {
   otaLog.scrollTop = otaLog.scrollHeight;
 }
 
+// ── MAC mismatch detection
+let mismatchState = { checked: false, mismatch: false, db_mac: null, arp_mac: null, detected: null };
+
+async function verifyMac() {
+  try {
+    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/verify`);
+    mismatchState.checked = true;
+    mismatchState.mismatch = data.mismatch;
+    mismatchState.db_mac = data.db_mac;
+    mismatchState.arp_mac = data.arp_mac;
+    mismatchState.detected = data.detected;
+
+    const banner = document.getElementById("mismatchBanner");
+    const addBtn = document.getElementById("btnAddDetected");
+    const addLabel = document.getElementById("btnAddDetectedLabel");
+
+    if (data.mismatch) {
+      document.getElementById("mismatchDbMac").textContent = data.db_mac || "—";
+      document.getElementById("mismatchDbModel").textContent = data.db_model || "unknown";
+      document.getElementById("mismatchArpMac").textContent = data.arp_mac || "—";
+
+      // Show detected device info
+      const detectedEl = document.getElementById("detectedDevice");
+      if (data.detected && data.detected.manufacturer !== "Unknown") {
+        const conf = data.detected.confidence === "high" ? "✓" : "~";
+        detectedEl.innerHTML = `Detected: <strong>${data.detected.manufacturer}</strong> ${data.detected.device_type} <span style="color:#888">(${conf} ${data.detected.source})</span>`;
+
+        // Show "Add as X" button for confident detections
+        if (data.detected.confidence === "high" || data.detected.confidence === "medium") {
+          addLabel.textContent = data.detected.manufacturer;
+          addBtn.style.display = "inline-block";
+        } else {
+          addBtn.style.display = "none";
+        }
+      } else {
+        detectedEl.textContent = "Could not identify device type";
+        addBtn.style.display = "none";
+      }
+
+      banner.classList.add("visible");
+    } else {
+      banner.classList.remove("visible");
+    }
+    return data;
+  } catch (e) {
+    console.error("verifyMac error:", e);
+    return null;
+  }
+}
+
+async function addDetectedDevice() {
+  if (!mismatchState.arp_mac || !mismatchState.detected) {
+    document.getElementById("mismatchResult").innerHTML =
+      '<span class="val bad">No detected device info</span>';
+    return;
+  }
+  const result = document.getElementById("mismatchResult");
+  const credWarn = document.getElementById("credWarning");
+  result.textContent = "Adding...";
+  credWarn.style.display = "none";
+
+  try {
+    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/add-detected`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        mac: mismatchState.arp_mac,
+        manufacturer: mismatchState.detected.manufacturer,
+        remove_stale: true,
+      }),
+    });
+    if (data.added) {
+      const oldNote = data.removed_old ? ` (replaced ${data.removed_old.model})` : "";
+      result.innerHTML = `<span class="val ok">Added ${data.model}${oldNote}</span>`;
+      document.getElementById("mismatchBanner").classList.remove("visible");
+
+      // Show credential warning if applicable
+      if (data.credential_warning) {
+        credWarn.textContent = "⚠ " + data.credential_warning;
+        credWarn.style.display = "block";
+      }
+
+      checkDatabaseStatus();
+    }
+  } catch (e) {
+    result.innerHTML = `<span class="val bad">${e.message}</span>`;
+  }
+}
+
+async function removeStaleEntry() {
+  const result = document.getElementById("mismatchResult");
+  result.textContent = "Removing...";
+  try {
+    const data = await api(`/api/cameras/${encodeURIComponent(IP)}`, {
+      method: "DELETE",
+    });
+    if (data.removed) {
+      result.innerHTML = `<span class="val ok">Removed ${data.model} (${data.mac})</span>`;
+      document.getElementById("mismatchBanner").classList.remove("visible");
+      checkDatabaseStatus();
+    }
+  } catch (e) {
+    result.innerHTML = `<span class="val bad">${e.message}</span>`;
+  }
+}
+
+document.getElementById("btnAddDetected").addEventListener("click", addDetectedDevice);
+document.getElementById("btnRemoveStale").addEventListener("click", removeStaleEntry);
+
 // ── Database check
 let dbState = { exists: null, mac: null, model: "PoE-CAM" };
 
@@ -563,10 +690,14 @@ async function checkDatabaseStatus() {
     if (data.exists) {
       setText("dbExists", "yes", "ok");
       setText("dbModel", data.model || "—");
+      setText("dbMac", data.mac || "—");
       document.getElementById("dbAddSection").style.display = "none";
+      // Check for MAC mismatch when camera is in DB
+      verifyMac();
     } else {
       setText("dbExists", "no — not registered", "warn");
       setText("dbModel", "—");
+      setText("dbMac", "—");
       document.getElementById("dbAddSection").style.display = "block";
       lookupArp();
     }

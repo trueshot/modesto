@@ -42,6 +42,11 @@ import requests  # kept for requests.RequestException exception type on API
 logger = logging.getLogger(__name__)
 
 
+class AuthenticationError(Exception):
+    """Raised when camera returns 401/403 — credentials are wrong or missing."""
+    pass
+
+
 @dataclass
 class _CamState:
     lock: threading.Lock = field(default_factory=threading.Lock)
@@ -274,6 +279,8 @@ class HttpCameraMediator:
             conn.request("GET", http_path)
             resp = conn.getresponse()
 
+            if resp.status in (401, 403):
+                raise AuthenticationError(f"HTTP {resp.status} — credentials required but not configured")
             if resp.status != 200:
                 raise ConnectionError(f"HTTP {resp.status}")
 
