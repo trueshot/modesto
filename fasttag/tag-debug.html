@@ -77,6 +77,8 @@
   .age { color: var(--muted); font-size: 11px; }
   .age.fresh { color: var(--green); }
   .age.stale { color: var(--amber); }
+  .row.gone { opacity: 0.5; }
+  .row.gone .tag-cell { color: var(--muted); }
   .quality { color: var(--muted); font-size: 11px; }
 
   .empty {
@@ -263,14 +265,14 @@
       </thead>
       <tbody id="tag-rows"></tbody>
     </table>
-    <div class="empty" id="empty-msg">no tags currently in view</div>
+    <div class="empty" id="empty-msg">no tags seen in last 60s</div>
   </div>
   <div class="right" id="detail">
     <h2>Drill-in</h2>
     <p class="hint">
       Click a <strong>tag id</strong> in the left list to see its recent detection history across cameras.<br>
       Click a <strong>camera ip</strong> to open a live overlay stream of that camera.<br><br>
-      Stale tags fall off after <code>?stale=N</code> seconds (default <code>2</code>). Filter matches both tag id and camera ip.
+      Tags stay in list for <code>?retain=N</code> seconds after last seen (default <code>60</code>), sorted by most recent. Dimmed rows = not currently live.
     </p>
   </div>
 </div>
@@ -282,9 +284,10 @@
 <script>
 (() => {
   const params = new URLSearchParams(location.search);
-  const STALE_S = parseFloat(params.get("stale") || "2");
+  const STALE_S = parseFloat(params.get("stale") || "2");       // "live" threshold
+  const RETAIN_S = parseFloat(params.get("retain") || "60");    // keep in list after last seen
   const RENDER_MS = 250;
-  const HISTORY_KEEP_S = 30;  // for the drill-in tag-history panel
+  const HISTORY_KEEP_S = 60;  // for the drill-in tag-history panel
 
   // tag_id -> {
   //   cameras: Map<ip, {last_ts, margin, count}>,
@@ -355,39 +358,51 @@
 
   function pruneAndCollect(now) {
     const stale_cutoff = now - STALE_S;
+    const retain_cutoff = now - RETAIN_S;
     const hist_cutoff = now - HISTORY_KEEP_S;
-    const live = [];
+    const rows = [];
 
     for (const [tagId, entry] of state) {
-      // prune stale cameras
-      for (const [ip, cam] of entry.cameras) {
-        if (cam.last_ts < stale_cutoff) entry.cameras.delete(ip);
-      }
       // prune old history
       while (entry.history.length && entry.history[0].ts < hist_cutoff) {
         entry.history.shift();
       }
+
+      // find most recent detection across all cameras (including stale)
+      let bestIp = null, bestTs = 0, bestMargin = 0, liveCount = 0;
+      for (const [ip, cam] of entry.cameras) {
+        if (cam.last_ts > bestTs) {
+          bestTs = cam.last_ts; bestIp = ip; bestMargin = cam.margin;
+        }
+        if (cam.last_ts >= stale_cutoff) liveCount++;
+      }
+
+      // prune cameras older than retain window
+      for (const [ip, cam] of entry.cameras) {
+        if (cam.last_ts < retain_cutoff) entry.cameras.delete(ip);
+      }
+
+      // delete tag entirely if no cameras and no history
       if (entry.cameras.size === 0 && entry.history.length === 0) {
         state.delete(tagId);
-      } else if (entry.cameras.size > 0) {
-        // tag is currently visible
-        let bestIp = null, bestTs = 0, bestMargin = 0;
-        for (const [ip, cam] of entry.cameras) {
-          if (cam.last_ts > bestTs) {
-            bestTs = cam.last_ts; bestIp = ip; bestMargin = cam.margin;
-          }
-        }
-        live.push({
+        continue;
+      }
+
+      // include in list if we have a recent detection
+      if (bestTs >= retain_cutoff) {
+        rows.push({
           tagId,
           primaryIp: bestIp,
           primaryTs: bestTs,
           primaryMargin: bestMargin,
           camCount: entry.cameras.size,
+          isLive: liveCount > 0,
         });
       }
     }
-    live.sort((a, b) => a.tagId - b.tagId);
-    return live;
+    // sort by most recently seen first
+    rows.sort((a, b) => b.primaryTs - a.primaryTs);
+    return rows;
   }
 
   function applyFilter(rows, f) {
@@ -412,7 +427,7 @@
       const frag = document.createDocumentFragment();
       for (const r of rows) {
         const tr = document.createElement("tr");
-        tr.className = "row";
+        tr.className = r.isLive ? "row" : "row gone";
         const age = now - r.primaryTs;
         tr.innerHTML = `
           <td><span class="tag-cell ${selected && selected.kind==='tag' && selected.value===r.tagId ? 'selected' : ''}" data-tag="${r.tagId}">#${r.tagId}</span></td>
@@ -427,8 +442,11 @@
       }
       tagRowsEl.appendChild(frag);
     }
-    statsEl.textContent =
-      `${rows.length} live · ${totalSeen.toLocaleString()} total`;
+    const liveCount = rows.filter(r => r.isLive).length;
+    const recentCount = rows.length - liveCount;
+    statsEl.textContent = recentCount > 0
+      ? `${liveCount} live · ${recentCount} recent · ${totalSeen.toLocaleString()} total`
+      : `${liveCount} live · ${totalSeen.toLocaleString()} total`;
 
     // Refresh detail panel if showing tag history (live data)
     if (selected && selected.kind === "tag") renderTagDetail(selected.value);
@@ -543,7 +561,7 @@
       <p class="hint">
         Click a <strong>tag id</strong> in the left list to see its recent detection history across cameras.<br>
         Click a <strong>camera ip</strong> to open a live overlay stream of that camera.<br><br>
-        Stale tags fall off after <code>?stale=N</code> seconds (default <code>${STALE_S}</code>).
+        Tags stay in list for <code>?retain=N</code> seconds after last seen (default <code>${RETAIN_S}</code>), sorted by most recent.
       </p>`;
   }
 
