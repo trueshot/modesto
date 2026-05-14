@@ -1330,6 +1330,99 @@ def list_all_configs():
     return {"count": len(configs), "configs": configs}
 
 
+class AddCameraRequest(BaseModel):
+    ip: str
+    mac: str
+    model: str = "PoE-CAM"
+    protocol: str = "http"
+    http_path: Optional[str] = None
+    rtsp_path: Optional[str] = None
+
+
+@app.post("/cameras/add")
+def add_camera(request: AddCameraRequest):
+    """Add a discovered camera to lodge.db and optionally to running detection."""
+    if not DB_PATH.exists():
+        raise HTTPException(status_code=500, detail="lodge.db not found")
+
+    conn = sqlite3.connect(str(DB_PATH), timeout=2)
+    cur = conn.cursor()
+
+    # Check if already exists
+    cur.execute("SELECT ip FROM cameras WHERE ip = ? OR mac = ?", (request.ip, request.mac))
+    existing = cur.fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(status_code=409, detail=f"Camera already exists: {existing[0]}")
+
+    # Insert based on protocol
+    http_path = request.http_path or "/stream"
+    rtsp_path = request.rtsp_path or "/Streaming/Channels/101"
+    if request.protocol == "http":
+        cur.execute(
+            "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
+            (request.mac, request.ip, request.model, request.protocol, http_path)
+        )
+    else:
+        cur.execute(
+            "INSERT INTO cameras (mac, ip, model, protocol, rtsp_path) VALUES (?, ?, ?, ?, ?)",
+            (request.mac, request.ip, request.model, request.protocol, rtsp_path)
+        )
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Added camera {request.ip} ({request.mac}, {request.model}) to lodge.db")
+
+    # Auto-add to running detection if pool is active
+    started = False
+    if pool is not None:
+        cam_cfg = load_camera_config(request.ip)
+        target_fps = cam_cfg.get("target_fps", 5.0)
+
+        if request.protocol == "http":
+            # HTTP cameras need individual workers via camera-service
+            if is_camera_service_up() and result_queue is not None:
+                worker_config = {
+                    **DEFAULT_CONFIG,
+                    "target_fps": target_fps,
+                }
+                stop_event = multiprocessing.Event()
+                proc = multiprocessing.Process(
+                    target=http_detection_worker,
+                    args=(request.ip, CAMERA_SERVICE_URL, result_queue, stop_event, worker_config),
+                    daemon=True
+                )
+                proc.start()
+                with workers_lock:
+                    workers[request.ip] = {
+                        "process": proc,
+                        "stop_event": stop_event,
+                        "started_at": time.time(),
+                        "config": worker_config,
+                        "model": request.model,
+                        "access": "http-mediator",
+                        "protocol": "http",
+                    }
+                started = True
+                logger.info(f"Auto-started HTTP worker for {request.ip}")
+        else:
+            # RTSP cameras go into the pool
+            user, passwd = get_camera_credentials(request.model, request.ip)
+            passwd_enc = quote(passwd, safe='')
+            rtsp_url = f"rtsp://{user}:{passwd_enc}@{request.ip}:554{rtsp_path}"
+            pool.add_camera(request.ip, rtsp_url, target_fps=target_fps)
+            started = True
+            logger.info(f"Auto-added {request.ip} to pool")
+
+    return {
+        "added": request.ip,
+        "mac": request.mac,
+        "model": request.model,
+        "protocol": request.protocol,
+        "started": started,
+    }
+
+
 @app.get("/cameras/{camera_ip}/detections")
 def get_camera_detections(
     camera_ip: str,

@@ -1409,6 +1409,83 @@ def _get_camera_by_ip(camera_ip: str) -> Optional[dict]:
     return dict(row) if row else None
 
 
+@app.get("/api/cameras/{camera_ip}/exists")
+def camera_exists(camera_ip: str):
+    """Check if a camera IP exists in lodge.db."""
+    cam = _get_camera_by_ip(camera_ip)
+    if cam:
+        return {
+            "exists": True,
+            "ip": cam["ip"],
+            "mac": cam["mac"],
+            "model": cam.get("model"),
+            "protocol": cam.get("protocol"),
+        }
+    return {"exists": False, "ip": camera_ip}
+
+
+class AddCameraRequest(BaseModel):
+    ip: str
+    mac: str
+    model: str = "PoE-CAM"
+    protocol: str = "http"
+    http_path: Optional[str] = None
+
+
+@app.post("/api/cameras/add")
+def add_camera_to_db(request: AddCameraRequest):
+    """Add a PoE-CAM to lodge.db. For RTSP cameras, use fasttag's endpoint."""
+    if not DB_PATH.exists():
+        raise HTTPException(status_code=500, detail="lodge.db not found")
+
+    conn = sqlite3.connect(str(DB_PATH), timeout=2)
+    cur = conn.cursor()
+
+    cur.execute("SELECT ip FROM cameras WHERE ip = ? OR mac = ?", (request.ip, request.mac))
+    existing = cur.fetchone()
+    if existing:
+        conn.close()
+        raise HTTPException(status_code=409, detail=f"Camera already exists: {existing[0]}")
+
+    http_path = request.http_path or "/stream"
+    cur.execute(
+        "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
+        (request.mac, request.ip, request.model, request.protocol, http_path)
+    )
+    conn.commit()
+    conn.close()
+
+    logger.info(f"Added PoE-CAM {request.ip} ({request.mac}, {request.model}) to lodge.db")
+
+    return {
+        "added": request.ip,
+        "mac": request.mac,
+        "model": request.model,
+        "protocol": request.protocol,
+    }
+
+
+@app.get("/api/cameras/{camera_ip}/arp")
+def lookup_arp(camera_ip: str):
+    """Look up MAC address from system ARP table."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["arp", "-a", camera_ip],
+            capture_output=True, text=True, timeout=2
+        )
+        for line in result.stdout.splitlines():
+            if camera_ip in line:
+                parts = line.split()
+                for part in parts:
+                    if len(part) == 17 and (part.count("-") == 5 or part.count(":") == 5):
+                        mac = part.replace("-", ":").lower()
+                        return {"ip": camera_ip, "mac": mac}
+        return {"ip": camera_ip, "mac": None, "error": "not in ARP table"}
+    except Exception as e:
+        return {"ip": camera_ip, "mac": None, "error": str(e)}
+
+
 @app.get("/api/camera/{camera_ip}/frame")
 def get_camera_frame_by_ip(
     camera_ip: str,

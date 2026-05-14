@@ -32,7 +32,8 @@
   .badge.bad { background: #4f1a1a; color: #faa; }
   .badge.warn { background: #4f3a1a; color: #fc6; }
   .badge.unknown { background: #333; color: #888; }
-  button, select { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 4px 10px; font-size: 0.8rem; cursor: pointer; font-family: inherit; }
+  button, select, input[type="text"] { background: #333; color: #ddd; border: 1px solid #555; border-radius: 3px; padding: 4px 10px; font-size: 0.8rem; font-family: inherit; }
+  button, select { cursor: pointer; }
   button:hover { background: #444; }
   button:disabled { opacity: 0.4; cursor: not-allowed; }
   button.primary { background: #2a5fa3; border-color: #3a7fc3; color: #fff; }
@@ -96,6 +97,18 @@
       <div class="row"><label>tcp</label><span class="val" id="hTcp">—</span></div>
       <div class="row"><label>http</label><span class="val" id="hHttp">—</span></div>
       <button id="btnHealth" style="margin-top:0.4rem">probe (closes mediator slot briefly)</button>
+    </div>
+
+    <div class="card" id="dbCard">
+      <h2>Database</h2>
+      <div class="row"><label>in lodge.db</label><span class="val" id="dbExists">—</span></div>
+      <div class="row"><label>model</label><span class="val" id="dbModel">—</span></div>
+      <div id="dbAddSection" style="display:none; margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid #444">
+        <div class="row"><label>MAC</label><input type="text" id="dbMacInput" style="width:160px;font-family:monospace;font-size:0.8rem" placeholder="aa:bb:cc:dd:ee:ff"></div>
+        <div class="hint">MAC will be auto-filled if mediator has seen frames from this camera.</div>
+        <button id="btnAddToDB" class="primary" style="margin-top:0.4rem">Add as PoE-CAM</button>
+        <div id="dbAddResult" style="margin-top:0.3rem; font-size:0.8rem"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -251,9 +264,18 @@ function pollFrame() {
     img.hidden = false;
     empty.hidden = true;
     const ms = Math.round(performance.now() - start);
+    const dims = `${img.naturalWidth}x${img.naturalHeight}`;
     setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
     frameState.pollOk = true;
     recomputeFrameState();
+    // Update resolution picker if dimensions changed
+    if (dims !== lastFrameDims) {
+      lastFrameDims = dims;
+      const sel = document.getElementById("resPicker");
+      if (sel.options.length > 0 && RES_MAP[dims]) {
+        sel.value = RES_MAP[dims];
+      }
+    }
   };
   img.onerror = () => {
     frameState.pollOk = false;
@@ -365,17 +387,36 @@ async function probeHealth() {
   }
 }
 
+// Map frame dimensions to resolution preset names
+const RES_MAP = {
+  "320x240": "QVGA",
+  "640x480": "VGA",
+  "800x600": "SVGA",
+  "1024x768": "XGA",
+  "1600x1200": "UXGA",
+  "2592x1944": "QSXGA",
+};
+let lastFrameDims = null;
+
 function populateResolutions(presets) {
   const sel = document.getElementById("resPicker");
-  if (sel.options.length === presets.length && presets.every((p, i) => sel.options[i]?.value === p)) {
-    return;  // unchanged
+  const needsRebuild = sel.options.length !== presets.length ||
+                       !presets.every((p, i) => sel.options[i]?.value === p);
+  if (needsRebuild) {
+    sel.innerHTML = "";
+    presets.forEach(p => {
+      const o = document.createElement("option");
+      o.value = p; o.textContent = p;
+      sel.appendChild(o);
+    });
   }
-  sel.innerHTML = "";
-  presets.forEach(p => {
-    const o = document.createElement("option");
-    o.value = p; o.textContent = p;
-    sel.appendChild(o);
-  });
+  // Select current resolution based on frame dimensions
+  if (lastFrameDims && RES_MAP[lastFrameDims]) {
+    const current = RES_MAP[lastFrameDims];
+    if (presets.includes(current)) {
+      sel.value = current;
+    }
+  }
 }
 
 // ── Buttons
@@ -488,7 +529,75 @@ function appendOtaLine(ev) {
   otaLog.scrollTop = otaLog.scrollHeight;
 }
 
+// ── Database check
+let dbState = { exists: null, mac: null };
+
+async function checkDatabaseStatus() {
+  try {
+    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/exists`);
+    dbState.exists = data.exists;
+    if (data.exists) {
+      setText("dbExists", "yes", "ok");
+      setText("dbModel", data.model || "—");
+      document.getElementById("dbAddSection").style.display = "none";
+    } else {
+      setText("dbExists", "no — not registered", "warn");
+      setText("dbModel", "—");
+      document.getElementById("dbAddSection").style.display = "block";
+      lookupArp();
+    }
+  } catch (e) {
+    setText("dbExists", `error: ${e.message}`, "bad");
+  }
+}
+
+async function lookupArp() {
+  try {
+    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/arp`);
+    if (data.mac) {
+      document.getElementById("dbMacInput").value = data.mac;
+      dbState.mac = data.mac;
+    }
+  } catch (e) {}
+}
+
+async function addCameraToDB() {
+  const macInput = document.getElementById("dbMacInput");
+  const mac = macInput.value.trim();
+  const result = document.getElementById("dbAddResult");
+
+  if (!mac || !/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(mac)) {
+    result.innerHTML = '<span class="val bad">Invalid MAC format (aa:bb:cc:dd:ee:ff)</span>';
+    return;
+  }
+
+  result.textContent = "Adding...";
+  document.getElementById("btnAddToDB").disabled = true;
+
+  try {
+    const data = await api("/api/cameras/add", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        ip: IP,
+        mac: mac.toLowerCase(),
+        model: "PoE-CAM",
+        protocol: "http",
+        http_path: "/stream",
+      }),
+    });
+    result.innerHTML = `<span class="val ok">Added! ${data.ip} (${data.mac})</span>`;
+    checkDatabaseStatus();
+  } catch (e) {
+    result.innerHTML = `<span class="val bad">${e.message}</span>`;
+    document.getElementById("btnAddToDB").disabled = false;
+  }
+}
+
+document.getElementById("btnAddToDB").addEventListener("click", addCameraToDB);
+
 // ── Init
+checkDatabaseStatus();
 refreshVersion(false);
 probeHealth();
 pollFrameTimer = setInterval(pollFrame, POLL_FRAME_MS);

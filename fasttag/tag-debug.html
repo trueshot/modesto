@@ -725,6 +725,28 @@
     }
   }
 
+  const CAM_PRESETS = {
+    "PoE-CAM": { model: "PoE-CAM", protocol: "http", http_path: "/stream", rtsp_path: null },
+    "5MP": { model: "5MP", protocol: "rtsp", http_path: null, rtsp_path: "/Streaming/Channels/101" },
+    "4K": { model: "4K", protocol: "rtsp", http_path: null, rtsp_path: "/Streaming/Channels/101" },
+  };
+
+  async function addDiscoveredCamera(ip, mac, preset) {
+    const cfg = CAM_PRESETS[preset] || CAM_PRESETS["PoE-CAM"];
+    try {
+      const r = await fetch("/cameras/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ip, mac, ...cfg }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Failed to add");
+      return { ok: true, message: `Added ${ip} as ${preset}`, started: d.started };
+    } catch (e) {
+      return { ok: false, message: e.message };
+    }
+  }
+
   function onCellClick(cell) {
     const sel = document.getElementById("subnetSelected");
     if (!sel) return;
@@ -732,10 +754,56 @@
       sel.innerHTML = `
         <strong style="color: var(--accent)">${cell.ip}</strong> — possible new camera<br>
         MAC: <code>${cell.mac}</code><br>
-        Not in lodge.db. To add it, run from a shell:<br>
-        <code style="display:inline-block; margin-top:6px; padding:6px 10px; background:var(--panel); border-radius:3px">
-          sqlite3 c:/clients/modesto/warehouses/lodge/lodge.db "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES ('${cell.mac}', '${cell.ip}', 'PoE-CAM', 'http', '/stream');"
-        </code>`;
+        <div style="margin-top:10px">
+          <label style="color:var(--muted); font-size:12px">Type:</label>
+          <select id="camPreset" style="background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:3px; padding:4px 8px; font:inherit; font-size:12px">
+            <option value="PoE-CAM">PoE-CAM (HTTP)</option>
+            <option value="5MP">5MP (RTSP)</option>
+            <option value="4K">4K (RTSP)</option>
+          </select>
+        </div>
+        <button class="ctrl-btn" id="addCamBtn" style="margin-top:10px">Add to lodge.db</button>
+        <button class="ctrl-btn" id="showCodeBtn" style="margin-top:10px">Show code</button>
+        <div id="addCamResult" style="margin-top:8px"></div>
+        <div id="codeBlock" style="display:none; margin-top:10px">
+          <code id="sqlCode" style="display:inline-block; padding:6px 10px; background:var(--panel); border-radius:3px; font-size:11px; word-break:break-all"></code>
+        </div>`;
+      const updateCode = () => {
+        const preset = document.getElementById("camPreset").value;
+        const cfg = CAM_PRESETS[preset];
+        const cols = cfg.protocol === "http"
+          ? "mac, ip, model, protocol, http_path"
+          : "mac, ip, model, protocol, rtsp_path";
+        const vals = cfg.protocol === "http"
+          ? `'${cell.mac}', '${cell.ip}', '${cfg.model}', '${cfg.protocol}', '${cfg.http_path}'`
+          : `'${cell.mac}', '${cell.ip}', '${cfg.model}', '${cfg.protocol}', '${cfg.rtsp_path}'`;
+        document.getElementById("sqlCode").textContent = `sqlite3 c:/clients/modesto/warehouses/lodge/lodge.db "INSERT INTO cameras (${cols}) VALUES (${vals});"`;
+      };
+      updateCode();
+      document.getElementById("camPreset").onchange = updateCode;
+      document.getElementById("addCamBtn").onclick = async () => {
+        const btn = document.getElementById("addCamBtn");
+        const preset = document.getElementById("camPreset").value;
+        btn.disabled = true;
+        btn.textContent = "Adding...";
+        const result = await addDiscoveredCamera(cell.ip, cell.mac, preset);
+        document.getElementById("addCamResult").innerHTML = result.ok
+          ? `<span style="color:var(--green)">${result.message}${result.started ? " — now detecting" : " — click Start to activate"}</span>`
+          : `<span style="color:var(--red)">${result.message}</span>`;
+        if (result.ok) btn.style.display = "none";
+        else { btn.disabled = false; btn.textContent = "Add to lodge.db"; }
+      };
+      document.getElementById("showCodeBtn").onclick = () => {
+        const block = document.getElementById("codeBlock");
+        const btn = document.getElementById("showCodeBtn");
+        if (block.style.display === "none") {
+          block.style.display = "block";
+          btn.textContent = "Hide code";
+        } else {
+          block.style.display = "none";
+          btn.textContent = "Show code";
+        }
+      };
     } else if (cell.state === "known_offline") {
       sel.innerHTML = `<strong>${cell.ip}</strong> (${cell.model || "?"}) — in lodge.db but not on the network. Power cycle or check cable.`;
     } else {
