@@ -276,6 +276,11 @@ function pollFrame() {
         sel.value = RES_MAP[dims];
       }
     }
+    // Probe health after first frame (mediator is now streaming)
+    if (!healthProbeScheduled) {
+      healthProbeScheduled = true;
+      probeHealth();
+    }
   };
   img.onerror = () => {
     frameState.pollOk = false;
@@ -612,7 +617,8 @@ document.getElementById("btnAddToDB").addEventListener("click", addCameraToDB);
 // ── Init
 checkDatabaseStatus();
 refreshVersion(false);
-probeHealth();
+// Delay health probe until first frame arrives (avoids race with mediator startup)
+let healthProbeScheduled = false;
 pollFrameTimer = setInterval(pollFrame, POLL_FRAME_MS);
 pollFrame();
 setInterval(refreshMediatorStatus, POLL_STATUS_MS);
