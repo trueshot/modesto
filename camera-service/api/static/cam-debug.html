@@ -18,6 +18,7 @@
   .frame-wrap.stale img, .frame-wrap.dead img { opacity: 0.4; filter: grayscale(0.6); }
   .frame-wrap .empty { color: #666; padding: 2rem; }
   .frame-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 0.4rem 0.6rem; background: rgba(0,0,0,0.85); font-family: ui-monospace, monospace; font-size: 0.75rem; display: none; }
+  .frame-res { position: absolute; top: 0.4rem; right: 0.4rem; padding: 2px 6px; background: rgba(0,0,0,0.7); color: #6cf; font-family: ui-monospace, monospace; font-size: 0.7rem; border-radius: 3px; display: none; }
   .frame-wrap.stale .frame-overlay { display: block; color: #fc6; border-top: 1px solid #c80; }
   .frame-wrap.dead .frame-overlay { display: block; color: #f88; border-top: 1px solid #c33; }
   .frame-meta { font-family: ui-monospace, monospace; font-size: 0.75rem; color: #888; margin-top: 0.4rem; }
@@ -73,6 +74,7 @@
         <img id="frame" alt="" hidden>
         <div class="empty" id="frameEmpty">no frame yet</div>
         <div class="frame-overlay" id="frameOverlay"></div>
+        <div class="frame-res" id="frameRes"></div>
       </div>
       <div class="frame-meta" id="frameMeta">poll: off</div>
     </div>
@@ -265,15 +267,20 @@ function pollFrame() {
     empty.hidden = true;
     const ms = Math.round(performance.now() - start);
     const dims = `${img.naturalWidth}x${img.naturalHeight}`;
+    const preset = RES_MAP[dims] || "";
     setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
+    // Show resolution badge on frame
+    const resEl = document.getElementById("frameRes");
+    resEl.textContent = preset ? `${preset} ${img.naturalWidth}×${img.naturalHeight}` : `${img.naturalWidth}×${img.naturalHeight}`;
+    resEl.style.display = "block";
     frameState.pollOk = true;
     recomputeFrameState();
     // Update resolution picker if dimensions changed
     if (dims !== lastFrameDims) {
       lastFrameDims = dims;
       const sel = document.getElementById("resPicker");
-      if (sel.options.length > 0 && RES_MAP[dims]) {
-        sel.value = RES_MAP[dims];
+      if (sel.options.length > 0 && preset) {
+        sel.value = preset;
       }
     }
     // Probe health after first frame (mediator is now streaming)

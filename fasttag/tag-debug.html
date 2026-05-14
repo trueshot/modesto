@@ -163,6 +163,10 @@
   .running-footer .chip .status-dot.reconnecting { background: #a84; }
   .running-footer .chip .status-dot.starting { background: #888; }
   .running-footer .none { color: var(--muted); font-style: italic; }
+  .running-footer .toggle { cursor: pointer; margin-right: 6px; opacity: 0.6; }
+  .running-footer .toggle:hover { opacity: 1; }
+  .running-footer.minimized #runningChips { display: none; }
+  .running-footer.minimized .label { margin-right: 0; }
 
   .ctrl-btn {
     background: var(--panel2); color: var(--text);
@@ -277,7 +281,8 @@
   </div>
 </div>
 <div class="running-footer" id="runningFooter">
-  <span class="label">Running cams:</span>
+  <span class="toggle" id="runningToggle" title="Toggle panel">▼</span>
+  <span class="label">Running cams<span id="runningCount"></span>:</span>
   <span id="runningChips" class="none">checking…</span>
 </div>
 
@@ -515,8 +520,20 @@
         <button class="close-btn" id="closeDetail">close</button>
       </h2>
       <div class="detail-meta">Uses pool frames when available, falls back to direct RTSP. Auto-closes after ${Math.round(OVERLAY_MAX_S)}s.</div>
-      <img class="overlay-img" id="overlayImg" src="${url}" alt="live overlay for ${ip}">`;
+      <div style="position:relative;display:inline-block">
+        <img class="overlay-img" id="overlayImg" src="${url}" alt="live overlay for ${ip}">
+        <div id="overlayRes" style="position:absolute;top:8px;right:8px;padding:2px 8px;background:rgba(0,0,0,0.7);color:#6cf;font-family:monospace;font-size:12px;border-radius:3px;display:none"></div>
+      </div>`;
     document.getElementById("closeDetail").onclick = () => clearDetail();
+    // Show resolution badge when image loads
+    const imgEl = document.getElementById("overlayImg");
+    imgEl.onload = () => {
+      const resEl = document.getElementById("overlayRes");
+      if (resEl && imgEl.naturalWidth > 0) {
+        resEl.textContent = `${imgEl.naturalWidth}×${imgEl.naturalHeight}`;
+        resEl.style.display = "block";
+      }
+    };
 
     // Countdown: tick every 1s; replace the img with a "stopped" notice when we hit 0.
     if (overlayCountdownTimer) clearInterval(overlayCountdownTimer);
@@ -870,6 +887,9 @@
       }
       workers.sort((a, b) => a.ip.localeCompare(b.ip,
         undefined, { numeric: true }));
+      // Update count for minimized view
+      const countEl = document.getElementById("runningCount");
+      countEl.textContent = workers.length > 0 ? ` (${workers.length})` : "";
       if (workers.length === 0) {
         chipsEl.className = "none";
         chipsEl.textContent = "(no workers)";
@@ -915,6 +935,19 @@
   }
   refreshStatus();
   setInterval(refreshStatus, 3000);
+
+  // ── Running cams toggle ────────────────────────────────────────────────
+  const footerEl = document.getElementById("runningFooter");
+  const toggleEl = document.getElementById("runningToggle");
+  if (localStorage.getItem("runningMinimized") === "true") {
+    footerEl.classList.add("minimized");
+    toggleEl.textContent = "▶";
+  }
+  toggleEl.onclick = () => {
+    const minimized = footerEl.classList.toggle("minimized");
+    toggleEl.textContent = minimized ? "▶" : "▼";
+    localStorage.setItem("runningMinimized", minimized);
+  };
 
   // ── Render loop ────────────────────────────────────────────────────────
   setInterval(render, RENDER_MS);
