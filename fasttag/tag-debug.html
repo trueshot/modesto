@@ -514,7 +514,7 @@
         <span id="overlayCountdown" class="countdown" style="margin-left:10px"></span>
         <button class="close-btn" id="closeDetail">close</button>
       </h2>
-      <div class="detail-meta">Separate connection from any FastTag worker on this cam. Auto-closes after ${Math.round(OVERLAY_MAX_S)}s.</div>
+      <div class="detail-meta">Uses pool frames when available, falls back to direct RTSP. Auto-closes after ${Math.round(OVERLAY_MAX_S)}s.</div>
       <img class="overlay-img" id="overlayImg" src="${url}" alt="live overlay for ${ip}">`;
     document.getElementById("closeDetail").onclick = () => clearDetail();
 

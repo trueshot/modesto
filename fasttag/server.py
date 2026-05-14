@@ -1454,11 +1454,9 @@ def live_overlay(
     """Live MJPEG stream with detection overlay drawn server-side.
 
     Dispatch:
-      RTSP cams — opens its own VideoCapture (independent of any FastTag
-        worker on this cam).
-      HTTP cams (PoE-CAM / M5CamServer) — fetches JPEG frames from
-        camera-service's http_mediator. Single-client W5500 chip means
-        we cannot open a fresh stream; ride the mediator.
+      Pool cams — uses frames from DetectionPool (no extra RTSP connection).
+      RTSP cams not in pool — opens direct VideoCapture.
+      HTTP cams (PoE-CAM / M5CamServer) — fetches from camera-service mediator.
 
     Closes on:
       - HTTP client disconnect (browser closes tab / removes <img>)
@@ -1478,6 +1476,55 @@ def live_overlay(
     frame_interval = 1.0 / fps if fps > 0 else 0
     deadline = time.time() + max_seconds
     protocol = (cam.get("protocol") or "rtsp").lower()
+
+    # If camera is in pool, try pool frames first (avoids slow second RTSP connection)
+    # But if no fresh frames available, fall through to direct RTSP
+    in_pool = pool is not None and camera_ip in pool.readers
+    logger.info(f"live-overlay: {camera_ip} in_pool={in_pool}")
+    if in_pool:
+        # Quick check: does the pool have a fresh frame? (within last 2 seconds)
+        test_frame, test_ts = pool.get_latest_frame(camera_ip)
+        frame_age = time.time() - test_ts if test_ts > 0 else 999
+        logger.info(f"live-overlay: {camera_ip} test_frame={'yes' if test_frame is not None else 'no'}, ts={test_ts:.1f}, age={frame_age:.1f}s")
+        if test_frame is not None and frame_age < 2.0:
+            def generate_pool():
+                last_emit = 0.0
+                last_frame_ts = 0.0
+                no_frame_count = 0
+                logger.info(f"live-overlay: using pool frames for {camera_ip}")
+                while time.time() < deadline:
+                    now = time.time()
+                    if frame_interval > 0 and (now - last_emit) < frame_interval:
+                        time.sleep(0.02)
+                        continue
+                    frame, ts = pool.get_latest_frame(camera_ip)
+                    if frame is None:
+                        no_frame_count += 1
+                        if no_frame_count == 100:  # ~2 seconds of no frames
+                            logger.warning(f"live-overlay: {camera_ip} pool frames stopped")
+                            break
+                        time.sleep(0.02)
+                        continue
+                    if ts == last_frame_ts:
+                        time.sleep(0.02)
+                        continue
+                    no_frame_count = 0
+                    last_frame_ts = ts
+                    last_emit = now
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    dets = detector.detect(gray)
+                    _draw_overlay(frame, dets)
+                    ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                    if not ok:
+                        continue
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n\r\n"
+                           + jpeg.tobytes() + b"\r\n")
+                logger.info(f"live-overlay (pool): {camera_ip} closed")
+
+            return StreamingResponse(generate_pool(), media_type="multipart/x-mixed-replace; boundary=frame")
+        else:
+            logger.info(f"live-overlay: {camera_ip} in pool but no fresh frames (age={frame_age:.1f}s), using direct RTSP")
 
     if protocol == "http":
         if not is_camera_service_up():
@@ -1539,11 +1586,17 @@ def live_overlay(
         raise HTTPException(status_code=400, detail=f"no RTSP path available for {camera_ip}")
 
     def generate_rtsp():
+        # Use TCP transport and shorter timeout for faster connection
+        logger.info(f"live-overlay: opening RTSP to {camera_ip}...")
+        start_open = time.time()
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|stimeout;5000000"
         cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        open_time = time.time() - start_open
         if not cap.isOpened():
-            logger.warning(f"live-overlay: failed to open {camera_ip}")
+            logger.warning(f"live-overlay: failed to open {camera_ip} after {open_time:.1f}s")
             return
+        logger.info(f"live-overlay: {camera_ip} opened in {open_time:.1f}s")
         last_emit = 0.0
         try:
             while time.time() < deadline:

@@ -181,6 +181,10 @@ class FrameReader(threading.Thread):
         self.skipped_oversize = 0
         self.last_std = 0.0  # debug: last frame's std value
         self._last_oversize_warn = 0.0
+        # Latest frame for overlay (avoids opening second RTSP connection)
+        self._latest_frame: Optional[np.ndarray] = None
+        self._latest_frame_ts: float = 0.0
+        self._latest_frame_lock = threading.Lock()
 
     def run(self):
         reconnect_delay = 1.0
@@ -229,6 +233,11 @@ class FrameReader(threading.Thread):
                     #     continue
 
                     last_frame_time = now
+
+                    # Store latest frame for overlay access (before pool write)
+                    with self._latest_frame_lock:
+                        self._latest_frame = frame.copy()
+                        self._latest_frame_ts = now
 
                     # Acquire pool slot
                     slot_id = self.frame_pool.acquire(timeout=0.5)
@@ -282,6 +291,13 @@ class FrameReader(threading.Thread):
             self.fps = (len(self._fps_times) - 1) / elapsed if elapsed > 0 else 0
         else:
             self.fps = 0.0
+
+    def get_latest_frame(self) -> Tuple[Optional[np.ndarray], float]:
+        """Get the most recent frame and its timestamp. Returns (None, 0) if no frame yet."""
+        with self._latest_frame_lock:
+            if self._latest_frame is None:
+                return None, 0.0
+            return self._latest_frame.copy(), self._latest_frame_ts
 
 
 # ============================================================================
@@ -561,6 +577,13 @@ class DetectionPool:
             except Exception:
                 break
         return results
+
+    def get_latest_frame(self, camera_ip: str) -> Tuple[Optional[np.ndarray], float]:
+        """Get the most recent frame from a camera's reader. Returns (None, 0) if not available."""
+        reader = self.readers.get(camera_ip)
+        if reader is None:
+            return None, 0.0
+        return reader.get_latest_frame()
 
     def get_status(self) -> dict:
         """Get status of readers and detectors."""
