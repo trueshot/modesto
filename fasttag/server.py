@@ -257,8 +257,47 @@ def build_rtsp_url(cam: dict) -> str:
 # FASTAPI APP
 # ============================================================================
 
+def _cleanup_orphaned_multiprocessing_children():
+    """Kill multiprocessing children whose parent no longer exists.
+
+    When FastTag crashes, detector pool children become orphans eating ~6GB each.
+    This runs at startup to clean up any stragglers from a prior crash.
+    """
+    import subprocess
+    import psutil
+
+    killed = []
+    try:
+        for proc in psutil.process_iter(['pid', 'ppid', 'name', 'cmdline']):
+            try:
+                info = proc.info
+                if info['name'] != 'python.exe':
+                    continue
+                cmdline = info.get('cmdline') or []
+                cmdline_str = ' '.join(cmdline)
+                if 'multiprocessing.spawn' not in cmdline_str:
+                    continue
+                # Check if parent exists
+                ppid = info['ppid']
+                if not psutil.pid_exists(ppid):
+                    proc.kill()
+                    killed.append(info['pid'])
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+    except ImportError:
+        # psutil not available — skip cleanup
+        logger.warning("psutil not installed; skipping orphan cleanup")
+        return
+
+    if killed:
+        logger.info(f"Cleaned up {len(killed)} orphaned multiprocessing children: {killed}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Cleanup orphaned detector processes from prior crashes
+    _cleanup_orphaned_multiprocessing_children()
+
     # Startup: launch background daemons. Names resolved at call time, so
     # forward references to functions defined later in the module are fine.
     threading.Thread(target=worker_reaper, daemon=True, name="worker-reaper").start()
