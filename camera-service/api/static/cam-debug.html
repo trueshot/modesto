@@ -41,7 +41,7 @@
   button.primary:hover { background: #3a7fc3; }
   button.danger { background: #6a2a2a; border-color: #8a3a3a; color: #fff; }
   .controls { display: flex; gap: 0.4rem; flex-wrap: wrap; }
-  .ndjson-log { background: #111; border: 1px solid #333; border-radius: 3px; padding: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.7rem; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  .ndjson-log, .discover-log { background: #111; border: 1px solid #333; border-radius: 3px; padding: 0.5rem; font-family: ui-monospace, monospace; font-size: 0.7rem; max-height: 280px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
   .ndjson-log .ev-progress { color: #aaa; }
   .ndjson-log .ev-phase { color: #6cf; font-weight: 600; }
   .ndjson-log .ev-complete-ok { color: #6f6; font-weight: 600; }
@@ -53,714 +53,931 @@
   .banner { display: none; background: #6a2a2a; border: 1px solid #c33; color: #fcc; padding: 0.5rem 0.8rem; border-radius: 4px; margin-bottom: 0.8rem; font-size: 0.85rem; }
   .banner.visible { display: block; }
   .banner code { color: #fff; background: #4a1a1a; padding: 1px 5px; border-radius: 2px; }
+
+  /* Subnet grid styles */
+  .subnet-view { display: none; }
+  .subnet-view.active { display: block; }
+  .single-view { display: none; }
+  .single-view.active { display: block; }
+
+  .subnet-grid {
+    display: grid;
+    grid-template-columns: repeat(16, 1fr);
+    gap: 2px;
+    max-width: 560px;
+    margin: 1rem 0;
+  }
+  .cell {
+    aspect-ratio: 1;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; font-family: ui-monospace, monospace;
+    border-radius: 2px; border: 1px solid transparent;
+    cursor: default; user-select: none;
+  }
+  .cell.m5camserver    { background: #166534; color: #bbf7d0; cursor: pointer; }
+  .cell.m5camserver:hover { border-color: #4ade80; }
+  .cell.stock          { background: #854d0e; color: #fef08a; cursor: pointer; }
+  .cell.stock:hover    { border-color: #facc15; }
+  .cell.http_ok        { background: #1e3a5f; color: #7dd3fc; cursor: pointer; }
+  .cell.http_ok:hover  { border-color: #38bdf8; }
+  .cell.rtsp           { background: #312e81; color: #c7d2fe; cursor: pointer; }
+  .cell.rtsp:hover     { border-color: #818cf8; }
+  .cell.db_http        { background: #164e63; color: #a5f3fc; cursor: pointer; }
+  .cell.db_http:hover  { border-color: #22d3ee; }
+  .cell.offline        { background: #7f1d1d; color: #fecaca; cursor: pointer; }
+  .cell.offline:hover  { border-color: #f87171; }
+  .cell.arp_only       { background: #334155; color: #cbd5e1; cursor: pointer; }
+  .cell.arp_only:hover { border-color: #94a3b8; }
+  .cell.empty          { background: #0f1115; color: #2d3748; }
+  .cell.probing        { background: #4c1d95; color: #c4b5fd; animation: pulse 1s infinite; }
+  .cell.mismatch       { outline: 2px solid #f97316; outline-offset: -2px; }
+  .cell.nvr            { background: #581c87; color: #e9d5ff; cursor: pointer; }
+  .cell.nvr:hover      { border-color: #a855f7; }
+  .cell.conflict       { outline: 2px solid #dc2626; outline-offset: -2px; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; margin: 0.5rem 0; font-size: 0.75rem; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 2px; }
+
+  .subnet-layout { display: grid; grid-template-columns: 1fr 400px; gap: 1rem; max-width: 1100px; }
+  .discover-log { max-height: 400px; }
+  .log-line { padding: 1px 0; }
+  .log-line.found { color: #4ade80; }
+  .log-line.stock { color: #facc15; }
+  .log-line.fail { color: #888; }
+  .log-line.info { color: #6cf; }
+
+  .stats-row { display: flex; gap: 1.5rem; margin: 0.5rem 0; font-size: 0.85rem; }
+  .stats-row span { color: #888; }
+  .stats-row strong { color: #ddd; }
 </style>
 </head>
 <body>
 
-<h1>Camera debug — <span class="ip" id="ipLabel">—</span></h1>
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- SUBNET VIEW (no IP param) -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="subnet-view" id="subnetView">
+  <h1>Camera Discovery — <span class="ip" id="subnetLabel">192.168.0.x</span></h1>
 
-<div class="banner" id="serviceBanner">
-  <strong>camera-service unreachable.</strong>
-  All info on this page is stale (last successful fetch shown below).
-  Check that the service is running on this host: <code id="serviceUrl"></code>.
+  <div class="controls" style="margin-bottom:1rem">
+    <button id="btnDiscover" class="primary">Discover (ARP + DB)</button>
+    <button id="btnDiscoverAll">Scan all 254 IPs (slow)</button>
+    <button id="btnRefreshArp">Refresh</button>
+    <span id="discoverStatus" style="margin-left:1rem;color:#888;font-size:0.85rem"></span>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#166534"></div> M5CamServer</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#854d0e"></div> Stock/other HTTP</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#312e81"></div> RTSP (DB)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#164e63"></div> HTTP (DB)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#581c87"></div> NVR</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#334155"></div> ARP only</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#7f1d1d"></div> Offline</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#0f1115;outline:2px solid #f97316"></div> MAC mismatch</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#0f1115;outline:2px solid #dc2626"></div> DB conflict</div>
+  </div>
+
+  <div class="subnet-layout">
+    <div>
+      <div class="subnet-grid" id="subnetGrid"></div>
+      <div class="stats-row" id="statsRow">
+        <span>M5: <strong id="statM5">0</strong></span>
+        <span>RTSP: <strong id="statRtsp">0</strong></span>
+        <span>HTTP: <strong id="statHttp">0</strong></span>
+        <span>NVR: <strong id="statNvr">0</strong></span>
+        <span>Offline: <strong id="statOffline">0</strong></span>
+        <span style="color:#f97316">Mismatch: <strong id="statMismatch">0</strong></span>
+        <span style="color:#dc2626">Conflict: <strong id="statConflict">0</strong></span>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Discover Log</h2>
+        <div class="discover-log" id="discoverLog">Click "Discover" to scan all cameras (DB + ARP + probe)...</div>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="banner" id="mismatchBanner" style="background:#4a3a1a;border-color:#c90">
-  <strong style="color:#fc6">⚠ Different device at this IP</strong><br>
-  <div style="font-size:0.85rem;margin:0.3rem 0">
-    <div>lodge.db expects: <code id="mismatchDbMac">—</code> (<span id="mismatchDbModel">—</span>)</div>
-    <div>Actual device: <code id="mismatchArpMac">—</code></div>
-    <div id="detectedDevice" style="margin-top:0.3rem;color:#6cf"></div>
-  </div>
-  <div style="margin-top:0.5rem">
-    <button id="btnAddDetected" class="primary" style="display:none">Add as <span id="btnAddDetectedLabel">—</span></button>
-    <button id="btnRemoveStale" class="danger">Remove stale entry</button>
-    <span id="mismatchResult" style="margin-left:0.5rem;font-size:0.8rem"></span>
-  </div>
-  <div id="credWarning" style="margin-top:0.3rem;font-size:0.8rem;color:#fc6;display:none"></div>
-</div>
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- SINGLE CAMERA VIEW (with IP param) -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="single-view" id="singleView">
+  <h1>Camera debug — <span class="ip" id="ipLabel">—</span></h1>
 
-<div class="layout">
-  <!-- LEFT: live frame + frame controls -->
-  <div>
-    <div class="card">
-      <h2>Live frame</h2>
-      <div class="frame-wrap" id="frameWrap">
-        <img id="frame" alt="" hidden>
-        <div class="empty" id="frameEmpty">no frame yet</div>
-        <div class="frame-overlay" id="frameOverlay"></div>
-        <div class="frame-res" id="frameRes"></div>
-      </div>
-      <div class="frame-meta" id="frameMeta">poll: off</div>
-    </div>
-
-    <div class="card">
-      <h2>OTA upload</h2>
-      <div class="file-drop" id="dropZone">
-        Drop a sketch.ino.bin here, or click to choose
-        <div class="hint">refused: .merged.bin / >2 MB / not M5CamServer</div>
-      </div>
-      <input type="file" id="fileInput" accept=".bin">
-      <div class="ndjson-log" id="otaLog" hidden></div>
-    </div>
+  <div class="banner" id="serviceBanner">
+    <strong>camera-service unreachable.</strong>
+    All info on this page is stale (last successful fetch shown below).
+    Check that the service is running on this host: <code id="serviceUrl"></code>.
   </div>
 
-  <!-- RIGHT: status + controls -->
-  <div>
-    <div class="card">
-      <h2>Health</h2>
-      <div class="row"><label>verdict</label><span class="val" id="hVerdict">—</span></div>
-      <div class="row"><label>ping</label><span class="val" id="hPing">—</span></div>
-      <div class="row"><label>tcp</label><span class="val" id="hTcp">—</span></div>
-      <div class="row"><label>http</label><span class="val" id="hHttp">—</span></div>
-      <button id="btnHealth" style="margin-top:0.4rem">probe (closes mediator slot briefly)</button>
+  <div class="banner" id="mismatchBanner" style="background:#4a3a1a;border-color:#c90">
+    <strong style="color:#fc6">⚠ Different device at this IP</strong><br>
+    <div style="font-size:0.85rem;margin:0.3rem 0">
+      <div>lodge.db expects: <code id="mismatchDbMac">—</code> (<span id="mismatchDbModel">—</span>)</div>
+      <div>Actual device: <code id="mismatchArpMac">—</code></div>
+      <div id="detectedDevice" style="margin-top:0.3rem;color:#6cf"></div>
     </div>
+    <div style="margin-top:0.5rem">
+      <button id="btnAddDetected" class="primary" style="display:none">Add as <span id="btnAddDetectedLabel">—</span></button>
+      <button id="btnRemoveStale" class="danger">Remove stale entry</button>
+      <span id="mismatchResult" style="margin-left:0.5rem;font-size:0.8rem"></span>
+    </div>
+    <div id="credWarning" style="margin-top:0.3rem;font-size:0.8rem;color:#fc6;display:none"></div>
+  </div>
 
-    <div class="card" id="dbCard">
-      <h2>Database</h2>
-      <div class="row"><label>in lodge.db</label><span class="val" id="dbExists">—</span></div>
-      <div class="row"><label>model</label><span class="val" id="dbModel">—</span></div>
-      <div class="row"><label>expected MAC</label><span class="val" id="dbMac">—</span></div>
-      <div id="dbAddSection" style="display:none; margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid #444">
-        <div class="row"><label>MAC</label><input type="text" id="dbMacInput" style="width:160px;font-family:monospace;font-size:0.8rem" placeholder="aa:bb:cc:dd:ee:ff"></div>
-        <div class="hint">MAC will be auto-filled if mediator has seen frames from this camera.</div>
-        <button id="btnAddToDB" class="primary" style="margin-top:0.4rem">Add as PoE-CAM</button>
-        <div id="dbAddResult" style="margin-top:0.3rem; font-size:0.8rem"></div>
+  <div class="layout">
+    <div>
+      <div class="card">
+        <h2>Live frame</h2>
+        <div class="frame-wrap" id="frameWrap">
+          <img id="frame" alt="" hidden>
+          <div class="empty" id="frameEmpty">no frame yet</div>
+          <div class="frame-overlay" id="frameOverlay"></div>
+          <div class="frame-res" id="frameRes"></div>
+        </div>
+        <div class="frame-meta" id="frameMeta">poll: off</div>
+      </div>
+
+      <div class="card">
+        <h2>OTA upload</h2>
+        <div class="file-drop" id="dropZone">
+          Drop a sketch.ino.bin here, or click to choose
+          <div class="hint">refused: .merged.bin / >2 MB / not M5CamServer</div>
+        </div>
+        <input type="file" id="fileInput" accept=".bin">
+        <div class="ndjson-log" id="otaLog" hidden></div>
       </div>
     </div>
 
-    <div class="card">
-      <h2>Sketch / version</h2>
-      <div class="row"><label>is M5CamServer</label><span class="val" id="vIs">—</span></div>
-      <div class="row"><label>sketch</label><span class="val" id="vSketch">—</span></div>
-      <div class="row"><label>md5</label><span class="val" id="vMd5">—</span></div>
-      <div class="row"><label>uptime</label><span class="val" id="vUptime">—</span></div>
-      <div class="row"><label>camera_ok</label><span class="val" id="vOk">—</span></div>
-      <div class="row"><label>free heap</label><span class="val" id="vHeap">—</span></div>
-      <button id="btnVersionRefresh" style="margin-top:0.4rem">refresh /version</button>
-    </div>
+    <div>
+      <div class="card">
+        <h2>Health</h2>
+        <div class="row"><label>verdict</label><span class="val" id="hVerdict">—</span></div>
+        <div class="row"><label>ping</label><span class="val" id="hPing">—</span></div>
+        <div class="row"><label>tcp</label><span class="val" id="hTcp">—</span></div>
+        <div class="row"><label>http</label><span class="val" id="hHttp">—</span></div>
+        <button id="btnHealth" style="margin-top:0.4rem">probe (closes mediator slot briefly)</button>
+      </div>
 
-    <div class="card">
-      <h2>Mediator stream</h2>
-      <div class="row"><label>mode</label><span class="val" id="mMode">—</span></div>
-      <div class="row"><label>worker</label><span class="val" id="mWorker">—</span></div>
-      <div class="row"><label>session fps</label><span class="val" id="mFps">—</span></div>
-      <div class="row"><label>session frames</label><span class="val" id="mFrames">—</span></div>
-      <div class="row"><label>cmd queue</label><span class="val" id="mQueue">—</span></div>
-      <div class="row"><label>cmd sent</label><span class="val" id="mCmdSent">—</span></div>
-      <div class="row"><label>last error</label><span class="val" id="mErr">—</span></div>
-      <div class="controls" style="margin-top:0.5rem">
-        <button id="btnEnable" class="primary">enable duplex</button>
-        <button id="btnDisable">disable duplex</button>
-        <button id="btnReset" class="danger">reset circuit</button>
+      <div class="card" id="dbCard">
+        <h2>Database</h2>
+        <div class="row"><label>in lodge.db</label><span class="val" id="dbExists">—</span></div>
+        <div class="row"><label>model</label><span class="val" id="dbModel">—</span></div>
+        <div class="row"><label>expected MAC</label><span class="val" id="dbMac">—</span></div>
+        <div id="dbAddSection" style="display:none; margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid #444">
+          <div class="row"><label>MAC</label><input type="text" id="dbMacInput" style="width:160px;font-family:monospace;font-size:0.8rem" placeholder="aa:bb:cc:dd:ee:ff"></div>
+          <div class="hint">MAC will be auto-filled if mediator has seen frames from this camera.</div>
+          <button id="btnAddToDB" class="primary" style="margin-top:0.4rem">Add as PoE-CAM</button>
+          <div id="dbAddResult" style="margin-top:0.3rem; font-size:0.8rem"></div>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <h2>Duplex commands</h2>
-      <div class="row" style="grid-template-columns: 110px 1fr 50px">
-        <label>resolution</label>
-        <select id="resPicker"></select>
-        <button id="btnResApply">send</button>
+      <div class="card">
+        <h2>Sketch / version</h2>
+        <div class="row"><label>is M5CamServer</label><span class="val" id="vIs">—</span></div>
+        <div class="row"><label>sketch</label><span class="val" id="vSketch">—</span></div>
+        <div class="row"><label>md5</label><span class="val" id="vMd5">—</span></div>
+        <div class="row"><label>uptime</label><span class="val" id="vUptime">—</span></div>
+        <div class="row"><label>camera_ok</label><span class="val" id="vOk">—</span></div>
+        <div class="row"><label>free heap</label><span class="val" id="vHeap">—</span></div>
+        <button id="btnVersionRefresh" style="margin-top:0.4rem">refresh /version</button>
       </div>
-      <div class="controls" style="margin-top:0.5rem">
-        <button id="btnDegrade">set camera_ok=false</button>
-        <button id="btnUndegrade">set camera_ok=true</button>
+
+      <div class="card">
+        <h2>Mediator stream</h2>
+        <div class="row"><label>mode</label><span class="val" id="mMode">—</span></div>
+        <div class="row"><label>worker</label><span class="val" id="mWorker">—</span></div>
+        <div class="row"><label>session fps</label><span class="val" id="mFps">—</span></div>
+        <div class="row"><label>session frames</label><span class="val" id="mFrames">—</span></div>
+        <div class="row"><label>cmd queue</label><span class="val" id="mQueue">—</span></div>
+        <div class="row"><label>cmd sent</label><span class="val" id="mCmdSent">—</span></div>
+        <div class="row"><label>last error</label><span class="val" id="mErr">—</span></div>
+        <div class="controls" style="margin-top:0.5rem">
+          <button id="btnEnable" class="primary">enable duplex</button>
+          <button id="btnDisable">disable duplex</button>
+          <button id="btnReset" class="danger">reset circuit</button>
+        </div>
       </div>
-      <div class="hint">Commands ride the mediator's persistent POST /stream socket — no new TCP connection per click.</div>
+
+      <div class="card">
+        <h2>Duplex commands</h2>
+        <div class="row" style="grid-template-columns: 110px 1fr 50px">
+          <label>resolution</label>
+          <select id="resPicker"></select>
+          <button id="btnResApply">send</button>
+        </div>
+        <div class="controls" style="margin-top:0.5rem">
+          <button id="btnDegrade">set camera_ok=false</button>
+          <button id="btnUndegrade">set camera_ok=true</button>
+        </div>
+        <div class="hint">Commands ride the mediator's persistent POST /stream socket — no new TCP connection per click.</div>
+      </div>
     </div>
   </div>
 </div>
 
 <script>
-// ── URL / config
+// ══════════════════════════════════════════════════════════════════════════
+// MODE DETECTION
+// ══════════════════════════════════════════════════════════════════════════
 const params = new URLSearchParams(location.search);
-const IP = params.get("ip") || "127.0.0.1:8090";
-const POLL_FRAME_MS = 1000;
-const POLL_STATUS_MS = 1500;
-document.getElementById("ipLabel").textContent = IP;
-document.getElementById("serviceUrl").textContent = location.origin;
-document.title = "cam-debug " + IP;
+const IP = params.get("ip");
+const MODE = IP ? "single" : "subnet";
 
-// ── Helpers
-const $ = sel => document.querySelector(sel);
-const setText = (id, txt, klass) => {
-  const el = document.getElementById(id);
-  if (el) {
-    el.textContent = txt;
-    if (klass !== undefined) el.className = "val " + (klass || "");
-  }
-};
-const j = obj => {
-  try { return JSON.stringify(obj); } catch { return "<unstringifiable>"; }
-};
-
-// Track whether camera-service appears reachable. Distinguishes a
-// connection-level failure (banner) from an HTTP 4xx/5xx response (still
-// reachable, just an error). pollFrame.onerror also feeds this since
-// img tags fail-via-onerror for both cases without distinguishing them.
-let serviceLastOk = null;        // ms timestamp of last successful response
-let serviceConsecutiveFails = 0; // bumped on TypeError ("Failed to fetch")
-function markServiceOk() {
-  serviceLastOk = Date.now();
-  serviceConsecutiveFails = 0;
-  document.getElementById("serviceBanner").classList.remove("visible");
-}
-function markServiceUnreachable() {
-  serviceConsecutiveFails++;
-  // 1 confirmed connection-level failure is enough to show the banner —
-  // there's no benign reason fetch() should TypeError on a same-origin call.
-  document.getElementById("serviceBanner").classList.add("visible");
+if (MODE === "subnet") {
+  document.getElementById("subnetView").classList.add("active");
+  document.title = "Camera Discovery";
+  initSubnetView();
+} else {
+  document.getElementById("singleView").classList.add("active");
+  document.title = "cam-debug " + IP;
+  initSingleView();
 }
 
-async function api(path, opts = {}) {
-  let r;
-  try {
-    r = await fetch(path, opts);
-  } catch (e) {
-    // TypeError: Failed to fetch / NetworkError — backend unreachable
-    markServiceUnreachable();
-    throw new Error(`unreachable: ${e.message}`);
-  }
-  // Got a response — service is up, even if this particular request 4xx/5xx'd
-  markServiceOk();
-  if (!r.ok) {
-    let detail;
-    try { detail = (await r.json()).detail; } catch {}
-    throw new Error(`${r.status} ${detail || r.statusText}`);
-  }
-  return r.json();
-}
+// ══════════════════════════════════════════════════════════════════════════
+// SUBNET VIEW
+// ══════════════════════════════════════════════════════════════════════════
+function initSubnetView() {
+  const grid = document.getElementById("subnetGrid");
+  const log = document.getElementById("discoverLog");
+  let subnet = "192.168.0";
+  let cellState = {};  // octet -> {state, mac, is_m5camserver, sketch, db, mac_match, ...}
 
-async function postCmd(cmd) {
-  return api(`/api/http-cameras/${encodeURIComponent(IP)}/command`, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({cmd}),
-  });
-}
-
-// ── Frame state — two pollers (pollFrame and refreshMediatorStatus) feed
-// independent signals into one render. Avoids the two pollers fighting
-// over the overlay text every cycle.
-const frameState = {
-  pollOk: null,     // null = unknown, true = last /frame succeeded, false = last /frame failed
-  statusKind: "ok", // "ok" | "stale" | "dead" — derived from mediator status
-  statusMsg: "",    // explanatory text from mediator (last_error, circuit info, etc.)
-};
-
-function setFrameStateClass(kind, msg) {
-  const wrap = document.getElementById("frameWrap");
-  const overlay = document.getElementById("frameOverlay");
-  wrap.classList.remove("stale", "dead");
-  if (kind !== "ok") wrap.classList.add(kind);
-  overlay.textContent = msg || "";
-}
-
-function recomputeFrameState() {
-  // dead wins over stale wins over ok. /frame failure forces dead even
-  // if status hasn't caught up yet (status detects failure 1-3s later).
-  if (frameState.pollOk === false || frameState.statusKind === "dead") {
-    setFrameStateClass("dead", frameState.statusMsg || "checking…");
-  } else if (frameState.statusKind === "stale") {
-    setFrameStateClass("stale", frameState.statusMsg);
-  } else {
-    setFrameStateClass("ok", "");
-  }
-}
-
-// ── Frame polling — cache-busted GET to camera-service. Mediator
-// serves from buffer if stream is open, so this doesn't open a new
-// upstream cam connection per call.
-let pollFrameTimer = null;
-function pollFrame() {
-  const img = document.getElementById("frame");
-  const empty = document.getElementById("frameEmpty");
-  const url = `/api/http-cameras/${encodeURIComponent(IP)}/frame?_=${Date.now()}`;
-  const start = performance.now();
-  img.onload = () => {
-    img.hidden = false;
-    empty.hidden = true;
-    const ms = Math.round(performance.now() - start);
-    const dims = `${img.naturalWidth}x${img.naturalHeight}`;
-    const preset = RES_MAP[dims] || "";
-    setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
-    // Show resolution badge on frame
-    const resEl = document.getElementById("frameRes");
-    resEl.textContent = preset ? `${preset} ${img.naturalWidth}×${img.naturalHeight}` : `${img.naturalWidth}×${img.naturalHeight}`;
-    resEl.style.display = "block";
-    frameState.pollOk = true;
-    recomputeFrameState();
-    // Update resolution picker if dimensions changed
-    if (dims !== lastFrameDims) {
-      lastFrameDims = dims;
-      const sel = document.getElementById("resPicker");
-      if (sel.options.length > 0 && preset) {
-        sel.value = preset;
+  // Build empty 16x16 grid
+  for (let i = 0; i < 256; i++) {
+    const cell = document.createElement("div");
+    cell.className = "cell empty";
+    cell.textContent = i;
+    cell.dataset.octet = i;
+    cell.addEventListener("click", () => {
+      const s = cellState[i];
+      if (s && s.state !== "empty") {
+        window.open(`?ip=${subnet}.${i}`, "_blank");
       }
+    });
+    grid.appendChild(cell);
+  }
+
+  function updateCell(octet, state, extra = {}) {
+    cellState[octet] = { state, ...extra };
+    const cell = grid.children[octet];
+    let cls = "cell " + state;
+    if (extra.mac_match === false) cls += " mismatch";
+    if (extra.conflict) cls += " conflict";
+    cell.className = cls;
+
+    // Build tooltip
+    const parts = [];
+    if (extra.db) {
+      parts.push(`DB: ${extra.db.model || extra.db.protocol}`);
+      if (extra.db.mac) parts.push(`MAC: ${extra.db.mac.slice(-8)}`);
     }
-    // Probe health after first frame (mediator is now streaming)
-    if (!healthProbeScheduled) {
-      healthProbeScheduled = true;
-      probeHealth();
+    if (extra.nvr) {
+      parts.push(`NVR: ${extra.nvr.brand || extra.nvr.model}`);
+    }
+    if (extra.is_m5camserver && extra.sketch) {
+      parts.push(`M5: ${extra.sketch}`);
+    }
+    if (extra.mac && (!extra.db || extra.db.mac !== extra.mac)) {
+      parts.push(`ARP: ${extra.mac.slice(-8)}`);
+    }
+    if (extra.mac_match === false) {
+      parts.push("⚠ MAC MISMATCH");
+    }
+    if (extra.conflict) {
+      parts.push("⚠ CONFLICT: in both cameras + nvrs tables");
+    }
+    cell.title = parts.join("\n");
+  }
+
+  function appendLog(msg, cls = "") {
+    const div = document.createElement("div");
+    div.className = "log-line " + cls;
+    div.textContent = msg;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function clearLog() {
+    log.innerHTML = "";
+  }
+
+  function updateStats() {
+    let m5 = 0, rtsp = 0, http = 0, nvr = 0, offline = 0, mismatch = 0, conflict = 0;
+    for (const o in cellState) {
+      const s = cellState[o];
+      if (s.state === "m5camserver") m5++;
+      else if (s.state === "rtsp") rtsp++;
+      else if (s.state === "stock" || s.state === "db_http" || s.state === "http_ok") http++;
+      else if (s.state === "nvr") nvr++;
+      else if (s.state === "offline") offline++;
+      if (s.mac_match === false) mismatch++;
+      if (s.conflict) conflict++;
+    }
+    document.getElementById("statM5").textContent = m5;
+    document.getElementById("statRtsp").textContent = rtsp;
+    document.getElementById("statHttp").textContent = http;
+    document.getElementById("statNvr").textContent = nvr;
+    document.getElementById("statOffline").textContent = offline;
+    document.getElementById("statMismatch").textContent = mismatch;
+    document.getElementById("statConflict").textContent = conflict;
+  }
+
+  // Determine cell state based on probe + db + nvr info
+  function classifyDevice(info) {
+    const db = info.db;
+    const nvr = info.nvr;
+    const probed = info.source === "probed" || info.source === "cached" || info.source === "streaming";
+
+    if (info.is_m5camserver) return "m5camserver";
+    if (probed && !info.error) return "stock";  // HTTP responds but not M5CamServer
+
+    // Probe failed or no probe — fall back to DB info
+    if (db) {
+      if (db.protocol === "rtsp") return "rtsp";
+      if (db.protocol === "http") return "db_http";
+      return "offline";  // In DB but probe failed
+    }
+
+    // NVR only (no camera entry)
+    if (nvr) return "nvr";
+
+    // No DB entry
+    if (info.mac) return "arp_only";
+    return "empty";
+  }
+
+  async function loadInitialState() {
+    try {
+      // Quick load: use cached probes, no new probing
+      const r = await fetch("/api/http-cameras/discover?probe_all=false&skip_cached=false&timeout=0.01");
+      const data = await r.json();
+      subnet = data.subnet;
+      document.getElementById("subnetLabel").textContent = subnet + ".x";
+
+      for (const [ip, info] of Object.entries(data.devices)) {
+        const octet = parseInt(ip.split(".")[3]);
+        const state = classifyDevice(info);
+        updateCell(octet, state, info);
+      }
+      updateStats();
+    } catch (e) {
+      appendLog("Error loading initial state: " + e.message, "fail");
+    }
+  }
+
+  async function runDiscover(probeAll = false) {
+    clearLog();
+    const btn = document.getElementById("btnDiscover");
+    const btnAll = document.getElementById("btnDiscoverAll");
+    const status = document.getElementById("discoverStatus");
+    btn.disabled = true;
+    btnAll.disabled = true;
+    status.textContent = "Discovering...";
+
+    appendLog(`Starting ${probeAll ? "full subnet" : "ARP+DB"} scan...`, "info");
+
+    try {
+      const r = await fetch(`/api/http-cameras/discover?probe_all=${probeAll}&skip_cached=false&timeout=1.5`);
+      const data = await r.json();
+      subnet = data.subnet;
+      document.getElementById("subnetLabel").textContent = subnet + ".x";
+
+      appendLog(`Subnet: ${subnet}.0/24`, "info");
+      appendLog(`Candidates: ${data.candidates} | Cameras: ${data.in_db} | NVRs: ${data.nvrs} | Probed: ${data.probed}`, "info");
+      if (data.mac_mismatches > 0 || data.conflicts > 0) {
+        const issues = [];
+        if (data.mac_mismatches > 0) issues.push(`MAC mismatches: ${data.mac_mismatches}`);
+        if (data.conflicts > 0) issues.push(`DB conflicts: ${data.conflicts}`);
+        appendLog(`⚠ ${issues.join(", ")}`, "fail");
+      }
+      appendLog("", "");
+
+      for (const [ip, info] of Object.entries(data.devices)) {
+        const octet = parseInt(ip.split(".")[3]);
+        const state = classifyDevice(info);
+        updateCell(octet, state, info);
+
+        // Log interesting entries
+        const db = info.db;
+        const nvr = info.nvr;
+        if (info.is_m5camserver) {
+          const uptime = info.uptime_s ? ` (up ${Math.round(info.uptime_s/60)}m)` : "";
+          let note = db ? (info.mac_match === false ? " ⚠ MAC mismatch!" : " ✓ DB") : " (not in DB)";
+          if (info.conflict) note += " ⚠ CONFLICT with nvrs table!";
+          appendLog(`.${octet} — M5CamServer: ${info.sketch}${uptime}${note}`, "found");
+        } else if (info.source === "probed" && !info.error) {
+          const dbNote = db ? ` (DB: ${db.model || db.protocol})` : "";
+          appendLog(`.${octet} — HTTP OK, not M5CamServer${dbNote}`, "stock");
+        } else if (nvr && !db) {
+          appendLog(`.${octet} — NVR: ${nvr.brand} ${nvr.model || ""}`, "info");
+        } else if (info.conflict) {
+          appendLog(`.${octet} — ⚠ CONFLICT: cameras says ${db?.model}, nvrs says ${nvr?.brand}`, "fail");
+        } else if (db && (info.error || info.source === "db_only")) {
+          const errStatus = info.error || "not probed";
+          appendLog(`.${octet} — DB: ${db.model || db.protocol} — ${errStatus}`, "fail");
+        } else if (info.mac_match === false) {
+          appendLog(`.${octet} — ⚠ MAC mismatch: ARP=${info.mac?.slice(-8)} DB=${db?.mac?.slice(-8)}`, "fail");
+        }
+      }
+
+      appendLog("", "");
+      const summary = [];
+      summary.push(`M5: ${data.m5camserver_found}`);
+      summary.push(`Cams: ${data.in_db}`);
+      summary.push(`NVRs: ${data.nvrs}`);
+      if (data.mac_mismatches > 0) summary.push(`Mismatch: ${data.mac_mismatches}`);
+      if (data.conflicts > 0) summary.push(`Conflict: ${data.conflicts}`);
+      appendLog(`Done. ${summary.join(" | ")}`, "info");
+      status.textContent = summary.join(" | ");
+      updateStats();
+
+    } catch (e) {
+      appendLog("Error: " + e.message, "fail");
+      status.textContent = "Error";
+    } finally {
+      btn.disabled = false;
+      btnAll.disabled = false;
+    }
+  }
+
+  document.getElementById("btnDiscover").addEventListener("click", () => runDiscover(false));
+  document.getElementById("btnDiscoverAll").addEventListener("click", () => runDiscover(true));
+  document.getElementById("btnRefreshArp").addEventListener("click", loadInitialState);
+
+  // Initial load
+  loadInitialState();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// SINGLE CAMERA VIEW (original code)
+// ══════════════════════════════════════════════════════════════════════════
+function initSingleView() {
+  const POLL_FRAME_MS = 1000;
+  const POLL_STATUS_MS = 1500;
+  document.getElementById("ipLabel").textContent = IP;
+  document.getElementById("serviceUrl").textContent = location.origin;
+
+  const $ = sel => document.querySelector(sel);
+  const setText = (id, txt, klass) => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.textContent = txt;
+      if (klass !== undefined) el.className = "val " + (klass || "");
     }
   };
-  img.onerror = () => {
-    frameState.pollOk = false;
-    setText("frameMeta", "frame fetch failed");
-    recomputeFrameState();
-    // Force a status refresh so the "OFFLINE — <reason>" text appears
-    // ASAP rather than waiting up to 1.5s for the next regular poll.
-    refreshMediatorStatus();
-    // Check if this might be a MAC mismatch (different device at IP)
-    if (!mismatchState.checked) verifyMac();
-  };
-  img.src = url;
-}
 
-// ── Status polling
-async function refreshMediatorStatus() {
-  try {
-    const all = await api("/api/http-cameras/status");
-    const s = all[IP];
-    if (!s) {
-      setText("mMode", "no mediator state yet");
-      setText("mWorker", "—");
-      return;
-    }
-    setText("mMode", s.stream_mode || "—",
-      s.stream_mode === "POST_DUPLEX" ? "ok" : "");
-    setText("mWorker", s.worker_alive ? "alive" : "stopped",
-      s.worker_alive ? "ok" : "warn");
-    setText("mFps", s.session_fps != null ? `${s.session_fps} fps` : "—");
-    setText("mFrames", `${s.session_frame_count}  (total ${s.total_frame_count})`);
-    setText("mQueue", String(s.cmd_queue_depth ?? 0));
-    setText("mCmdSent", `${s.cmd_count_session ?? 0}  (total ${s.cmd_count_total ?? 0})`);
-    if (s.last_error) {
-      setText("mErr", s.last_error, "bad");
-    } else if (s.circuit_open) {
-      setText("mErr", `circuit open ${s.circuit_reopens_in_s}s`, "bad");
-    } else {
-      setText("mErr", "—");
-    }
-
-    // Update the frame-state signal from mediator status. The render is
-    // unified in recomputeFrameState() — this function only writes the
-    // statusKind / statusMsg fields.
-    const ageMs = s.frame_age_ms ?? 0;
-    const STALE_MS = 3000;
-    if (s.last_error || s.circuit_open) {
-      const reason = s.last_error || `circuit open (${s.circuit_reopens_in_s}s)`;
-      frameState.statusKind = "dead";
-      frameState.statusMsg = `OFFLINE — ${reason}`;
-    } else if (!s.worker_alive && !s.has_frame) {
-      frameState.statusKind = "dead";
-      frameState.statusMsg = "OFFLINE — mediator worker stopped, no frame buffered";
-    } else if (!s.worker_alive) {
-      frameState.statusKind = "dead";
-      frameState.statusMsg = `OFFLINE — mediator worker stopped (last frame ${Math.round(ageMs)}ms ago)`;
-    } else if (ageMs > STALE_MS) {
-      frameState.statusKind = "stale";
-      frameState.statusMsg = `STALE — last frame ${(ageMs/1000).toFixed(1)}s ago (mediator buffering, upstream may be lagging)`;
-    } else {
-      frameState.statusKind = "ok";
-      frameState.statusMsg = "";
-    }
-    recomputeFrameState();
-  } catch (e) {
-    setText("mMode", `error: ${e.message}`, "bad");
-    frameState.statusKind = "dead";
-    frameState.statusMsg = `mediator status fetch failed: ${e.message}`;
-    recomputeFrameState();
+  let serviceLastOk = null;
+  let serviceConsecutiveFails = 0;
+  function markServiceOk() {
+    serviceLastOk = Date.now();
+    serviceConsecutiveFails = 0;
+    document.getElementById("serviceBanner").classList.remove("visible");
   }
-}
+  function markServiceUnreachable() {
+    serviceConsecutiveFails++;
+    document.getElementById("serviceBanner").classList.add("visible");
+  }
 
-async function refreshVersion(force) {
-  try {
-    const url = `/api/http-cameras/${encodeURIComponent(IP)}/version` + (force ? "?force=true" : "");
-    const v = await api(url);
-    setText("vIs", v.is_m5camserver ? "yes" : "no",
-      v.is_m5camserver ? "ok" : "bad");
-    setText("vSketch", v.sketch || "—");
-    setText("vMd5", v.sketch_md5 ? v.sketch_md5.slice(0, 16) + "…" : "—");
-    setText("vUptime", v.uptime_s != null ? v.uptime_s + "s" : "—");
-    setText("vOk", v.camera_ok == null ? "—" : (v.camera_ok ? "true" : "false"),
-      v.camera_ok ? "ok" : (v.camera_ok === false ? "bad" : ""));
-    setText("vHeap", v.free_heap != null ? v.free_heap.toLocaleString() : "—");
-    if (!v.is_m5camserver && v.error) {
-      setText("vSketch", v.error, "bad");
+  async function api(path, opts = {}) {
+    let r;
+    try {
+      r = await fetch(path, opts);
+    } catch (e) {
+      markServiceUnreachable();
+      throw new Error(`unreachable: ${e.message}`);
     }
-    populateResolutions(v.resolutions || []);
-    // Update model based on sketch for add button
-    dbState.model = sketchToModel(v.sketch);
-    const btn = document.getElementById("btnAddToDB");
-    if (btn) btn.textContent = `Add as ${dbState.model}`;
-  } catch (e) {
-    setText("vIs", `error: ${e.message}`, "bad");
+    markServiceOk();
+    if (!r.ok) {
+      let detail;
+      try { detail = (await r.json()).detail; } catch {}
+      throw new Error(`${r.status} ${detail || r.statusText}`);
+    }
+    return r.json();
   }
-}
 
-let healthInflight = false;
-async function probeHealth() {
-  if (healthInflight) return;
-  healthInflight = true;
-  setText("hVerdict", "probing…", "warn");
-  setText("hPing", "—"); setText("hTcp", "—"); setText("hHttp", "—");
-  try {
-    const h = await api(`/api/http-cameras/${encodeURIComponent(IP)}/health`);
-    const klass = {alive: "ok", wedged_app: "warn", wedged_tcp: "warn",
-                    offline: "bad", unreachable: "bad"}[h.verdict] || "";
-    setText("hVerdict", h.verdict, klass);
-    setText("hPing", h.ping_ok == null ? "—" : (h.ping_ok ? "yes" : "no"));
-    setText("hTcp", h.tcp_open ? `open (${h.tcp_ms}ms)` : "closed");
-    setText("hHttp", h.http_ok ? `${h.http_status} (${h.http_ms}ms)` : (h.tcp_open ? "no response" : "—"));
-  } catch (e) {
-    setText("hVerdict", `error: ${e.message}`, "bad");
-  } finally {
-    healthInflight = false;
-  }
-}
-
-// Map frame dimensions to resolution preset names
-const RES_MAP = {
-  "320x240": "QVGA",
-  "640x480": "VGA",
-  "800x600": "SVGA",
-  "1024x768": "XGA",
-  "1600x1200": "UXGA",
-  "2592x1944": "QSXGA",
-};
-let lastFrameDims = null;
-
-function populateResolutions(presets) {
-  const sel = document.getElementById("resPicker");
-  const needsRebuild = sel.options.length !== presets.length ||
-                       !presets.every((p, i) => sel.options[i]?.value === p);
-  if (needsRebuild) {
-    sel.innerHTML = "";
-    presets.forEach(p => {
-      const o = document.createElement("option");
-      o.value = p; o.textContent = p;
-      sel.appendChild(o);
+  async function postCmd(cmd) {
+    return api(`/api/http-cameras/${encodeURIComponent(IP)}/command`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({cmd}),
     });
   }
-  // Select current resolution based on frame dimensions
-  if (lastFrameDims && RES_MAP[lastFrameDims]) {
-    const current = RES_MAP[lastFrameDims];
-    if (presets.includes(current)) {
-      sel.value = current;
-    }
+
+  const frameState = { pollOk: null, statusKind: "ok", statusMsg: "" };
+
+  function setFrameStateClass(kind, msg) {
+    const wrap = document.getElementById("frameWrap");
+    const overlay = document.getElementById("frameOverlay");
+    wrap.classList.remove("stale", "dead");
+    if (kind !== "ok") wrap.classList.add(kind);
+    overlay.textContent = msg || "";
   }
-}
 
-// ── Buttons
-$("#btnEnable").addEventListener("click", async () => {
-  try {
-    await api(`/api/http-cameras/${encodeURIComponent(IP)}/duplex/enable`, {method: "POST"});
-    refreshMediatorStatus();
-  } catch (e) { alert(`enable_duplex failed: ${e.message}`); }
-});
-$("#btnDisable").addEventListener("click", async () => {
-  try {
-    await api(`/api/http-cameras/${encodeURIComponent(IP)}/duplex/disable`, {method: "POST"});
-    refreshMediatorStatus();
-  } catch (e) { alert(`disable_duplex failed: ${e.message}`); }
-});
-$("#btnReset").addEventListener("click", async () => {
-  try {
-    await api(`/api/http-cameras/${encodeURIComponent(IP)}/reset-circuit`, {method: "POST"});
-    refreshMediatorStatus();
-  } catch (e) { alert(`reset_circuit failed: ${e.message}`); }
-});
-$("#btnHealth").addEventListener("click", probeHealth);
-$("#btnVersionRefresh").addEventListener("click", () => refreshVersion(true));
-
-$("#btnResApply").addEventListener("click", async () => {
-  const preset = document.getElementById("resPicker").value;
-  if (!preset) return;
-  try {
-    await postCmd({action: "set_resolution", preset});
-  } catch (e) { alert(`set_resolution failed: ${e.message}`); }
-});
-$("#btnDegrade").addEventListener("click", async () => {
-  try { await postCmd({action: "set_camera_ok", value: false}); }
-  catch (e) { alert(`set_camera_ok failed: ${e.message}`); }
-});
-$("#btnUndegrade").addEventListener("click", async () => {
-  try { await postCmd({action: "set_camera_ok", value: true}); }
-  catch (e) { alert(`set_camera_ok failed: ${e.message}`); }
-});
-
-// ── OTA
-const dropZone = document.getElementById("dropZone");
-const fileInput = document.getElementById("fileInput");
-const otaLog = document.getElementById("otaLog");
-
-dropZone.addEventListener("click", () => fileInput.click());
-dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("over"); });
-dropZone.addEventListener("dragleave", () => dropZone.classList.remove("over"));
-dropZone.addEventListener("drop", e => {
-  e.preventDefault(); dropZone.classList.remove("over");
-  if (e.dataTransfer.files.length) handleOta(e.dataTransfer.files[0]);
-});
-fileInput.addEventListener("change", () => {
-  if (fileInput.files.length) handleOta(fileInput.files[0]);
-});
-
-async function handleOta(file) {
-  otaLog.hidden = false;
-  otaLog.innerHTML = "";
-  appendOtaLine({type: "info", msg: `uploading ${file.name} (${file.size.toLocaleString()} bytes)`});
-  const fd = new FormData();
-  fd.append("firmware", file, file.name);
-  let resp;
-  try {
-    resp = await fetch(`/api/http-cameras/${encodeURIComponent(IP)}/ota`, {method: "POST", body: fd});
-  } catch (e) {
-    appendOtaLine({type: "complete", ok: false, reason: `network: ${e.message}`});
-    return;
-  }
-  const reader = resp.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
-  while (true) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, {stream: true});
-    let nl;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim();
-      buf = buf.slice(nl + 1);
-      if (!line) continue;
-      try { appendOtaLine(JSON.parse(line)); }
-      catch { appendOtaLine({type: "info", msg: line}); }
-    }
-  }
-}
-
-function appendOtaLine(ev) {
-  const div = document.createElement("div");
-  let cls = "ev-progress", txt;
-  if (ev.type === "phase") {
-    cls = "ev-phase"; txt = `── phase: ${ev.name}` + (ev.size_bytes ? ` (${ev.size_bytes.toLocaleString()} bytes)` : "");
-  } else if (ev.type === "complete") {
-    cls = ev.ok ? "ev-complete-ok" : "ev-complete-bad";
-    txt = `${ev.ok ? "✓" : "✗"} ${ev.reason}` + (ev.elapsed_s ? `  (${ev.elapsed_s}s)` : "");
-  } else if (ev.type === "progress") {
-    if (ev.sent != null) {
-      txt = `  upload  ${ev.pct}%  (${ev.sent.toLocaleString()}/${ev.total.toLocaleString()} bytes  ${ev.kbps} KB/s)`;
-    } else if (ev.attempt != null) {
-      txt = `  verify  attempt ${ev.attempt}: ${ev.msg}`;
+  function recomputeFrameState() {
+    if (frameState.pollOk === false || frameState.statusKind === "dead") {
+      setFrameStateClass("dead", frameState.statusMsg || "checking…");
+    } else if (frameState.statusKind === "stale") {
+      setFrameStateClass("stale", frameState.statusMsg);
     } else {
-      txt = `  ${ev.msg}`;
+      setFrameStateClass("ok", "");
     }
-  } else {
-    txt = `  ${ev.msg || JSON.stringify(ev)}`;
   }
-  div.className = cls;
-  div.textContent = txt;
-  otaLog.appendChild(div);
-  otaLog.scrollTop = otaLog.scrollHeight;
-}
 
-// ── MAC mismatch detection
-let mismatchState = { checked: false, mismatch: false, db_mac: null, arp_mac: null, detected: null };
+  const RES_MAP = {
+    "320x240": "QVGA", "640x480": "VGA", "800x600": "SVGA",
+    "1024x768": "XGA", "1600x1200": "UXGA", "2592x1944": "QSXGA",
+  };
+  let lastFrameDims = null;
+  let healthProbeScheduled = false;
 
-async function verifyMac() {
-  try {
-    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/verify`);
-    mismatchState.checked = true;
-    mismatchState.mismatch = data.mismatch;
-    mismatchState.db_mac = data.db_mac;
-    mismatchState.arp_mac = data.arp_mac;
-    mismatchState.detected = data.detected;
+  function pollFrame() {
+    const img = document.getElementById("frame");
+    const empty = document.getElementById("frameEmpty");
+    const url = `/api/http-cameras/${encodeURIComponent(IP)}/frame?_=${Date.now()}`;
+    const start = performance.now();
+    img.onload = () => {
+      img.hidden = false;
+      empty.hidden = true;
+      const ms = Math.round(performance.now() - start);
+      const dims = `${img.naturalWidth}x${img.naturalHeight}`;
+      const preset = RES_MAP[dims] || "";
+      setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
+      const resEl = document.getElementById("frameRes");
+      resEl.textContent = preset ? `${preset} ${img.naturalWidth}×${img.naturalHeight}` : `${img.naturalWidth}×${img.naturalHeight}`;
+      resEl.style.display = "block";
+      frameState.pollOk = true;
+      recomputeFrameState();
+      if (dims !== lastFrameDims) {
+        lastFrameDims = dims;
+        const sel = document.getElementById("resPicker");
+        if (sel.options.length > 0 && preset) sel.value = preset;
+      }
+      if (!healthProbeScheduled) {
+        healthProbeScheduled = true;
+        probeHealth();
+      }
+    };
+    img.onerror = () => {
+      frameState.pollOk = false;
+      setText("frameMeta", "frame fetch failed");
+      recomputeFrameState();
+      refreshMediatorStatus();
+      if (!mismatchState.checked) verifyMac();
+    };
+    img.src = url;
+  }
 
-    const banner = document.getElementById("mismatchBanner");
-    const addBtn = document.getElementById("btnAddDetected");
-    const addLabel = document.getElementById("btnAddDetectedLabel");
+  async function refreshMediatorStatus() {
+    try {
+      const all = await api("/api/http-cameras/status");
+      const s = all[IP];
+      if (!s) {
+        setText("mMode", "no mediator state yet");
+        setText("mWorker", "—");
+        return;
+      }
+      setText("mMode", s.stream_mode || "—", s.stream_mode === "POST_DUPLEX" ? "ok" : "");
+      setText("mWorker", s.worker_alive ? "alive" : "stopped", s.worker_alive ? "ok" : "warn");
+      setText("mFps", s.session_fps != null ? `${s.session_fps} fps` : "—");
+      setText("mFrames", `${s.session_frame_count}  (total ${s.total_frame_count})`);
+      setText("mQueue", String(s.cmd_queue_depth ?? 0));
+      setText("mCmdSent", `${s.cmd_count_session ?? 0}  (total ${s.cmd_count_total ?? 0})`);
+      if (s.last_error) {
+        setText("mErr", s.last_error, "bad");
+      } else if (s.circuit_open) {
+        setText("mErr", `circuit open ${s.circuit_reopens_in_s}s`, "bad");
+      } else {
+        setText("mErr", "—");
+      }
+      const ageMs = s.frame_age_ms ?? 0;
+      const STALE_MS = 3000;
+      if (s.last_error || s.circuit_open) {
+        frameState.statusKind = "dead";
+        frameState.statusMsg = `OFFLINE — ${s.last_error || `circuit open (${s.circuit_reopens_in_s}s)`}`;
+      } else if (!s.worker_alive && !s.has_frame) {
+        frameState.statusKind = "dead";
+        frameState.statusMsg = "OFFLINE — mediator worker stopped, no frame buffered";
+      } else if (!s.worker_alive) {
+        frameState.statusKind = "dead";
+        frameState.statusMsg = `OFFLINE — mediator worker stopped (last frame ${Math.round(ageMs)}ms ago)`;
+      } else if (ageMs > STALE_MS) {
+        frameState.statusKind = "stale";
+        frameState.statusMsg = `STALE — last frame ${(ageMs/1000).toFixed(1)}s ago`;
+      } else {
+        frameState.statusKind = "ok";
+        frameState.statusMsg = "";
+      }
+      recomputeFrameState();
+    } catch (e) {
+      setText("mMode", `error: ${e.message}`, "bad");
+      frameState.statusKind = "dead";
+      frameState.statusMsg = `mediator status fetch failed: ${e.message}`;
+      recomputeFrameState();
+    }
+  }
 
-    if (data.mismatch) {
-      document.getElementById("mismatchDbMac").textContent = data.db_mac || "—";
-      document.getElementById("mismatchDbModel").textContent = data.db_model || "unknown";
-      document.getElementById("mismatchArpMac").textContent = data.arp_mac || "—";
+  async function refreshVersion(force) {
+    try {
+      const url = `/api/http-cameras/${encodeURIComponent(IP)}/version` + (force ? "?force=true" : "");
+      const v = await api(url);
+      setText("vIs", v.is_m5camserver ? "yes" : "no", v.is_m5camserver ? "ok" : "bad");
+      setText("vSketch", v.sketch || "—");
+      setText("vMd5", v.sketch_md5 ? v.sketch_md5.slice(0, 16) + "…" : "—");
+      setText("vUptime", v.uptime_s != null ? v.uptime_s + "s" : "—");
+      setText("vOk", v.camera_ok == null ? "—" : (v.camera_ok ? "true" : "false"), v.camera_ok ? "ok" : (v.camera_ok === false ? "bad" : ""));
+      setText("vHeap", v.free_heap != null ? v.free_heap.toLocaleString() : "—");
+      if (!v.is_m5camserver && v.error) setText("vSketch", v.error, "bad");
+      populateResolutions(v.resolutions || []);
+      dbState.model = sketchToModel(v.sketch);
+      const btn = document.getElementById("btnAddToDB");
+      if (btn) btn.textContent = `Add as ${dbState.model}`;
+    } catch (e) {
+      setText("vIs", `error: ${e.message}`, "bad");
+    }
+  }
 
-      // Show detected device info
-      const detectedEl = document.getElementById("detectedDevice");
-      if (data.detected && data.detected.manufacturer !== "Unknown") {
-        const conf = data.detected.confidence === "high" ? "✓" : "~";
-        detectedEl.innerHTML = `Detected: <strong>${data.detected.manufacturer}</strong> ${data.detected.device_type} <span style="color:#888">(${conf} ${data.detected.source})</span>`;
+  let healthInflight = false;
+  async function probeHealth() {
+    if (healthInflight) return;
+    healthInflight = true;
+    setText("hVerdict", "probing…", "warn");
+    setText("hPing", "—"); setText("hTcp", "—"); setText("hHttp", "—");
+    try {
+      const h = await api(`/api/http-cameras/${encodeURIComponent(IP)}/health`);
+      const klass = {alive: "ok", wedged_app: "warn", wedged_tcp: "warn", offline: "bad", unreachable: "bad"}[h.verdict] || "";
+      setText("hVerdict", h.verdict, klass);
+      setText("hPing", h.ping_ok == null ? "—" : (h.ping_ok ? "yes" : "no"));
+      setText("hTcp", h.tcp_open ? `open (${h.tcp_ms}ms)` : "closed");
+      setText("hHttp", h.http_ok ? `${h.http_status} (${h.http_ms}ms)` : (h.tcp_open ? "no response" : "—"));
+    } catch (e) {
+      setText("hVerdict", `error: ${e.message}`, "bad");
+    } finally {
+      healthInflight = false;
+    }
+  }
 
-        // Show "Add as X" button for confident detections
-        if (data.detected.confidence === "high" || data.detected.confidence === "medium") {
-          addLabel.textContent = data.detected.manufacturer;
-          addBtn.style.display = "inline-block";
+  function populateResolutions(presets) {
+    const sel = document.getElementById("resPicker");
+    if (sel.options.length !== presets.length || !presets.every((p, i) => sel.options[i]?.value === p)) {
+      sel.innerHTML = "";
+      presets.forEach(p => {
+        const o = document.createElement("option");
+        o.value = p; o.textContent = p;
+        sel.appendChild(o);
+      });
+    }
+    if (lastFrameDims && RES_MAP[lastFrameDims] && presets.includes(RES_MAP[lastFrameDims])) {
+      sel.value = RES_MAP[lastFrameDims];
+    }
+  }
+
+  // Buttons
+  $("#btnEnable").addEventListener("click", async () => {
+    try { await api(`/api/http-cameras/${encodeURIComponent(IP)}/duplex/enable`, {method: "POST"}); refreshMediatorStatus(); }
+    catch (e) { alert(`enable_duplex failed: ${e.message}`); }
+  });
+  $("#btnDisable").addEventListener("click", async () => {
+    try { await api(`/api/http-cameras/${encodeURIComponent(IP)}/duplex/disable`, {method: "POST"}); refreshMediatorStatus(); }
+    catch (e) { alert(`disable_duplex failed: ${e.message}`); }
+  });
+  $("#btnReset").addEventListener("click", async () => {
+    try { await api(`/api/http-cameras/${encodeURIComponent(IP)}/reset-circuit`, {method: "POST"}); refreshMediatorStatus(); }
+    catch (e) { alert(`reset_circuit failed: ${e.message}`); }
+  });
+  $("#btnHealth").addEventListener("click", probeHealth);
+  $("#btnVersionRefresh").addEventListener("click", () => refreshVersion(true));
+  $("#btnResApply").addEventListener("click", async () => {
+    const preset = document.getElementById("resPicker").value;
+    if (!preset) return;
+    try { await postCmd({action: "set_resolution", preset}); }
+    catch (e) { alert(`set_resolution failed: ${e.message}`); }
+  });
+  $("#btnDegrade").addEventListener("click", async () => {
+    try { await postCmd({action: "set_camera_ok", value: false}); }
+    catch (e) { alert(`set_camera_ok failed: ${e.message}`); }
+  });
+  $("#btnUndegrade").addEventListener("click", async () => {
+    try { await postCmd({action: "set_camera_ok", value: true}); }
+    catch (e) { alert(`set_camera_ok failed: ${e.message}`); }
+  });
+
+  // OTA
+  const dropZone = document.getElementById("dropZone");
+  const fileInput = document.getElementById("fileInput");
+  const otaLog = document.getElementById("otaLog");
+  dropZone.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("dragover", e => { e.preventDefault(); dropZone.classList.add("over"); });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("over"));
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault(); dropZone.classList.remove("over");
+    if (e.dataTransfer.files.length) handleOta(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener("change", () => { if (fileInput.files.length) handleOta(fileInput.files[0]); });
+
+  async function handleOta(file) {
+    otaLog.hidden = false;
+    otaLog.innerHTML = "";
+    appendOtaLine({type: "info", msg: `uploading ${file.name} (${file.size.toLocaleString()} bytes)`});
+    const fd = new FormData();
+    fd.append("firmware", file, file.name);
+    let resp;
+    try { resp = await fetch(`/api/http-cameras/${encodeURIComponent(IP)}/ota`, {method: "POST", body: fd}); }
+    catch (e) { appendOtaLine({type: "complete", ok: false, reason: `network: ${e.message}`}); return; }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      let nl;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        try { appendOtaLine(JSON.parse(line)); }
+        catch { appendOtaLine({type: "info", msg: line}); }
+      }
+    }
+  }
+
+  function appendOtaLine(ev) {
+    const div = document.createElement("div");
+    let cls = "ev-progress", txt;
+    if (ev.type === "phase") {
+      cls = "ev-phase"; txt = `── phase: ${ev.name}` + (ev.size_bytes ? ` (${ev.size_bytes.toLocaleString()} bytes)` : "");
+    } else if (ev.type === "complete") {
+      cls = ev.ok ? "ev-complete-ok" : "ev-complete-bad";
+      txt = `${ev.ok ? "✓" : "✗"} ${ev.reason}` + (ev.elapsed_s ? `  (${ev.elapsed_s}s)` : "");
+    } else if (ev.type === "progress") {
+      if (ev.sent != null) txt = `  upload  ${ev.pct}%  (${ev.sent.toLocaleString()}/${ev.total.toLocaleString()} bytes  ${ev.kbps} KB/s)`;
+      else if (ev.attempt != null) txt = `  verify  attempt ${ev.attempt}: ${ev.msg}`;
+      else txt = `  ${ev.msg}`;
+    } else {
+      txt = `  ${ev.msg || JSON.stringify(ev)}`;
+    }
+    div.className = cls;
+    div.textContent = txt;
+    otaLog.appendChild(div);
+    otaLog.scrollTop = otaLog.scrollHeight;
+  }
+
+  // MAC mismatch
+  let mismatchState = { checked: false, mismatch: false, db_mac: null, arp_mac: null, detected: null };
+
+  async function verifyMac() {
+    try {
+      const data = await api(`/api/cameras/${encodeURIComponent(IP)}/verify`);
+      mismatchState.checked = true;
+      mismatchState.mismatch = data.mismatch;
+      mismatchState.db_mac = data.db_mac;
+      mismatchState.arp_mac = data.arp_mac;
+      mismatchState.detected = data.detected;
+      const banner = document.getElementById("mismatchBanner");
+      const addBtn = document.getElementById("btnAddDetected");
+      const addLabel = document.getElementById("btnAddDetectedLabel");
+      if (data.mismatch) {
+        document.getElementById("mismatchDbMac").textContent = data.db_mac || "—";
+        document.getElementById("mismatchDbModel").textContent = data.db_model || "unknown";
+        document.getElementById("mismatchArpMac").textContent = data.arp_mac || "—";
+        const detectedEl = document.getElementById("detectedDevice");
+        if (data.detected && data.detected.manufacturer !== "Unknown") {
+          const conf = data.detected.confidence === "high" ? "✓" : "~";
+          detectedEl.innerHTML = `Detected: <strong>${data.detected.manufacturer}</strong> ${data.detected.device_type} <span style="color:#888">(${conf} ${data.detected.source})</span>`;
+          if (data.detected.confidence === "high" || data.detected.confidence === "medium") {
+            addLabel.textContent = data.detected.manufacturer;
+            addBtn.style.display = "inline-block";
+          } else { addBtn.style.display = "none"; }
         } else {
+          detectedEl.textContent = "Could not identify device type";
           addBtn.style.display = "none";
         }
+        banner.classList.add("visible");
+      } else { banner.classList.remove("visible"); }
+    } catch (e) { console.error("verifyMac error:", e); }
+  }
+
+  async function addDetectedDevice() {
+    if (!mismatchState.arp_mac || !mismatchState.detected) {
+      document.getElementById("mismatchResult").innerHTML = '<span class="val bad">No detected device info</span>';
+      return;
+    }
+    const result = document.getElementById("mismatchResult");
+    const credWarn = document.getElementById("credWarning");
+    result.textContent = "Adding...";
+    credWarn.style.display = "none";
+    try {
+      const data = await api(`/api/cameras/${encodeURIComponent(IP)}/add-detected`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ mac: mismatchState.arp_mac, manufacturer: mismatchState.detected.manufacturer, remove_stale: true }),
+      });
+      if (data.added) {
+        result.innerHTML = `<span class="val ok">Added ${data.model}${data.removed_old ? ` (replaced ${data.removed_old.model})` : ""}</span>`;
+        document.getElementById("mismatchBanner").classList.remove("visible");
+        if (data.credential_warning) {
+          credWarn.textContent = "⚠ " + data.credential_warning;
+          credWarn.style.display = "block";
+        }
+        checkDatabaseStatus();
+      }
+    } catch (e) { result.innerHTML = `<span class="val bad">${e.message}</span>`; }
+  }
+
+  async function removeStaleEntry() {
+    const result = document.getElementById("mismatchResult");
+    result.textContent = "Removing...";
+    try {
+      const data = await api(`/api/cameras/${encodeURIComponent(IP)}`, { method: "DELETE" });
+      if (data.removed) {
+        result.innerHTML = `<span class="val ok">Removed ${data.model} (${data.mac})</span>`;
+        document.getElementById("mismatchBanner").classList.remove("visible");
+        checkDatabaseStatus();
+      }
+    } catch (e) { result.innerHTML = `<span class="val bad">${e.message}</span>`; }
+  }
+
+  document.getElementById("btnAddDetected").addEventListener("click", addDetectedDevice);
+  document.getElementById("btnRemoveStale").addEventListener("click", removeStaleEntry);
+
+  // Database
+  let dbState = { exists: null, mac: null, model: "PoE-CAM" };
+  function sketchToModel(sketch) {
+    if (!sketch) return "PoE-CAM";
+    if (sketch.includes("unit_cams3")) return "Unit-CamS3";
+    if (sketch.includes("poe_cam")) return "PoE-CAM";
+    return "PoE-CAM";
+  }
+
+  async function checkDatabaseStatus() {
+    try {
+      const data = await api(`/api/cameras/${encodeURIComponent(IP)}/exists`);
+      dbState.exists = data.exists;
+      if (data.exists) {
+        setText("dbExists", "yes", "ok");
+        setText("dbModel", data.model || "—");
+        setText("dbMac", data.mac || "—");
+        document.getElementById("dbAddSection").style.display = "none";
+        verifyMac();
       } else {
-        detectedEl.textContent = "Could not identify device type";
-        addBtn.style.display = "none";
+        setText("dbExists", "no — not registered", "warn");
+        setText("dbModel", "—");
+        setText("dbMac", "—");
+        document.getElementById("dbAddSection").style.display = "block";
+        lookupArp();
       }
-
-      banner.classList.add("visible");
-    } else {
-      banner.classList.remove("visible");
-    }
-    return data;
-  } catch (e) {
-    console.error("verifyMac error:", e);
-    return null;
+    } catch (e) { setText("dbExists", `error: ${e.message}`, "bad"); }
   }
-}
 
-async function addDetectedDevice() {
-  if (!mismatchState.arp_mac || !mismatchState.detected) {
-    document.getElementById("mismatchResult").innerHTML =
-      '<span class="val bad">No detected device info</span>';
-    return;
-  }
-  const result = document.getElementById("mismatchResult");
-  const credWarn = document.getElementById("credWarning");
-  result.textContent = "Adding...";
-  credWarn.style.display = "none";
-
-  try {
-    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/add-detected`, {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        mac: mismatchState.arp_mac,
-        manufacturer: mismatchState.detected.manufacturer,
-        remove_stale: true,
-      }),
-    });
-    if (data.added) {
-      const oldNote = data.removed_old ? ` (replaced ${data.removed_old.model})` : "";
-      result.innerHTML = `<span class="val ok">Added ${data.model}${oldNote}</span>`;
-      document.getElementById("mismatchBanner").classList.remove("visible");
-
-      // Show credential warning if applicable
-      if (data.credential_warning) {
-        credWarn.textContent = "⚠ " + data.credential_warning;
-        credWarn.style.display = "block";
+  async function lookupArp() {
+    try {
+      const data = await api(`/api/cameras/${encodeURIComponent(IP)}/arp`);
+      if (data.mac) {
+        document.getElementById("dbMacInput").value = data.mac;
+        dbState.mac = data.mac;
       }
+    } catch (e) {}
+  }
 
+  async function addCameraToDB() {
+    const macInput = document.getElementById("dbMacInput");
+    const mac = macInput.value.trim();
+    const result = document.getElementById("dbAddResult");
+    if (!mac || !/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(mac)) {
+      result.innerHTML = '<span class="val bad">Invalid MAC format (aa:bb:cc:dd:ee:ff)</span>';
+      return;
+    }
+    result.textContent = "Adding...";
+    document.getElementById("btnAddToDB").disabled = true;
+    try {
+      const data = await api("/api/cameras/add", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ ip: IP, mac: mac.toLowerCase(), model: dbState.model, protocol: "http", http_path: "/stream" }),
+      });
+      result.innerHTML = `<span class="val ok">Added! ${data.ip} (${data.mac})${data.prefix_added ? ` + registered prefix ${data.prefix_added}` : ""}</span>`;
       checkDatabaseStatus();
+    } catch (e) {
+      result.innerHTML = `<span class="val bad">${e.message}</span>`;
+      document.getElementById("btnAddToDB").disabled = false;
     }
-  } catch (e) {
-    result.innerHTML = `<span class="val bad">${e.message}</span>`;
-  }
-}
-
-async function removeStaleEntry() {
-  const result = document.getElementById("mismatchResult");
-  result.textContent = "Removing...";
-  try {
-    const data = await api(`/api/cameras/${encodeURIComponent(IP)}`, {
-      method: "DELETE",
-    });
-    if (data.removed) {
-      result.innerHTML = `<span class="val ok">Removed ${data.model} (${data.mac})</span>`;
-      document.getElementById("mismatchBanner").classList.remove("visible");
-      checkDatabaseStatus();
-    }
-  } catch (e) {
-    result.innerHTML = `<span class="val bad">${e.message}</span>`;
-  }
-}
-
-document.getElementById("btnAddDetected").addEventListener("click", addDetectedDevice);
-document.getElementById("btnRemoveStale").addEventListener("click", removeStaleEntry);
-
-// ── Database check
-let dbState = { exists: null, mac: null, model: "PoE-CAM" };
-
-// Map sketch name to model
-function sketchToModel(sketch) {
-  if (!sketch) return "PoE-CAM";
-  if (sketch.includes("unit_cams3")) return "Unit-CamS3";
-  if (sketch.includes("poe_cam")) return "PoE-CAM";
-  return "PoE-CAM";
-}
-
-async function checkDatabaseStatus() {
-  try {
-    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/exists`);
-    dbState.exists = data.exists;
-    if (data.exists) {
-      setText("dbExists", "yes", "ok");
-      setText("dbModel", data.model || "—");
-      setText("dbMac", data.mac || "—");
-      document.getElementById("dbAddSection").style.display = "none";
-      // Check for MAC mismatch when camera is in DB
-      verifyMac();
-    } else {
-      setText("dbExists", "no — not registered", "warn");
-      setText("dbModel", "—");
-      setText("dbMac", "—");
-      document.getElementById("dbAddSection").style.display = "block";
-      lookupArp();
-    }
-  } catch (e) {
-    setText("dbExists", `error: ${e.message}`, "bad");
-  }
-}
-
-async function lookupArp() {
-  try {
-    const data = await api(`/api/cameras/${encodeURIComponent(IP)}/arp`);
-    if (data.mac) {
-      document.getElementById("dbMacInput").value = data.mac;
-      dbState.mac = data.mac;
-    }
-  } catch (e) {}
-}
-
-async function addCameraToDB() {
-  const macInput = document.getElementById("dbMacInput");
-  const mac = macInput.value.trim();
-  const result = document.getElementById("dbAddResult");
-
-  if (!mac || !/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(mac)) {
-    result.innerHTML = '<span class="val bad">Invalid MAC format (aa:bb:cc:dd:ee:ff)</span>';
-    return;
   }
 
-  result.textContent = "Adding...";
-  document.getElementById("btnAddToDB").disabled = true;
+  document.getElementById("btnAddToDB").addEventListener("click", addCameraToDB);
 
-  try {
-    const data = await api("/api/cameras/add", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        ip: IP,
-        mac: mac.toLowerCase(),
-        model: dbState.model,
-        protocol: "http",
-        http_path: "/stream",
-      }),
-    });
-    const prefixNote = data.prefix_added ? ` + registered prefix ${data.prefix_added}` : "";
-    result.innerHTML = `<span class="val ok">Added! ${data.ip} (${data.mac})${prefixNote}</span>`;
-    checkDatabaseStatus();
-  } catch (e) {
-    result.innerHTML = `<span class="val bad">${e.message}</span>`;
-    document.getElementById("btnAddToDB").disabled = false;
-  }
+  // Init
+  checkDatabaseStatus();
+  refreshVersion(false);
+  setInterval(pollFrame, POLL_FRAME_MS);
+  pollFrame();
+  setInterval(refreshMediatorStatus, POLL_STATUS_MS);
+  refreshMediatorStatus();
 }
-
-document.getElementById("btnAddToDB").addEventListener("click", addCameraToDB);
-
-// ── Init
-checkDatabaseStatus();
-refreshVersion(false);
-// Delay health probe until first frame arrives (avoids race with mediator startup)
-let healthProbeScheduled = false;
-pollFrameTimer = setInterval(pollFrame, POLL_FRAME_MS);
-pollFrame();
-setInterval(refreshMediatorStatus, POLL_STATUS_MS);
-refreshMediatorStatus();
 </script>
 </body>
 </html>

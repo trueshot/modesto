@@ -2099,6 +2099,219 @@ def http_cameras_m5camserver_status():
     return m5_probe.status()
 
 
+@app.get("/api/http-cameras/discover")
+def discover_m5camserver_devices(
+    subnet: str = Query(None, description="Subnet prefix (e.g. 192.168.0); auto-detected from lodge.db if omitted"),
+    probe_all: bool = Query(False, description="Probe all 254 IPs; otherwise only ARP+DB IPs"),
+    skip_cached: bool = Query(True, description="Skip IPs that already have fresh /version cache"),
+    timeout: float = Query(1.5, description="Per-IP /version probe timeout (seconds)"),
+):
+    """
+    Discover devices on the local subnet, merging probe results with lodge.db.
+
+    For each IP:
+    1. Try /version to detect M5CamServer
+    2. Check lodge.db for expected camera at this IP
+    3. Compare ARP MAC with DB MAC to detect mismatches
+
+    Returns unified per-IP state: probe results + db expectations + agreement status.
+    """
+    import subprocess
+    import concurrent.futures
+    import re
+
+    # Load all cameras from lodge.db
+    db_cameras = {}  # ip -> {mac, model, protocol, ...}
+    conn = sqlite3.connect(str(DB_PATH), timeout=2)
+    cur = conn.cursor()
+    cur.execute("SELECT ip, mac, model, protocol, http_path, rtsp_path FROM cameras WHERE ip IS NOT NULL")
+    for row in cur.fetchall():
+        ip, mac, model, protocol, http_path, rtsp_path = row
+        db_cameras[ip] = {
+            "mac": mac.lower() if mac else None,
+            "model": model,
+            "protocol": protocol,
+            "http_path": http_path,
+            "rtsp_path": rtsp_path,
+        }
+
+    # Load NVRs from lodge.db
+    db_nvrs = {}  # ip -> {mac, model, brand}
+    cur.execute("SELECT ip, mac, model, brand FROM nvrs WHERE ip IS NOT NULL")
+    for row in cur.fetchall():
+        ip, mac, model, brand = row
+        db_nvrs[ip] = {
+            "mac": mac.lower() if mac else None,
+            "model": model,
+            "brand": brand,
+        }
+
+    # Auto-detect subnet from lodge.db cameras
+    if not subnet:
+        counts = {}
+        for ip in db_cameras:
+            m = re.match(r"^(\d+\.\d+\.\d+)\.", ip)
+            if m:
+                counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+        subnet = max(counts.items(), key=lambda x: x[1])[0] if counts else "192.168.0"
+
+    # Get cam-like MAC prefixes from lodge.db
+    mac_prefixes = []
+    try:
+        cur.execute("SELECT prefix FROM mac_prefixes")
+        mac_prefixes = [p.lower() for (p,) in cur.fetchall()]
+    except Exception:
+        pass
+    conn.close()
+
+    # Read ARP table
+    arp = {}
+    try:
+        result = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=2)
+        for line in result.stdout.splitlines():
+            m = re.match(r"\s*(\d+\.\d+\.\d+\.\d+)\s+([\da-f]{2}(?:[-:][\da-f]{2}){5})\s+", line, re.I)
+            if m:
+                ip = m.group(1)
+                mac = m.group(2).lower().replace("-", ":")
+                if ip.startswith(subnet + "."):
+                    arp[ip] = mac
+    except Exception:
+        pass
+
+    # Build candidate IP list
+    if probe_all:
+        candidates = set(f"{subnet}.{i}" for i in range(1, 255))
+    else:
+        candidates = set()
+        # Include all IPs from ARP with cam-like or LAA MACs
+        for ip, mac in arp.items():
+            if any(mac.startswith(p) for p in mac_prefixes):
+                candidates.add(ip)
+            first_byte = int(mac[:2], 16)
+            if first_byte & 0x02:  # LAA MAC — common for ESP32
+                candidates.add(ip)
+        # Include all IPs from lodge.db for this subnet
+        for ip in db_cameras:
+            if ip.startswith(subnet + "."):
+                candidates.add(ip)
+        # Include NVR IPs
+        for ip in db_nvrs:
+            if ip.startswith(subnet + "."):
+                candidates.add(ip)
+
+    # Get current cache state
+    cached_status = m5_probe.status()
+
+    # Get mediator streaming IPs
+    mediator_status = http_mediator.status()
+    streaming_ips = set(mediator_status.keys())
+
+    results = {}
+    to_probe = []
+
+    for ip in candidates:
+        cache_key = f"{ip}:80"
+        if cache_key in cached_status and skip_cached:
+            v = cached_status[cache_key]
+            results[ip] = {
+                "source": "cached",
+                "is_m5camserver": v.get("is_m5camserver"),
+                "sketch": v.get("sketch"),
+                "uptime_s": v.get("uptime_s"),
+                "camera_ok": v.get("camera_ok"),
+                "mac": arp.get(ip),
+            }
+        elif ip in streaming_ips:
+            v = cached_status.get(cache_key, {})
+            results[ip] = {
+                "source": "streaming",
+                "is_m5camserver": v.get("is_m5camserver"),
+                "sketch": v.get("sketch"),
+                "uptime_s": v.get("uptime_s"),
+                "camera_ok": v.get("camera_ok"),
+                "mac": arp.get(ip),
+            }
+        else:
+            to_probe.append(ip)
+
+    # Probe remaining IPs in parallel
+    def probe_one(ip):
+        try:
+            info = m5_probe.version(ip, port=80, force=True)
+            return ip, {
+                "source": "probed",
+                "is_m5camserver": info.is_m5camserver,
+                "sketch": info.sketch,
+                "uptime_s": info.uptime_s,
+                "camera_ok": info.camera_ok,
+                "error": info.error if not info.is_m5camserver else None,
+                "mac": arp.get(ip),
+            }
+        except Exception as e:
+            return ip, {"source": "probed", "is_m5camserver": False, "error": str(e), "mac": arp.get(ip)}
+
+    if to_probe:
+        original_timeout = m5_probe.timeout_s
+        m5_probe.timeout_s = timeout
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as ex:
+                for ip, result in ex.map(lambda ip: probe_one(ip), to_probe):
+                    results[ip] = result
+        finally:
+            m5_probe.timeout_s = original_timeout
+
+    # Merge lodge.db data and compute agreement status
+    for ip in candidates:
+        if ip not in results:
+            results[ip] = {"source": "db_only", "mac": arp.get(ip)}
+
+        r = results[ip]
+        db_entry = db_cameras.get(ip)
+        nvr_entry = db_nvrs.get(ip)
+
+        if db_entry:
+            r["db"] = db_entry
+            # Check MAC agreement
+            if r.get("mac") and db_entry.get("mac"):
+                r["mac_match"] = r["mac"] == db_entry["mac"]
+            else:
+                r["mac_match"] = None  # Can't compare
+        else:
+            r["db"] = None
+            r["mac_match"] = None
+
+        # Add NVR info
+        if nvr_entry:
+            r["nvr"] = nvr_entry
+            # Conflict: IP is in both cameras and nvrs tables
+            r["conflict"] = db_entry is not None
+        else:
+            r["nvr"] = None
+            r["conflict"] = False
+
+    # Summarize
+    m5_count = sum(1 for r in results.values() if r.get("is_m5camserver"))
+    db_count = sum(1 for r in results.values() if r.get("db"))
+    nvr_count = sum(1 for r in results.values() if r.get("nvr"))
+    conflict_count = sum(1 for r in results.values() if r.get("conflict"))
+    probed_count = sum(1 for r in results.values() if r.get("source") == "probed")
+    cached_count = sum(1 for r in results.values() if r.get("source") in ("cached", "streaming"))
+    mismatch_count = sum(1 for r in results.values() if r.get("mac_match") is False)
+
+    return {
+        "subnet": subnet,
+        "candidates": len(candidates),
+        "probed": probed_count,
+        "from_cache": cached_count,
+        "m5camserver_found": m5_count,
+        "in_db": db_count,
+        "nvrs": nvr_count,
+        "conflicts": conflict_count,
+        "mac_mismatches": mismatch_count,
+        "devices": results,
+    }
+
+
 @app.get("/api/http-cameras/{camera_ip}/health")
 def http_camera_health(
     camera_ip: str,
