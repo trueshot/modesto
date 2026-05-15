@@ -455,6 +455,7 @@ def _update_session_camera_stats():
                     "total_fps": 0.0,
                     "last_frame_seq": 0,
                     "total_frames": 0,
+                    "peak_frame_seq": 0,
                     "reconnects": 0,
                     "running_samples": 0,
                 }
@@ -463,6 +464,10 @@ def _update_session_camera_stats():
             s["last_seen"] = now
             s["samples"] += 1
             s["total_fps"] += fps if fps else 0
+
+            # Track peak frame_seq (camera ever produced frames, even between samples)
+            if frame_seq > s["peak_frame_seq"]:
+                s["peak_frame_seq"] = frame_seq
 
             # Count new frames since last sample
             if frame_seq > s["last_frame_seq"]:
@@ -507,10 +512,13 @@ def _log_session_summary():
             uptime_pct = (running / samples * 100) if samples > 0 else 0
             avg_fps = (s["total_fps"] / samples) if samples > 0 else 0
             total_frames = s["total_frames"]
+            peak_frames = s["peak_frame_seq"]
             reconnects = s["reconnects"]
 
             # Health grade
-            if uptime_pct >= 95 and avg_fps >= 1.0:
+            if peak_frames == 0:
+                grade = "X"  # never produced any frames
+            elif uptime_pct >= 95 and avg_fps >= 1.0:
                 grade = "A"
             elif uptime_pct >= 80:
                 grade = "B"
@@ -519,15 +527,16 @@ def _log_session_summary():
             else:
                 grade = "F"
 
-            # Add reconnect penalty
-            if reconnects >= 3:
-                grade = min(grade, "C")  # cap at C if many reconnects
-            elif reconnects >= 1:
-                grade = chr(min(ord(grade) + 1, ord("F")))  # downgrade one letter
+            # Add reconnect penalty (doesn't apply to X)
+            if grade != "X":
+                if reconnects >= 3:
+                    grade = min(grade, "C")  # cap at C if many reconnects
+                elif reconnects >= 1:
+                    grade = chr(min(ord(grade) + 1, ord("F")))  # downgrade one letter
 
             lines.append(
                 f"  {ip:>15} | {mac:>17} | {model:>12} | "
-                f"fps={avg_fps:>4.1f} frames={total_frames:>6} up={uptime_pct:>5.1f}% "
+                f"fps={avg_fps:>4.1f} frames={total_frames:>6} peak={peak_frames:>6} up={uptime_pct:>5.1f}% "
                 f"reconn={reconnects} [{grade}]"
             )
 
