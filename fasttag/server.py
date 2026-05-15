@@ -303,6 +303,7 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=worker_reaper, daemon=True, name="worker-reaper").start()
     threading.Thread(target=camera_service_pinger, daemon=True, name="camera-svc-ping").start()
     threading.Thread(target=_prewarm_overlay_detector, daemon=True, name="overlay-prewarm").start()
+    threading.Thread(target=session_summary_thread, daemon=True, name="session-summary").start()
     yield
     # Shutdown: nothing — daemon threads die with the process.
 
@@ -339,6 +340,14 @@ stats_lock = threading.Lock()
 # Frame sequence staleness tracking — ip -> {"seq": N, "changed_at": time}
 frame_seq_history: dict = {}
 STALE_THRESHOLD_SECONDS = 5.0
+
+# Session summary tracking — logs aggregate camera health every 20 minutes
+SESSION_SUMMARY_INTERVAL_S = 1200  # 20 minutes
+session_start_time: float = time.time()
+last_summary_time: float = time.time()
+# ip -> {"mac", "model", "first_seen", "last_seen", "samples", "total_fps", "total_frames", "reconnects", "running_samples"}
+session_camera_stats: dict = {}
+session_stats_lock = threading.Lock()
 
 # Shared queue for HTTP workers only
 result_queue: Optional[multiprocessing.Queue] = None
@@ -392,6 +401,157 @@ def result_collector():
         time.sleep(0.1)
 
     logger.info("Result collector stopped")
+
+
+# ============================================================================
+# SESSION SUMMARY THREAD
+# ============================================================================
+
+summary_running = False
+
+
+def _update_session_camera_stats():
+    """Sample current camera states into session_camera_stats."""
+    now = time.time()
+    pool_status = pool.get_status() if pool else {}
+    pool_readers = pool_status.get("readers", {})
+
+    with workers_lock:
+        http_workers_snapshot = dict(workers)
+    with stats_lock:
+        http_stats_snapshot = dict(camera_stats)
+
+    # Combine all active IPs
+    all_ips = set(pool_readers.keys()) | set(http_workers_snapshot.keys())
+
+    with session_stats_lock:
+        for ip in all_ips:
+            # Get current state
+            if ip in pool_readers:
+                reader = pool_readers[ip]
+                status = reader.get("status", "unknown")
+                fps = reader.get("fps", 0)
+                frame_seq = reader.get("frame_count", 0)
+                respawn_count = 0
+            elif ip in http_stats_snapshot:
+                hb = http_stats_snapshot[ip]
+                status = hb.get("status", "unknown")
+                fps = hb.get("fps", 0)
+                frame_seq = hb.get("frame_seq", 0)
+                w = http_workers_snapshot.get(ip, {})
+                respawn_count = w.get("respawn_count", 0)
+            else:
+                continue
+
+            # Get MAC and model from DB if not cached
+            if ip not in session_camera_stats:
+                cam = get_camera_by_ip(ip)
+                session_camera_stats[ip] = {
+                    "mac": cam.get("mac") if cam else None,
+                    "model": cam.get("model") if cam else None,
+                    "first_seen": now,
+                    "last_seen": now,
+                    "samples": 0,
+                    "total_fps": 0.0,
+                    "last_frame_seq": 0,
+                    "total_frames": 0,
+                    "reconnects": 0,
+                    "running_samples": 0,
+                }
+
+            s = session_camera_stats[ip]
+            s["last_seen"] = now
+            s["samples"] += 1
+            s["total_fps"] += fps if fps else 0
+
+            # Count new frames since last sample
+            if frame_seq > s["last_frame_seq"]:
+                s["total_frames"] += (frame_seq - s["last_frame_seq"])
+            s["last_frame_seq"] = frame_seq
+
+            # Track reconnects (respawn_count increases)
+            if respawn_count > s["reconnects"]:
+                s["reconnects"] = respawn_count
+
+            # Track how many samples were in "running" state
+            if status == "running":
+                s["running_samples"] += 1
+
+
+def _log_session_summary():
+    """Log aggregate camera health summary."""
+    global last_summary_time
+    now = time.time()
+    elapsed = now - session_start_time
+    elapsed_min = elapsed / 60
+
+    with session_stats_lock:
+        if not session_camera_stats:
+            logger.info(f"[SESSION SUMMARY] {elapsed_min:.0f}m elapsed — no cameras tracked")
+            return
+
+        lines = [f"[SESSION SUMMARY] {elapsed_min:.0f}m elapsed — {len(session_camera_stats)} cameras:"]
+
+        # Sort by IP numerically
+        sorted_ips = sorted(session_camera_stats.keys(),
+                           key=lambda x: tuple(int(p) for p in x.split('.')))
+
+        for ip in sorted_ips:
+            s = session_camera_stats[ip]
+            mac = s["mac"] or "?"
+            model = s["model"] or "?"
+            samples = s["samples"]
+            running = s["running_samples"]
+
+            # Calculate metrics
+            uptime_pct = (running / samples * 100) if samples > 0 else 0
+            avg_fps = (s["total_fps"] / samples) if samples > 0 else 0
+            total_frames = s["total_frames"]
+            reconnects = s["reconnects"]
+
+            # Health grade
+            if uptime_pct >= 95 and avg_fps >= 1.0:
+                grade = "A"
+            elif uptime_pct >= 80:
+                grade = "B"
+            elif uptime_pct >= 50:
+                grade = "C"
+            else:
+                grade = "F"
+
+            # Add reconnect penalty
+            if reconnects >= 3:
+                grade = min(grade, "C")  # cap at C if many reconnects
+            elif reconnects >= 1:
+                grade = chr(min(ord(grade) + 1, ord("F")))  # downgrade one letter
+
+            lines.append(
+                f"  {ip:>15} | {mac:>17} | {model:>12} | "
+                f"fps={avg_fps:>4.1f} frames={total_frames:>6} up={uptime_pct:>5.1f}% "
+                f"reconn={reconnects} [{grade}]"
+            )
+
+        logger.info("\n".join(lines))
+
+    last_summary_time = now
+
+
+def session_summary_thread():
+    """Background thread that logs session summary every 20 minutes."""
+    global summary_running, last_summary_time
+    summary_running = True
+    logger.info("Session summary thread started")
+
+    while summary_running:
+        time.sleep(10)  # Sample stats every 10 seconds
+        _update_session_camera_stats()
+
+        # Log summary every SESSION_SUMMARY_INTERVAL_S
+        now = time.time()
+        if now - last_summary_time >= SESSION_SUMMARY_INTERVAL_S:
+            _log_session_summary()
+
+    logger.info("Session summary thread stopped")
 
 
 # ============================================================================
