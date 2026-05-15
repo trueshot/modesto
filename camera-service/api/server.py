@@ -1075,11 +1075,16 @@ def get_nvr_info(nvr_id: str) -> Optional[dict]:
         return dict(row)
     return None
 
+def get_nvr_credentials(nvr_id: str) -> tuple:
+    """Resolve NVR credentials from .env. E.g. nvr1 → NVR1_USER/NVR1_PASS."""
+    prefix = nvr_id.upper()
+    return (os.environ.get(f"{prefix}_USER", "admin"),
+            os.environ.get(f"{prefix}_PASS", ""))
+
 def build_rtsp_url(nvr: dict, channel: int) -> str:
-    """Build RTSP URL from NVR info and channel number"""
+    """Build RTSP URL from NVR info and channel number. Creds from .env."""
     ip = nvr['ip']
-    username = nvr['username'] or 'admin'
-    password = nvr['password'] or ''
+    username, password = get_nvr_credentials(nvr['id'])
     path_format = nvr['path_format']
 
     # Format the path with channel number

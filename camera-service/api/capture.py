@@ -240,6 +240,20 @@ class CameraCapture:
 
         return results
 
+    def _get_nvr_credentials(self, nvr_id: str) -> tuple:
+        """Resolve NVR credentials from .env. E.g. nvr1 → NVR1_USER/NVR1_PASS."""
+        prefix = nvr_id.upper()
+        return (os.environ.get(f"{prefix}_USER", "admin"),
+                os.environ.get(f"{prefix}_PASS", ""))
+
+    def _build_rtsp_url(self, nvr_ip: str, nvr_id: str, rtsp_path: str) -> str:
+        """Build full RTSP URL from NVR info and path."""
+        from urllib.parse import quote
+        username, password = self._get_nvr_credentials(nvr_id)
+        password_encoded = quote(password, safe='')
+        path = rtsp_path.lstrip('/')
+        return f"rtsp://{username}:{password_encoded}@{nvr_ip}:554/{path}"
+
     def list_cameras(self, facility: str) -> List[Dict[str, Any]]:
         """
         List all cameras for a facility
@@ -248,7 +262,7 @@ class CameraCapture:
             facility: Facility name
 
         Returns:
-            List of camera info dicts
+            List of camera info dicts with full RTSP URLs
         """
         db = self._get_db(facility)
         cursor = db.cursor()
@@ -260,17 +274,22 @@ class CameraCapture:
                 COALESCE(m.description, 'Unmounted channel') as location,
                 c.channel_number as channel,
                 c.resolution,
-                c.rtsp_path as rtsp_url,
-                c.nvr_id
+                c.rtsp_path,
+                c.nvr_id,
+                n.ip as nvr_ip
             FROM channels c
             LEFT JOIN linkages l ON l.channel_id = c.id
             LEFT JOIN mounts m ON l.mount_id = m.id
+            LEFT JOIN nvrs n ON c.nvr_id = n.id
             WHERE c.status = 'active'
             ORDER BY c.nvr_id, c.channel_number
         """)
 
         cameras = []
         for row in cursor.fetchall():
+            rtsp_url = None
+            if row['nvr_ip'] and row['rtsp_path']:
+                rtsp_url = self._build_rtsp_url(row['nvr_ip'], row['nvr_id'], row['rtsp_path'])
             cameras.append({
                 'id': row['id'],
                 'name': row['name'],
@@ -278,7 +297,7 @@ class CameraCapture:
                 'location': row['location'] or 'Unknown',
                 'resolution': row['resolution'] or 'Unknown',
                 'channel': row['channel'],
-                'rtsp_url': row['rtsp_url'],
+                'rtsp_url': rtsp_url,
                 'nvr_id': row['nvr_id']
             })
 
@@ -307,13 +326,13 @@ class CameraCapture:
 
     def check_nvr_connectivity(self, facility: str) -> Dict[str, Any]:
         """
-        Check NVR connectivity
+        Check NVR configuration status (DB-only, no capture test).
 
         Args:
             facility: Facility name
 
         Returns:
-            Connectivity status dict
+            NVR config status dict
         """
         db = self._get_db(facility)
         cursor = db.cursor()
@@ -323,7 +342,7 @@ class CameraCapture:
         nvr_row = cursor.fetchone()
 
         if not nvr_row:
-            return {'error': 'No NVRs configured', 'reachable': False}
+            return {'error': 'No NVRs configured', 'total_cameras': 0}
 
         # Get total camera count
         cursor.execute("""
@@ -333,17 +352,8 @@ class CameraCapture:
         count_row = cursor.fetchone()
         total_cameras = count_row['count'] if count_row else 0
 
-        # Try to capture from first camera as connectivity test
-        cameras = self.list_cameras(facility)
-        if cameras:
-            frame = self.capture_frame(cameras[0]['rtsp_url'])
-            reachable = frame is not None
-        else:
-            reachable = False
-
         return {
             'nvr_ip': nvr_row['ip'],
-            'reachable': reachable,
             'total_cameras': total_cameras
         }
 
