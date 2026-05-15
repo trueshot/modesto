@@ -336,6 +336,10 @@ detection_lock = threading.Lock()
 camera_stats: dict = {}  # camera_ip -> latest heartbeat dict
 stats_lock = threading.Lock()
 
+# Frame sequence staleness tracking — ip -> {"seq": N, "changed_at": time}
+frame_seq_history: dict = {}
+STALE_THRESHOLD_SECONDS = 5.0
+
 # Shared queue for HTTP workers only
 result_queue: Optional[multiprocessing.Queue] = None
 
@@ -950,9 +954,19 @@ def get_status():
     now = time.time()
     cameras = {}
 
+    def check_staleness(ip: str, frame_seq: int) -> bool:
+        """Track frame_seq changes; return True if stale (no change in STALE_THRESHOLD_SECONDS)."""
+        hist = frame_seq_history.get(ip)
+        if hist is None or hist["seq"] != frame_seq:
+            frame_seq_history[ip] = {"seq": frame_seq, "changed_at": now}
+            return False
+        return (now - hist["changed_at"]) > STALE_THRESHOLD_SECONDS
+
     # Pool cameras (RTSP)
     pool_status = pool.get_status() if pool else {}
     for ip, reader in pool_status.get("readers", {}).items():
+        frame_seq = reader.get("frame_count", 0)
+        fps_stale = check_staleness(ip, frame_seq)
         cameras[ip] = {
             "pid": None,  # pool readers are threads, not processes
             "alive": reader.get("status") != "stopped",
@@ -962,7 +976,8 @@ def get_status():
             "access": "pool",
             "respawn_count": 0,
             "fps": reader.get("fps", 0),
-            "frame_seq": reader.get("frame_count", 0),
+            "fps_stale": fps_stale,
+            "frame_seq": frame_seq,
             "detect_count": 0,  # pool tracks this per-detector, not per-camera
             "status": reader.get("status", "starting"),
             "error": reader.get("error"),
@@ -981,6 +996,8 @@ def get_status():
             hb = camera_stats.get(ip)
 
         proc = w["process"]
+        frame_seq = hb["frame_seq"] if hb else 0
+        fps_stale = check_staleness(ip, frame_seq)
         cameras[ip] = {
             "pid": proc.pid,
             "alive": proc.is_alive(),
@@ -990,7 +1007,8 @@ def get_status():
             "access": w.get("access"),
             "respawn_count": w.get("respawn_count", 0),
             "fps": hb["fps"] if hb else 0,
-            "frame_seq": hb["frame_seq"] if hb else 0,
+            "fps_stale": fps_stale,
+            "frame_seq": frame_seq,
             "detect_count": hb["detect_count"] if hb else 0,
             "status": hb["status"] if hb else "starting",
             "error": hb.get("error") if hb else None,
@@ -1240,13 +1258,25 @@ def get_subnet_state(
             reader = pool_readers[ip]
             worker_status = reader.get("status")
             fps = reader.get("fps")
+            frame_seq = reader.get("frame_count", 0)
         elif ip in http_stats:
             hb = http_stats[ip]
             worker_status = hb.get("status")
             fps = hb.get("fps")
+            frame_seq = hb.get("frame_seq", 0)
         else:
             worker_status = None
             fps = None
+            frame_seq = 0
+
+        # Check fps staleness
+        fps_stale = False
+        if fps is not None:
+            hist = frame_seq_history.get(ip)
+            if hist is None or hist["seq"] != frame_seq:
+                frame_seq_history[ip] = {"seq": frame_seq, "changed_at": now}
+            elif (now - hist["changed_at"]) > STALE_THRESHOLD_SECONDS:
+                fps_stale = True
 
         if cam and ip in active:
             if worker_status == "running":
@@ -1276,6 +1306,7 @@ def get_subnet_state(
             "protocol": cam.get("protocol") if cam else None,
             "worker_status": worker_status,
             "fps": fps,
+            "fps_stale": fps_stale,
         })
 
     out = {

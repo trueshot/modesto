@@ -750,7 +750,7 @@
           cell.mac ? `mac: ${cell.mac}` : null,
           cell.model ? `model: ${cell.model}` : null,
           cell.protocol ? `protocol: ${cell.protocol}` : null,
-          cell.fps != null ? `fps: ${cell.fps}` : null,
+          cell.fps != null ? `fps: ${cell.fps}${cell.fps_stale ? "?" : ""}` : null,
           cell.worker_status ? `worker: ${cell.worker_status}` : null,
         ].filter(Boolean).join(" | ");
         div.title = tip;
@@ -906,7 +906,7 @@
       const cams = data.cameras || {};
       const workers = [];
       for (const [ip, c] of Object.entries(cams)) {
-        workers.push({ ip, fps: c.fps, status: c.status || "unknown" });
+        workers.push({ ip, fps: c.fps, fps_stale: c.fps_stale, status: c.status || "unknown" });
       }
       workers.sort((a, b) => a.ip.localeCompare(b.ip,
         undefined, { numeric: true }));
@@ -924,7 +924,8 @@
             ? "selected" : "";
           const stale = c.status !== "running" ? "stale" : "";
           const dot = `<span class="status-dot ${c.status}"></span>`;
-          const fpsVal = (c.status === "running" && c.fps > 0) ? c.fps.toFixed(1) : "—";
+          const fpsNum = (c.status === "running" && c.fps > 0) ? c.fps.toFixed(1) : "—";
+          const fpsVal = c.fps_stale ? fpsNum + "?" : fpsNum;
           const label = abbrev ? "." + c.ip.split(".").pop() : c.ip;
           return `<span class="chip ${sel} ${stale}" data-ip="${c.ip}" title="${c.ip}">${dot}${label}<span class="fps">${fpsVal}</span></span>`;
         }).join("");
@@ -943,7 +944,7 @@
               const c = data.cells.find(x => x.ip === ip);
               if (c) {
                 cell.className = "cell " + c.state;
-                cell.title = [c.ip, c.state, c.model, c.fps != null ? `fps: ${c.fps}` : null].filter(Boolean).join(" | ");
+                cell.title = [c.ip, c.state, c.model, c.fps != null ? `fps: ${c.fps}${c.fps_stale ? "?" : ""}` : null].filter(Boolean).join(" | ");
               }
             });
           }).catch(() => {});
