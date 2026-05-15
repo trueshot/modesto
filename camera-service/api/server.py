@@ -2314,6 +2314,9 @@ def discover_m5camserver_devices(
     cached_count = sum(1 for r in results.values() if r.get("source") in ("cached", "streaming"))
     mismatch_count = sum(1 for r in results.values() if r.get("mac_match") is False)
 
+    # Sort by last IP octet
+    sorted_devices = dict(sorted(results.items(), key=lambda x: int(x[0].rsplit('.', 1)[1])))
+
     return {
         "subnet": subnet,
         "candidates": len(candidates),
@@ -2324,7 +2327,7 @@ def discover_m5camserver_devices(
         "nvrs": nvr_count,
         "conflicts": conflict_count,
         "mac_mismatches": mismatch_count,
-        "devices": results,
+        "devices": sorted_devices,
     }
 
 
