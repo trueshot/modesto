@@ -507,18 +507,18 @@ def _update_session_camera_stats():
 
 
 def _log_session_summary():
-    """Log aggregate camera health summary."""
+    """Log aggregate camera health summary for the last interval."""
     global last_summary_time
     now = time.time()
-    elapsed = now - session_start_time
-    elapsed_min = elapsed / 60
+    interval_min = (now - last_summary_time) / 60
+    session_min = (now - session_start_time) / 60
 
     with session_stats_lock:
         if not session_camera_stats:
-            logger.info(f"[SESSION SUMMARY] {elapsed_min:.0f}m elapsed — no cameras tracked")
+            logger.info(f"[SESSION SUMMARY] @{session_min:.0f}m (last {interval_min:.0f}m) — no cameras tracked")
             return
 
-        lines = [f"[SESSION SUMMARY] {elapsed_min:.0f}m elapsed — {len(session_camera_stats)} cameras:"]
+        lines = [f"[SESSION SUMMARY] @{session_min:.0f}m (last {interval_min:.0f}m) — {len(session_camera_stats)} cameras:"]
 
         # Sort by IP numerically
         sorted_ips = sorted(session_camera_stats.keys(),
@@ -576,6 +576,15 @@ def _log_session_summary():
             )
 
         logger.info("\n".join(lines))
+
+        # Reset stats for next interval (per-window, not cumulative)
+        session_camera_stats.clear()
+        session_pool_stats["samples"] = 0
+        session_pool_stats["total_queue_depth"] = 0
+        session_pool_stats["max_queue_depth"] = 0
+        session_pool_stats["total_pressure"] = 0.0
+        session_pool_stats["max_pressure"] = 0.0
+        session_pool_stats["total_slots_in_use"] = 0
 
     last_summary_time = now
 
