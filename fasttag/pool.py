@@ -587,6 +587,15 @@ class DetectionPool:
 
     def get_status(self) -> dict:
         """Get status of readers and detectors."""
+        # Queue depth (frames waiting for detectors) — reliable on Windows
+        try:
+            queue_depth = self.frame_queue.qsize()
+        except NotImplementedError:
+            queue_depth = None  # macOS doesn't support qsize()
+
+        slots_in_use = sum(self.frame_pool.slot_in_use)
+        slots_total = self.frame_pool.num_slots
+
         return {
             "readers": {
                 ip: {
@@ -609,8 +618,10 @@ class DetectionPool:
                 {"pid": p.pid, "alive": p.is_alive()}
                 for p in self.detectors
             ],
-            "pool_slots_in_use": sum(self.frame_pool.slot_in_use),
-            "pool_slots_total": self.frame_pool.num_slots,
+            "pool_slots_in_use": slots_in_use,
+            "pool_slots_total": slots_total,
+            "queue_depth": queue_depth,
+            "queue_pressure": round(slots_in_use / slots_total * 100, 1) if slots_total > 0 else 0,
         }
 
     def stop(self):

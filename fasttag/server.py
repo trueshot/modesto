@@ -349,6 +349,16 @@ last_summary_time: float = time.time()
 session_camera_stats: dict = {}
 session_stats_lock = threading.Lock()
 
+# Pool-level stats for session summary
+session_pool_stats = {
+    "samples": 0,
+    "total_queue_depth": 0,
+    "max_queue_depth": 0,
+    "total_pressure": 0.0,
+    "max_pressure": 0.0,
+    "total_slots_in_use": 0,
+}
+
 # Shared queue for HTTP workers only
 result_queue: Optional[multiprocessing.Queue] = None
 
@@ -482,6 +492,19 @@ def _update_session_camera_stats():
             if status == "running":
                 s["running_samples"] += 1
 
+        # Track pool-level stats
+        if pool_status:
+            queue_depth = pool_status.get("queue_depth") or 0
+            pressure = pool_status.get("queue_pressure", 0)
+            slots_in_use = pool_status.get("pool_slots_in_use", 0)
+
+            session_pool_stats["samples"] += 1
+            session_pool_stats["total_queue_depth"] += queue_depth
+            session_pool_stats["max_queue_depth"] = max(session_pool_stats["max_queue_depth"], queue_depth)
+            session_pool_stats["total_pressure"] += pressure
+            session_pool_stats["max_pressure"] = max(session_pool_stats["max_pressure"], pressure)
+            session_pool_stats["total_slots_in_use"] += slots_in_use
+
 
 def _log_session_summary():
     """Log aggregate camera health summary."""
@@ -538,6 +561,18 @@ def _log_session_summary():
                 f"  {ip:>15} | {mac:>17} | {model:>12} | "
                 f"fps={avg_fps:>4.1f} frames={total_frames:>6} peak={peak_frames:>6} up={uptime_pct:>5.1f}% "
                 f"reconn={reconnects} [{grade}]"
+            )
+
+        # Pool pressure summary
+        ps = session_pool_stats
+        if ps["samples"] > 0:
+            avg_queue = ps["total_queue_depth"] / ps["samples"]
+            avg_pressure = ps["total_pressure"] / ps["samples"]
+            avg_slots = ps["total_slots_in_use"] / ps["samples"]
+            lines.append(
+                f"  [POOL] queue: avg={avg_queue:.1f} max={ps['max_queue_depth']} | "
+                f"pressure: avg={avg_pressure:.1f}% max={ps['max_pressure']:.1f}% | "
+                f"slots: avg={avg_slots:.1f}"
             )
 
         logger.info("\n".join(lines))
