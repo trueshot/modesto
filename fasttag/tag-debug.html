@@ -531,7 +531,7 @@
         <span id="overlayCountdown" class="countdown" style="margin-left:10px"></span>
         <button class="close-btn" id="closeDetail">close</button>
       </h2>
-      <div class="detail-meta">Uses pool frames (camera must be started). Auto-closes after ${Math.round(OVERLAY_MAX_S)}s.</div>
+      <div class="detail-meta">Uses pool frames + detections (camera must be started; overlay may lag ~0.5s). Auto-closes after ${Math.round(OVERLAY_MAX_S)}s.</div>
       <div style="position:relative;display:inline-block">
         <img class="overlay-img" id="overlayImg" src="${url}" alt="live overlay for ${ip}">
         <div id="overlayRes" style="position:absolute;top:8px;right:8px;padding:2px 8px;background:rgba(0,0,0,0.7);color:#6cf;font-family:monospace;font-size:12px;border-radius:3px;display:none"></div>

@@ -1563,17 +1563,40 @@ def _prewarm_overlay_detector():
 
 
 def _draw_overlay(frame, detections):
-    """Draw tag border, center, ID, and decision margin on the frame in-place."""
+    """Draw tag border, center, ID, and decision margin on the frame in-place.
+
+    Accepts both pupil_apriltags Detection objects (with attributes) and
+    dict records from detection_buffer (with keys).
+    """
     for det in detections:
-        corners = det.corners.astype(int)
+        # Support both object attributes and dict keys
+        if hasattr(det, 'corners'):
+            corners = det.corners.astype(int)
+            center = det.center
+            tag_id = det.tag_id
+            margin = det.decision_margin
+        else:
+            corners = np.array(det['corners'], dtype=int)
+            center = det['center']
+            tag_id = det['tag_id']
+            margin = det['decision_margin']
+
         for i in range(4):
             cv2.line(frame, tuple(corners[i]), tuple(corners[(i + 1) % 4]), (0, 255, 0), 3)
-        cx, cy = int(det.center[0]), int(det.center[1])
+        cx, cy = int(center[0]), int(center[1])
         cv2.circle(frame, (cx, cy), 8, (0, 0, 255), -1)
-        cv2.putText(frame, f"#{det.tag_id}", (cx - 50, cy - 30),
+        cv2.putText(frame, f"#{tag_id}", (cx - 50, cy - 30),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
-        cv2.putText(frame, f"Q:{det.decision_margin:.0f}", (cx - 50, cy + 40),
+        cv2.putText(frame, f"Q:{margin:.0f}", (cx - 50, cy + 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 0), 2)
+
+
+def _get_recent_detections(camera_ip: str, max_age_s: float = 0.5) -> list:
+    """Get recent detections for a camera from the detection buffer."""
+    cutoff = time.time() - max_age_s
+    with detection_lock:
+        return [d for d in detection_buffer
+                if d['camera_ip'] == camera_ip and d.get('detect_time', 0) > cutoff]
 
 
 @app.get("/live-overlay/{camera_ip}")
@@ -1590,8 +1613,10 @@ def live_overlay(
       HTTP cams (PoE-CAM / M5CamServer) — fetches from camera-service mediator.
       RTSP cams not in pool — returns 503; must /start the camera first.
 
-    Direct RTSP VideoCapture is disabled because cv2.VideoCapture can segfault
-    on certain streams, crashing the entire service.
+    Detection overlay uses results from pool's detector subprocesses (via
+    detection_buffer), not a local detector call. This avoids native segfaults
+    in the main process — crashes in detector subprocesses are contained and
+    respawned automatically.
 
     Closes on:
       - HTTP client disconnect (browser closes tab / removes <img>)
@@ -1646,15 +1671,23 @@ def live_overlay(
                     no_frame_count = 0
                     last_frame_ts = ts
                     last_emit = now
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    dets = detector.detect(gray)
-                    _draw_overlay(frame, dets)
-                    ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                    if not ok:
+                    # Validate frame before cv2 operations
+                    if frame.ndim != 3 or frame.shape[2] != 3 or frame.shape[0] < 10 or frame.shape[1] < 10:
+                        logger.warning(f"live-overlay: {camera_ip} invalid frame shape {frame.shape}")
                         continue
-                    yield (b"--frame\r\n"
-                           b"Content-Type: image/jpeg\r\n\r\n"
-                           + jpeg.tobytes() + b"\r\n")
+                    try:
+                        # Use pool detections instead of running detector in main process
+                        dets = _get_recent_detections(camera_ip, max_age_s=0.5)
+                        _draw_overlay(frame, dets)
+                        ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                        if not ok:
+                            continue
+                        yield (b"--frame\r\n"
+                               b"Content-Type: image/jpeg\r\n\r\n"
+                               + jpeg.tobytes() + b"\r\n")
+                    except Exception as e:
+                        logger.warning(f"live-overlay: {camera_ip} frame processing error: {e}")
+                        continue
                 logger.info(f"live-overlay (pool): {camera_ip} closed")
 
             return StreamingResponse(generate_pool(), media_type="multipart/x-mixed-replace; boundary=frame")
@@ -1673,11 +1706,13 @@ def live_overlay(
             )
 
         frame_url = f"{CAMERA_SERVICE_URL}/api/http-cameras/{camera_ip}/frame"
+        logger.info(f"live-overlay: {camera_ip} using HTTP path via {frame_url}")
 
         def generate_http():
             session = requests.Session()
             last_emit = 0.0
             consecutive_fail = 0
+            frame_count = 0
             try:
                 while time.time() < deadline:
                     now = time.time()
@@ -1703,17 +1738,28 @@ def live_overlay(
                     frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                     if frame is None or frame.std() < 10:
                         continue
-                    last_emit = time.time()
-                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                    dets = detector.detect(gray)
-                    _draw_overlay(frame, dets)
-                    ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                    if not ok:
+                    # Validate frame before cv2 operations
+                    if frame.ndim != 3 or frame.shape[2] != 3 or frame.shape[0] < 10 or frame.shape[1] < 10:
+                        logger.warning(f"live-overlay: {camera_ip} invalid frame shape {frame.shape}")
                         continue
-                    yield (b"--frame\r\n"
-                           b"Content-Type: image/jpeg\r\n\r\n"
-                           + jpeg.tobytes() + b"\r\n")
-                logger.info(f"live-overlay (http): {camera_ip} closed")
+                    try:
+                        last_emit = time.time()
+                        # Use pool detections instead of running detector in main process
+                        dets = _get_recent_detections(camera_ip, max_age_s=0.5)
+                        _draw_overlay(frame, dets)
+                        ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                        if not ok:
+                            continue
+                        frame_count += 1
+                        if frame_count == 1:
+                            logger.info(f"live-overlay (http): {camera_ip} first frame sent")
+                        yield (b"--frame\r\n"
+                               b"Content-Type: image/jpeg\r\n\r\n"
+                               + jpeg.tobytes() + b"\r\n")
+                    except Exception as e:
+                        logger.warning(f"live-overlay: {camera_ip} frame processing error: {e}")
+                        continue
+                logger.info(f"live-overlay (http): {camera_ip} closed after {frame_count} frames")
             finally:
                 session.close()
 
