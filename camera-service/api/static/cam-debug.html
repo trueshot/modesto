@@ -703,6 +703,9 @@ function initSingleView() {
   }
 
   async function refreshVersion(force) {
+    setText("vIs", "probing…", "warn");
+    setText("vSketch", "—"); setText("vMd5", "—"); setText("vUptime", "—");
+    setText("vOk", "—"); setText("vHeap", "—");
     try {
       const url = `/api/http-cameras/${encodeURIComponent(IP)}/version` + (force ? "?force=true" : "");
       const v = await api(url);
