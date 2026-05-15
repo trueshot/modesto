@@ -15,8 +15,10 @@
   .frame-wrap.stale { border-color: #c80; }
   .frame-wrap.dead { border-color: #c33; }
   .frame-wrap img { max-width: 100%; max-height: 480px; display: block; }
+  .frame-wrap img.hidden { display: none; }
   .frame-wrap.stale img, .frame-wrap.dead img { opacity: 0.4; filter: grayscale(0.6); }
   .frame-wrap .empty { color: #666; padding: 2rem; }
+  .frame-wrap .empty.hidden { display: none; }
   .frame-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 0.4rem 0.6rem; background: rgba(0,0,0,0.85); font-family: ui-monospace, monospace; font-size: 0.75rem; display: none; }
   .frame-res { position: absolute; top: 0.4rem; right: 0.4rem; padding: 2px 6px; background: rgba(0,0,0,0.7); color: #6cf; font-family: ui-monospace, monospace; font-size: 0.7rem; border-radius: 3px; display: none; }
   .frame-wrap.stale .frame-overlay { display: block; color: #fc6; border-top: 1px solid #c80; }
@@ -194,7 +196,7 @@
       <div class="card">
         <h2>Live frame</h2>
         <div class="frame-wrap" id="frameWrap">
-          <img id="frame" alt="" hidden>
+          <img id="frame" alt="" class="hidden">
           <div class="empty" id="frameEmpty">no frame yet</div>
           <div class="frame-overlay" id="frameOverlay"></div>
           <div class="frame-res" id="frameRes"></div>
@@ -227,6 +229,7 @@
         <h2>Database</h2>
         <div class="row"><label>in lodge.db</label><span class="val" id="dbExists">—</span></div>
         <div class="row"><label>model</label><span class="val" id="dbModel">—</span></div>
+        <div class="row"><label>protocol</label><span class="val" id="dbProtocol">—</span></div>
         <div class="row"><label>expected MAC</label><span class="val" id="dbMac">—</span></div>
         <div id="dbAddSection" style="display:none; margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid #444">
           <div class="row"><label>MAC</label><input type="text" id="dbMacInput" style="width:160px;font-family:monospace;font-size:0.8rem" placeholder="aa:bb:cc:dd:ee:ff"></div>
@@ -394,13 +397,20 @@ function initSubnetView() {
     const probed = info.source === "probed" || info.source === "cached" || info.source === "streaming";
 
     if (info.is_m5camserver) return "m5camserver";
-    if (probed && !info.error) return "stock";  // HTTP responds but not M5CamServer
+
+    // DB says RTSP — trust that over HTTP probe (RTSP cams often respond to HTTP too)
+    if (db && (db.protocol === "rtsp" || db.rtsp_path)) return "rtsp";
+
+    // HTTP probe succeeded but not M5CamServer
+    if (probed && !info.error) {
+      if (db && (db.protocol === "http" || db.http_path)) return "db_http";
+      return "stock";
+    }
 
     // Probe failed or no probe — fall back to DB info
     if (db) {
-      if (db.protocol === "rtsp") return "rtsp";
-      if (db.protocol === "http") return "db_http";
-      return "offline";  // In DB but probe failed
+      if (db.protocol === "http" || db.http_path) return "db_http";
+      return "offline";  // In DB but no path configured
     }
 
     // NVR only (no camera entry)
@@ -594,19 +604,29 @@ function initSingleView() {
   };
   let lastFrameDims = null;
   let healthProbeScheduled = false;
+  let frameFetchInProgress = false;
 
   function pollFrame() {
+    if (frameFetchInProgress) return;  // Skip if previous fetch still running
+    frameFetchInProgress = true;
+
     const img = document.getElementById("frame");
     const empty = document.getElementById("frameEmpty");
-    const url = `/api/http-cameras/${encodeURIComponent(IP)}/frame?_=${Date.now()}`;
+    // Use different endpoint based on protocol: RTSP cameras go through /api/camera, HTTP through /api/http-cameras
+    const isRtsp = dbState.protocol === "rtsp";
+    const endpoint = isRtsp ? "camera" : "http-cameras";
+    const url = isRtsp
+      ? `/api/camera/${encodeURIComponent(IP)}/frame?_=${Date.now()}`
+      : `/api/http-cameras/${encodeURIComponent(IP)}/frame?_=${Date.now()}`;
     const start = performance.now();
     img.onload = () => {
-      img.hidden = false;
-      empty.hidden = true;
+      frameFetchInProgress = false;
+      img.classList.remove("hidden");
+      empty.classList.add("hidden");
       const ms = Math.round(performance.now() - start);
       const dims = `${img.naturalWidth}x${img.naturalHeight}`;
       const preset = RES_MAP[dims] || "";
-      setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • last fetch ${ms}ms • polling every ${POLL_FRAME_MS}ms`);
+      setText("frameMeta", `${img.naturalWidth}×${img.naturalHeight} • ${ms}ms via /${endpoint}`);
       const resEl = document.getElementById("frameRes");
       resEl.textContent = preset ? `${preset} ${img.naturalWidth}×${img.naturalHeight}` : `${img.naturalWidth}×${img.naturalHeight}`;
       resEl.style.display = "block";
@@ -622,9 +642,10 @@ function initSingleView() {
         probeHealth();
       }
     };
-    img.onerror = () => {
+    img.onerror = (e) => {
+      frameFetchInProgress = false;
       frameState.pollOk = false;
-      setText("frameMeta", "frame fetch failed");
+      setText("frameMeta", `FAILED via /${endpoint}`);
       recomputeFrameState();
       refreshMediatorStatus();
       if (!mismatchState.checked) verifyMac();
@@ -906,7 +927,7 @@ function initSingleView() {
   document.getElementById("btnRemoveStale").addEventListener("click", removeStaleEntry);
 
   // Database
-  let dbState = { exists: null, mac: null, model: "PoE-CAM" };
+  let dbState = { exists: null, mac: null, model: "PoE-CAM", protocol: null };
   function sketchToModel(sketch) {
     if (!sketch) return "PoE-CAM";
     if (sketch.includes("unit_cams3")) return "Unit-CamS3";
@@ -922,12 +943,17 @@ function initSingleView() {
         setText("dbExists", "yes", "ok");
         setText("dbModel", data.model || "—");
         setText("dbMac", data.mac || "—");
+        dbState.protocol = data.protocol;
+        // Show protocol in DB card
+        const protoText = data.protocol ? `${data.protocol}${data.rtsp_path || data.http_path ? ` (${data.rtsp_path || data.http_path})` : ""}` : "—";
+        if (document.getElementById("dbProtocol")) setText("dbProtocol", protoText);
         document.getElementById("dbAddSection").style.display = "none";
         verifyMac();
       } else {
         setText("dbExists", "no — not registered", "warn");
         setText("dbModel", "—");
         setText("dbMac", "—");
+        dbState.protocol = null;
         document.getElementById("dbAddSection").style.display = "block";
         lookupArp();
       }
@@ -970,13 +996,15 @@ function initSingleView() {
 
   document.getElementById("btnAddToDB").addEventListener("click", addCameraToDB);
 
-  // Init
-  checkDatabaseStatus();
-  refreshVersion(false);
-  setInterval(pollFrame, POLL_FRAME_MS);
-  pollFrame();
-  setInterval(refreshMediatorStatus, POLL_STATUS_MS);
-  refreshMediatorStatus();
+  // Init — wait for DB check to determine protocol before starting frame poll
+  (async () => {
+    await checkDatabaseStatus();
+    refreshVersion(false);
+    pollFrame();
+    setInterval(pollFrame, POLL_FRAME_MS);
+    setInterval(refreshMediatorStatus, POLL_STATUS_MS);
+    refreshMediatorStatus();
+  })();
 }
 </script>
 </body>

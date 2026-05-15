@@ -5,6 +5,7 @@ Handles NVR connections and frame capture using OpenCV
 Migrated from config.json to lodge.db (gen-6)
 """
 
+import os
 import cv2
 import sqlite3
 import logging
@@ -73,27 +74,63 @@ class CameraCapture:
             return dict(row)
         return None
 
-    def capture_frame(self, rtsp_url: str, timeout: int = 5, fmt: str = "jpeg") -> Optional[bytes]:
+    def capture_frame_ffmpeg(self, rtsp_url: str, timeout: int = 8) -> Optional[bytes]:
         """
-        Capture single frame from RTSP stream with hard timeout
+        Capture single frame via ffmpeg subprocess — more reliable than cv2 for RTSP.
+        Forces TCP transport. Returns JPEG bytes or None.
+        """
+        import subprocess
+        try:
+            proc = subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner",
+                    "-rtsp_transport", "tcp",
+                    "-i", rtsp_url,
+                    "-frames:v", "1", "-q:v", "2",
+                    "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"
+                ],
+                capture_output=True,
+                timeout=timeout
+            )
+            if proc.returncode == 0 and len(proc.stdout) > 1000:
+                return proc.stdout
+            logger.warning(f"ffmpeg capture failed for {rtsp_url[:50]}: rc={proc.returncode} size={len(proc.stdout)}")
+            return None
+        except subprocess.TimeoutExpired:
+            logger.warning(f"ffmpeg timeout ({timeout}s) for {rtsp_url[:50]}")
+            return None
+        except Exception as e:
+            logger.warning(f"ffmpeg error for {rtsp_url[:50]}: {e}")
+            return None
+
+    def capture_frame(self, rtsp_url: str, timeout: int = 8, fmt: str = "jpeg") -> Optional[bytes]:
+        """
+        Capture single frame from RTSP stream.
+        Uses ffmpeg subprocess (reliable TCP) with cv2 fallback.
 
         Args:
             rtsp_url: RTSP URL
-            timeout: Timeout in seconds (enforced via threading)
-            fmt: Output format — "jpeg" (lossy, smaller) or "png" (lossless, larger)
+            timeout: Timeout in seconds
+            fmt: Output format — "jpeg" or "png"
 
         Returns:
             Encoded image bytes or None on failure
         """
+        # Try ffmpeg first — more reliable for RTSP
+        result = self.capture_frame_ffmpeg(rtsp_url, timeout=timeout)
+        if result:
+            return result
+
+        # Fallback to cv2 (for NVR streams that ffmpeg might not handle well)
         import threading
         import queue
 
         result_queue = queue.Queue()
-        # Shared ref so we can force-release on timeout
         cap_holder = [None]
 
         def _capture():
             try:
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp"
                 cap = cv2.VideoCapture(rtsp_url, cv2.CAP_FFMPEG)
                 cap_holder[0] = cap
                 cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)

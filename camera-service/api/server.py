@@ -1414,12 +1414,23 @@ def camera_exists(camera_ip: str):
     """Check if a camera IP exists in lodge.db."""
     cam = _get_camera_by_ip(camera_ip)
     if cam:
+        protocol = cam.get("protocol")
+        rtsp_path = cam.get("rtsp_path")
+        http_path = cam.get("http_path")
+        # Infer protocol from path if not set
+        if not protocol:
+            if rtsp_path:
+                protocol = "rtsp"
+            elif http_path:
+                protocol = "http"
         return {
             "exists": True,
             "ip": cam["ip"],
             "mac": cam["mac"],
             "model": cam.get("model"),
-            "protocol": cam.get("protocol"),
+            "protocol": protocol,
+            "rtsp_path": rtsp_path,
+            "http_path": http_path,
         }
     return {"exists": False, "ip": camera_ip}
 
