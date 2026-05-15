@@ -524,6 +524,13 @@
   let overlayCountdownTimer = null;
 
   function renderCameraDetail(ip) {
+    // Abort any existing overlay stream before starting new one
+    const existingImg = document.getElementById("overlayImg");
+    if (existingImg) {
+      existingImg.src = "";
+      existingImg.remove();  // force DOM removal to release connection
+    }
+
     const url = `/live-overlay/${encodeURIComponent(ip)}?max_seconds=${OVERLAY_MAX_S}`;
     const startedAt = Date.now() / 1000;
     detailEl.innerHTML = `
@@ -580,6 +587,10 @@
   }
 
   function clearDetail() {
+    // Abort any active overlay stream
+    const existingImg = document.getElementById("overlayImg");
+    if (existingImg) existingImg.src = "";
+
     if (overlayCountdownTimer) {
       clearInterval(overlayCountdownTimer);
       overlayCountdownTimer = null;
