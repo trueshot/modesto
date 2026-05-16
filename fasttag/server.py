@@ -374,6 +374,11 @@ session_detection_stats: dict = {}
 session_all_tags: set = set()  # all unique tags seen this session
 last_detection_scan_time: float = 0.0
 
+# Per-tag stats — tag_id -> {"count", "cameras": set, "first_seen", "last_seen", "gaps"}
+# A "gap" is a period > GAP_THRESHOLD_S with no detection of that tag
+GAP_THRESHOLD_S = 5.0
+session_tag_stats: dict = {}
+
 # Shared queue for HTTP workers only
 result_queue: Optional[multiprocessing.Queue] = None
 
@@ -530,11 +535,29 @@ def _update_session_camera_stats():
                 ip = det.get("camera_ip")
                 tag_id = det.get("tag_id")
                 if ip and tag_id is not None:
+                    # Per-camera stats
                     if ip not in session_detection_stats:
                         session_detection_stats[ip] = {"count": 0, "tags": set()}
                     session_detection_stats[ip]["count"] += 1
                     session_detection_stats[ip]["tags"].add(tag_id)
                     session_all_tags.add(tag_id)
+
+                    # Per-tag stats
+                    if tag_id not in session_tag_stats:
+                        session_tag_stats[tag_id] = {
+                            "count": 0,
+                            "cameras": set(),
+                            "first_seen": ts,
+                            "last_seen": ts,
+                            "gaps": 0,
+                        }
+                    tag_s = session_tag_stats[tag_id]
+                    # Check for gap since last detection of this tag
+                    if tag_s["count"] > 0 and (ts - tag_s["last_seen"]) > GAP_THRESHOLD_S:
+                        tag_s["gaps"] += 1
+                    tag_s["count"] += 1
+                    tag_s["cameras"].add(ip)
+                    tag_s["last_seen"] = ts
         last_detection_scan_time = now
 
 
@@ -612,10 +635,18 @@ def _log_session_summary():
                 f"slots: avg={avg_slots:.1f}"
             )
 
-        # Detection totals
+        # Detection totals and per-tag breakdown
         total_dets = sum(d["count"] for d in session_detection_stats.values())
-        lines.append(f"  [TAGS] detections={total_dets} unique_tags={len(session_all_tags)}" +
-                     (f" ids={sorted(session_all_tags)}" if session_all_tags else ""))
+        lines.append(f"  [TAGS] {len(session_tag_stats)} unique, {total_dets} total detections")
+        if session_tag_stats:
+            # Sort by detection count descending
+            for tag_id in sorted(session_tag_stats.keys(), key=lambda t: -session_tag_stats[t]["count"]):
+                ts = session_tag_stats[tag_id]
+                cams = len(ts["cameras"])
+                gaps = ts["gaps"]
+                stability = "stable" if gaps == 0 else f"flaky" if gaps >= 3 else "spotty"
+                lines.append(f"    #{tag_id:<4} {ts['count']:>5} dets, {cams} cam{'s' if cams != 1 else ''}, "
+                             f"{gaps:>2} gaps >{GAP_THRESHOLD_S:.0f}s ({stability})")
 
         logger.info("\n".join(lines))
 
@@ -629,6 +660,7 @@ def _log_session_summary():
         session_pool_stats["total_slots_in_use"] = 0
         session_detection_stats.clear()
         session_all_tags.clear()
+        session_tag_stats.clear()
 
     last_summary_time = now
 
@@ -1927,6 +1959,16 @@ def get_session_summary():
         total_dets = sum(d["count"] for d in session_detection_stats.values())
         all_tags = sorted(session_all_tags)
 
+        # Per-tag stats
+        tags = {}
+        for tag_id, ts in session_tag_stats.items():
+            tags[tag_id] = {
+                "count": ts["count"],
+                "cameras": sorted(ts["cameras"]),
+                "gaps": ts["gaps"],
+                "stability": "stable" if ts["gaps"] == 0 else "flaky" if ts["gaps"] >= 3 else "spotty",
+            }
+
     # Also log to file
     _log_session_summary()
 
@@ -1943,6 +1985,7 @@ def get_session_summary():
         "detections": {
             "total": total_dets,
             "unique_tags": all_tags,
+            "tags": tags,
         },
     }
 
