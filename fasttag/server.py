@@ -293,6 +293,9 @@ def _cleanup_orphaned_multiprocessing_children():
         logger.info(f"Cleaned up {len(killed)} orphaned multiprocessing children: {killed}")
 
 
+AUTO_SUMMARY_MIN_RUNTIME_S = 120  # only log summary on stop if ran at least 2 min
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Cleanup orphaned detector processes from prior crashes
@@ -305,7 +308,14 @@ async def lifespan(app: FastAPI):
     threading.Thread(target=_prewarm_overlay_detector, daemon=True, name="overlay-prewarm").start()
     threading.Thread(target=session_summary_thread, daemon=True, name="session-summary").start()
     yield
-    # Shutdown: nothing — daemon threads die with the process.
+    # Shutdown: log final summary if session ran long enough
+    runtime = time.time() - session_start_time
+    if runtime >= AUTO_SUMMARY_MIN_RUNTIME_S:
+        logger.info(f"Shutdown after {runtime/60:.1f}m — logging final summary")
+        _update_session_camera_stats()
+        _log_session_summary()
+    else:
+        logger.info(f"Shutdown after {runtime:.0f}s — skipping summary (< {AUTO_SUMMARY_MIN_RUNTIME_S}s)")
 
 
 app = FastAPI(
@@ -1852,6 +1862,48 @@ def restart_service():
     return {"message": "Restarting..."}
 
 
+@app.get("/admin/summary")
+def get_session_summary():
+    """Trigger session summary now and return the data."""
+    now = time.time()
+    interval_s = now - last_summary_time
+    session_s = now - session_start_time
+
+    # Sample current state before returning
+    _update_session_camera_stats()
+
+    with session_stats_lock:
+        cameras = {}
+        for ip, s in session_camera_stats.items():
+            samples = s["samples"]
+            cameras[ip] = {
+                "mac": s["mac"],
+                "model": s["model"],
+                "uptime_pct": round(s["running_samples"] / samples * 100, 1) if samples else 0,
+                "avg_fps": round(s["total_fps"] / samples, 2) if samples else 0,
+                "total_frames": s["total_frames"],
+                "peak_frame_seq": s["peak_frame_seq"],
+                "reconnects": s["reconnects"],
+                "samples": samples,
+            }
+        ps = dict(session_pool_stats)
+
+    # Also log to file
+    _log_session_summary()
+
+    return {
+        "session_seconds": round(session_s, 1),
+        "interval_seconds": round(interval_s, 1),
+        "cameras": cameras,
+        "pool": {
+            "avg_queue_depth": round(ps["total_queue_depth"] / ps["samples"], 2) if ps["samples"] else 0,
+            "max_queue_depth": ps["max_queue_depth"],
+            "avg_pressure_pct": round(ps["total_pressure"] / ps["samples"], 2) if ps["samples"] else 0,
+            "max_pressure_pct": ps["max_pressure"],
+        } if ps["samples"] else None,
+    }
+
+
 # ============================================================================
 # LIVE OVERLAY (debug — server-side cv2 drawing + multipart MJPEG)
 # ============================================================================
@@ -1969,69 +2021,71 @@ def live_overlay(
     deadline = time.time() + max_seconds
     protocol = (cam.get("protocol") or "rtsp").lower()
 
-    # If camera is in pool, try pool frames first (avoids slow second RTSP connection)
-    # But if no fresh frames available, fall through to direct RTSP
+    # If camera is in pool, use pool frames (avoids slow second RTSP connection)
     in_pool = pool is not None and camera_ip in pool.readers
     logger.info(f"live-overlay: {camera_ip} in_pool={in_pool}")
     if in_pool:
-        # Quick check: does the pool have a fresh frame? (within last 2 seconds)
         test_frame, test_ts = pool.get_latest_frame(camera_ip)
         frame_age = time.time() - test_ts if test_ts > 0 else 999
         logger.info(f"live-overlay: {camera_ip} test_frame={'yes' if test_frame is not None else 'no'}, ts={test_ts:.1f}, age={frame_age:.1f}s")
-        if test_frame is not None and frame_age < 2.0:
-            def generate_pool():
-                last_emit = 0.0
-                last_frame_ts = 0.0
-                no_frame_count = 0
-                logger.info(f"live-overlay: using pool frames for {camera_ip}")
-                while time.time() < deadline:
-                    if pool is None:
-                        logger.info(f"live-overlay: {camera_ip} pool stopped, ending stream")
-                        return
-                    now = time.time()
-                    if frame_interval > 0 and (now - last_emit) < frame_interval:
-                        time.sleep(0.02)
-                        continue
-                    frame, ts = pool.get_latest_frame(camera_ip)
-                    if frame is None:
-                        no_frame_count += 1
-                        if no_frame_count == 100:  # ~2 seconds of no frames
-                            logger.warning(f"live-overlay: {camera_ip} pool frames stopped")
-                            break
-                        time.sleep(0.02)
-                        continue
-                    if ts == last_frame_ts:
-                        time.sleep(0.02)
-                        continue
-                    no_frame_count = 0
-                    last_frame_ts = ts
-                    last_emit = now
-                    # Validate frame before cv2 operations
-                    if frame.ndim != 3 or frame.shape[2] != 3 or frame.shape[0] < 10 or frame.shape[1] < 10:
-                        logger.warning(f"live-overlay: {camera_ip} invalid frame shape {frame.shape}")
-                        continue
-                    try:
-                        # Use pool detections instead of running detector in main process
-                        dets = _get_recent_detections(camera_ip, max_age_s=0.5)
-                        _draw_overlay(frame, dets)
-                        ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                        if not ok:
-                            continue
-                        yield (b"--frame\r\n"
-                               b"Content-Type: image/jpeg\r\n\r\n"
-                               + jpeg.tobytes() + b"\r\n")
-                    except Exception as e:
-                        logger.warning(f"live-overlay: {camera_ip} frame processing error: {e}")
-                        continue
-                logger.info(f"live-overlay (pool): {camera_ip} closed")
-
-            return StreamingResponse(generate_pool(), media_type="multipart/x-mixed-replace; boundary=frame")
-        else:
-            logger.warning(f"live-overlay: {camera_ip} in pool but no fresh frames (age={frame_age:.1f}s)")
+        if test_frame is None:
             raise HTTPException(
                 status_code=503,
-                detail=f"camera {camera_ip} is in pool but frames are stale ({frame_age:.1f}s old); worker may be stuck"
+                detail=f"camera {camera_ip} is in pool but has no frames yet"
             )
+
+        def generate_pool():
+            last_emit = 0.0
+            last_frame_ts = 0.0
+            no_frame_count = 0
+            logger.info(f"live-overlay: using pool frames for {camera_ip}")
+            while time.time() < deadline:
+                if pool is None:
+                    logger.info(f"live-overlay: {camera_ip} pool stopped, ending stream")
+                    return
+                now = time.time()
+                if frame_interval > 0 and (now - last_emit) < frame_interval:
+                    time.sleep(0.02)
+                    continue
+                frame, ts = pool.get_latest_frame(camera_ip)
+                if frame is None:
+                    no_frame_count += 1
+                    if no_frame_count == 100:  # ~2 seconds of no frames
+                        logger.warning(f"live-overlay: {camera_ip} pool frames stopped")
+                        break
+                    time.sleep(0.02)
+                    continue
+                # Allow showing same frame if stale (don't skip on ts == last_frame_ts)
+                no_frame_count = 0
+                last_frame_ts = ts
+                last_emit = now
+                # Validate frame before cv2 operations
+                if frame.ndim != 3 or frame.shape[2] != 3 or frame.shape[0] < 10 or frame.shape[1] < 10:
+                    logger.warning(f"live-overlay: {camera_ip} invalid frame shape {frame.shape}")
+                    continue
+                try:
+                    # Draw stale warning if frame is old
+                    frame_age = now - ts
+                    if frame_age > 2.0:
+                        h, w = frame.shape[:2]
+                        cv2.rectangle(frame, (0, 0), (w, 40), (0, 0, 180), -1)
+                        cv2.putText(frame, f"STALE: {frame_age:.0f}s ago", (10, 28),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                    # Use pool detections instead of running detector in main process
+                    dets = _get_recent_detections(camera_ip, max_age_s=0.5)
+                    _draw_overlay(frame, dets)
+                    ok, jpeg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                    if not ok:
+                        continue
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n\r\n"
+                           + jpeg.tobytes() + b"\r\n")
+                except Exception as e:
+                    logger.warning(f"live-overlay: {camera_ip} frame processing error: {e}")
+                    continue
+            logger.info(f"live-overlay (pool): {camera_ip} closed")
+
+        return StreamingResponse(generate_pool(), media_type="multipart/x-mixed-replace; boundary=frame")
 
     if protocol == "http":
         if not is_camera_service_up():
