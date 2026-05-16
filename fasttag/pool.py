@@ -332,17 +332,17 @@ def detector_process(
     # Connect to shared memory
     pool = FramePoolReader(shm_names, slot_size)
 
-    # Suppress SharedMemory BufferError at exit (harmless Windows/Python quirk)
+    # Suppress SharedMemory BufferError at exit (harmless Windows/Python quirk).
+    # Must install immediately, not via atexit — GC runs before atexit handlers.
     import sys
-    import atexit
     _orig_stderr = sys.stderr
-    class SuppressBufferError:
+    class _SuppressBufferError:
         def write(self, s):
             if "BufferError" not in s and "cannot close exported" not in s:
                 _orig_stderr.write(s)
         def flush(self):
             _orig_stderr.flush()
-    atexit.register(lambda: setattr(sys, 'stderr', SuppressBufferError()))
+    sys.stderr = _SuppressBufferError()
 
     # Create detector
     families = config.get("families", "tagCustom48h12")
