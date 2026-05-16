@@ -924,8 +924,9 @@
             ? "selected" : "";
           const stale = c.status !== "running" ? "stale" : "";
           const dot = `<span class="status-dot ${c.status}"></span>`;
-          const fpsNum = (c.status === "running" && c.fps > 0) ? c.fps.toFixed(1) : "—";
-          const fpsVal = c.fps_stale ? fpsNum + "?" : fpsNum;
+          const hasRealFps = c.status === "running" && c.fps > 0;
+          const fpsNum = hasRealFps ? c.fps.toFixed(1) : "—";
+          const fpsVal = (hasRealFps && c.fps_stale) ? fpsNum + "?" : fpsNum;
           const label = abbrev ? "." + c.ip.split(".").pop() : c.ip;
           return `<span class="chip ${sel} ${stale}" data-ip="${c.ip}" title="${c.ip}">${dot}${label}<span class="fps">${fpsVal}</span></span>`;
         }).join("");
