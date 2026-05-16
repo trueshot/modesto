@@ -2023,7 +2023,7 @@ def _get_recent_detections(camera_ip: str, max_age_s: float = 0.5) -> list:
     cutoff = time.time() - max_age_s
     with detection_lock:
         return [d for d in detection_buffer
-                if d['camera_ip'] == camera_ip and d.get('detect_time', 0) > cutoff]
+                if d['camera_ip'] == camera_ip and d.get('timestamp', 0) > cutoff]
 
 
 @app.get("/live-overlay/{camera_ip}")
