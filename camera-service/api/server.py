@@ -1481,38 +1481,86 @@ def _check_and_add_prefix(cur, mac: str, model: str) -> Optional[str]:
 
 @app.post("/api/cameras/add")
 def add_camera_to_db(request: AddCameraRequest):
-    """Add a PoE-CAM to lodge.db. For RTSP cameras, use fasttag's endpoint."""
+    """Add or move a PoE-CAM in lodge.db.
+
+    MAC is the stable identity. If the MAC exists at a different IP, we update
+    the IP (move). PoE-CAMs DHCP-shuffle, so this is expected behavior.
+    """
     if not DB_PATH.exists():
         raise HTTPException(status_code=500, detail="lodge.db not found")
 
     conn = sqlite3.connect(str(DB_PATH), timeout=2)
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    cur.execute("SELECT ip FROM cameras WHERE ip = ? OR mac = ?", (request.ip, request.mac))
-    existing = cur.fetchone()
-    if existing:
+    # Check for existing records
+    cur.execute("SELECT mac, ip FROM cameras WHERE mac = ?", (request.mac,))
+    by_mac = cur.fetchone()
+
+    cur.execute("SELECT mac, ip FROM cameras WHERE ip = ?", (request.ip,))
+    by_ip = cur.fetchone()
+
+    action = "added"
+    old_ip = None
+    added_prefix = None
+
+    if by_mac:
+        old_ip = by_mac["ip"]
+        if old_ip == request.ip:
+            # Idempotent: already exists at this IP
+            conn.close()
+            return {
+                "action": "exists",
+                "ip": request.ip,
+                "mac": request.mac,
+                "model": request.model,
+                "protocol": request.protocol,
+                "prefix_added": None,
+            }
+        # MAC exists at different IP — move it
+        if by_ip and by_ip["mac"] != request.mac:
+            # Collision: another camera already at the target IP
+            conn.close()
+            raise HTTPException(
+                status_code=409,
+                detail=f"IP {request.ip} already has a different camera: {by_ip['mac']}"
+            )
+        # Update IP (and optionally model/protocol if provided)
+        cur.execute(
+            "UPDATE cameras SET ip = ?, model = ?, protocol = ? WHERE mac = ?",
+            (request.ip, request.model, request.protocol, request.mac)
+        )
+        action = "moved"
+        logger.info(f"Moved camera {request.mac} from {old_ip} to {request.ip}")
+    elif by_ip:
+        # IP exists with a different MAC — conflict
         conn.close()
-        raise HTTPException(status_code=409, detail=f"Camera already exists: {existing[0]}")
+        raise HTTPException(
+            status_code=409,
+            detail=f"IP {request.ip} already has camera {by_ip['mac']}"
+        )
+    else:
+        # Fresh insert — auto-add MAC prefix if LAA and not already in mac_prefixes
+        added_prefix = _check_and_add_prefix(cur, request.mac, request.model)
 
-    # Auto-add MAC prefix if LAA and not already in mac_prefixes
-    added_prefix = _check_and_add_prefix(cur, request.mac, request.model)
+        http_path = request.http_path or "/stream"
+        cur.execute(
+            "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
+            (request.mac, request.ip, request.model, request.protocol, http_path)
+        )
+        logger.info(f"Added {request.model} {request.ip} ({request.mac}) to lodge.db" +
+                    (f", registered prefix {added_prefix}" if added_prefix else ""))
 
-    http_path = request.http_path or "/stream"
-    cur.execute(
-        "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
-        (request.mac, request.ip, request.model, request.protocol, http_path)
-    )
     conn.commit()
     conn.close()
 
-    logger.info(f"Added {request.model} {request.ip} ({request.mac}) to lodge.db" +
-                (f", registered prefix {added_prefix}" if added_prefix else ""))
-
     return {
-        "added": request.ip,
+        "action": action,
+        "ip": request.ip,
         "mac": request.mac,
         "model": request.model,
         "protocol": request.protocol,
+        "old_ip": old_ip,
         "prefix_added": added_prefix,
     }
 

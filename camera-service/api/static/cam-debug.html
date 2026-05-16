@@ -989,7 +989,15 @@ function initSingleView() {
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({ ip: IP, mac: mac.toLowerCase(), model: dbState.model, protocol: "http", http_path: "/stream" }),
       });
-      result.innerHTML = `<span class="val ok">Added! ${data.ip} (${data.mac})${data.prefix_added ? ` + registered prefix ${data.prefix_added}` : ""}</span>`;
+      let msg;
+      if (data.action === "moved") {
+        msg = `Moved from ${data.old_ip} → ${data.ip}`;
+      } else if (data.action === "exists") {
+        msg = `Already registered at ${data.ip}`;
+      } else {
+        msg = `Added! ${data.ip}${data.prefix_added ? ` + registered prefix ${data.prefix_added}` : ""}`;
+      }
+      result.innerHTML = `<span class="val ok">${msg}</span>`;
       checkDatabaseStatus();
     } catch (e) {
       result.innerHTML = `<span class="val bad">${e.message}</span>`;

@@ -1644,37 +1644,102 @@ class AddCameraRequest(BaseModel):
 
 @app.post("/cameras/add")
 def add_camera(request: AddCameraRequest):
-    """Add a discovered camera to lodge.db and optionally to running detection."""
+    """Add or move a camera in lodge.db and optionally start detection.
+
+    MAC is the stable identity. If the MAC exists at a different IP, we update
+    the IP (move). PoE-CAMs DHCP-shuffle, so this is expected behavior.
+    """
     if not DB_PATH.exists():
         raise HTTPException(status_code=500, detail="lodge.db not found")
 
     conn = sqlite3.connect(str(DB_PATH), timeout=2)
+    conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # Check if already exists
-    cur.execute("SELECT ip FROM cameras WHERE ip = ? OR mac = ?", (request.ip, request.mac))
-    existing = cur.fetchone()
-    if existing:
-        conn.close()
-        raise HTTPException(status_code=409, detail=f"Camera already exists: {existing[0]}")
+    # Check for existing records
+    cur.execute("SELECT mac, ip FROM cameras WHERE mac = ?", (request.mac,))
+    by_mac = cur.fetchone()
 
-    # Insert based on protocol
-    http_path = request.http_path or "/stream"
-    rtsp_path = request.rtsp_path or "/Streaming/Channels/101"
-    if request.protocol == "http":
+    cur.execute("SELECT mac, ip FROM cameras WHERE ip = ?", (request.ip,))
+    by_ip = cur.fetchone()
+
+    action = "added"
+    old_ip = None
+
+    if by_mac:
+        old_ip = by_mac["ip"]
+        if old_ip == request.ip:
+            # Idempotent: already exists at this IP
+            conn.close()
+            return {
+                "action": "exists",
+                "ip": request.ip,
+                "mac": request.mac,
+                "model": request.model,
+                "protocol": request.protocol,
+                "started": False,
+            }
+        # MAC exists at different IP — move it
+        if by_ip and by_ip["mac"] != request.mac:
+            # Collision: another camera already at the target IP
+            conn.close()
+            raise HTTPException(
+                status_code=409,
+                detail=f"IP {request.ip} already has a different camera: {by_ip['mac']}"
+            )
+        # Update IP (and optionally model/protocol if provided)
         cur.execute(
-            "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
-            (request.mac, request.ip, request.model, request.protocol, http_path)
+            "UPDATE cameras SET ip = ?, model = ?, protocol = ? WHERE mac = ?",
+            (request.ip, request.model, request.protocol, request.mac)
+        )
+        action = "moved"
+        logger.info(f"Moved camera {request.mac} from {old_ip} to {request.ip}")
+    elif by_ip:
+        # IP exists with a different MAC — conflict
+        conn.close()
+        raise HTTPException(
+            status_code=409,
+            detail=f"IP {request.ip} already has camera {by_ip['mac']}"
         )
     else:
-        cur.execute(
-            "INSERT INTO cameras (mac, ip, model, protocol, rtsp_path) VALUES (?, ?, ?, ?, ?)",
-            (request.mac, request.ip, request.model, request.protocol, rtsp_path)
-        )
+        # Fresh insert
+        http_path = request.http_path or "/stream"
+        rtsp_path = request.rtsp_path or "/Streaming/Channels/101"
+        if request.protocol == "http":
+            cur.execute(
+                "INSERT INTO cameras (mac, ip, model, protocol, http_path) VALUES (?, ?, ?, ?, ?)",
+                (request.mac, request.ip, request.model, request.protocol, http_path)
+            )
+        else:
+            cur.execute(
+                "INSERT INTO cameras (mac, ip, model, protocol, rtsp_path) VALUES (?, ?, ?, ?, ?)",
+                (request.mac, request.ip, request.model, request.protocol, rtsp_path)
+            )
+        logger.info(f"Added camera {request.ip} ({request.mac}, {request.model}) to lodge.db")
+
     conn.commit()
     conn.close()
 
-    logger.info(f"Added camera {request.ip} ({request.mac}, {request.model}) to lodge.db")
+    # If moved, stop any worker running at the old IP
+    stopped_old = False
+    if old_ip:
+        # Check pool
+        if pool is not None and old_ip in pool.readers:
+            pool.remove_camera(old_ip)
+            stopped_old = True
+            logger.info(f"Stopped pool reader for old IP {old_ip}")
+        # Check HTTP workers
+        with workers_lock:
+            old_worker = workers.pop(old_ip, None)
+        if old_worker:
+            old_worker["stop_event"].set()
+            old_worker["process"].join(timeout=2)
+            if old_worker["process"].is_alive():
+                old_worker["process"].kill()
+            stopped_old = True
+            logger.info(f"Stopped HTTP worker for old IP {old_ip}")
+        with stats_lock:
+            camera_stats.pop(old_ip, None)
 
     # Auto-add to running detection if pool is active
     started = False
@@ -1712,17 +1777,20 @@ def add_camera(request: AddCameraRequest):
             # RTSP cameras go into the pool
             user, passwd = get_camera_credentials(request.model, request.ip)
             passwd_enc = quote(passwd, safe='')
-            rtsp_url = f"rtsp://{user}:{passwd_enc}@{request.ip}:554{rtsp_path}"
+            rtsp_url = f"rtsp://{user}:{passwd_enc}@{request.ip}:554{request.rtsp_path or '/Streaming/Channels/101'}"
             pool.add_camera(request.ip, rtsp_url, target_fps=target_fps)
             started = True
             logger.info(f"Auto-added {request.ip} to pool")
 
     return {
-        "added": request.ip,
+        "action": action,
+        "ip": request.ip,
         "mac": request.mac,
         "model": request.model,
         "protocol": request.protocol,
         "started": started,
+        "old_ip": old_ip,
+        "stopped_old": stopped_old,
     }
 
 

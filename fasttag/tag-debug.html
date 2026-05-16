@@ -781,7 +781,11 @@
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Failed to add");
-      return { ok: true, message: `Added ${ip} as ${preset}`, started: d.started };
+      let msg;
+      if (d.action === "moved") msg = `Moved ${d.old_ip} → ${ip}`;
+      else if (d.action === "exists") msg = `Already at ${ip}`;
+      else msg = `Added ${ip} as ${preset}`;
+      return { ok: true, message: msg, started: d.started };
     } catch (e) {
       return { ok: false, message: e.message };
     }
