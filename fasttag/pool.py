@@ -11,6 +11,7 @@ Author: modeltcamerascat gen-45
 """
 
 import os
+import sys
 import time
 import threading
 import multiprocessing
@@ -189,6 +190,8 @@ class FrameReader(threading.Thread):
     def run(self):
         reconnect_delay = 1.0
         max_reconnect_delay = 30.0
+        connect_failures = 0
+        last_fail_log = 0.0
 
         while not self.stop_event.is_set():
             try:
@@ -198,6 +201,12 @@ class FrameReader(threading.Thread):
                 if not cap.isOpened():
                     self.status = "reconnecting"
                     self.last_error = "VideoCapture failed to open"
+                    connect_failures += 1
+                    # Log persistent failures (likely auth or connectivity issue)
+                    now = time.time()
+                    if connect_failures >= 3 and now - last_fail_log > 60:
+                        logger.warning(f"FrameReader {self.camera_ip}: {connect_failures} consecutive connection failures — check credentials or connectivity")
+                        last_fail_log = now
                     time.sleep(reconnect_delay)
                     reconnect_delay = min(reconnect_delay * 2, max_reconnect_delay)
                     continue
@@ -205,6 +214,7 @@ class FrameReader(threading.Thread):
                 self.status = "running"
                 self.last_error = None
                 reconnect_delay = 1.0
+                connect_failures = 0  # reset on successful connect
                 last_frame_time = 0.0
 
                 while not self.stop_event.is_set():
@@ -332,19 +342,18 @@ def detector_process(
     # Connect to shared memory
     pool = FramePoolReader(shm_names, slot_size)
 
-    # Suppress SharedMemory cleanup errors only during shutdown (harmless Windows quirk).
-    # Python splits exception output across multiple write() calls, so we match several patterns.
+    # Suppress all stderr during shutdown — SharedMemory cleanup spams harmless
+    # BufferError tracebacks on Windows, split across many write() calls.
+    # Real errors at shutdown don't matter (process is exiting anyway).
     import sys
     _orig_stderr = sys.stderr
-    _shm_patterns = ("BufferError", "cannot close exported", "SharedMemory.__del__", "_mmap.close()")
-    class _SuppressBufferErrorOnShutdown:
+    class _QuietShutdown:
         def write(self, s):
-            if stop_event.is_set() and any(p in s for p in _shm_patterns):
-                return
-            _orig_stderr.write(s)
+            if not stop_event.is_set():
+                _orig_stderr.write(s)
         def flush(self):
             _orig_stderr.flush()
-    sys.stderr = _SuppressBufferErrorOnShutdown()
+    sys.stderr = _QuietShutdown()
 
     # Create detector
     families = config.get("families", "tagCustom48h12")
