@@ -825,6 +825,7 @@ class StartRequest(BaseModel):
     cameras: List[str] = []  # list of camera IPs, or empty for "all"
     config: Optional[dict] = None  # override default config
     auto_stop_seconds: float = 0  # 0 = no auto-stop; >0 schedules /stop after N seconds
+    skip_arp: bool = False  # True = skip ARP check, start all cameras regardless of network presence
 
 class StopRequest(BaseModel):
     cameras: List[str] = []  # list of camera IPs, or empty for "all"
@@ -989,6 +990,24 @@ def start_cameras(request: StartRequest):
     if not cam_ips:
         raise HTTPException(status_code=400, detail="No cameras found")
 
+    # ARP check — skip cameras not present on network (unless skip_arp=True)
+    skipped_offline = []
+    if not request.skip_arp:
+        arp = _read_arp_table()
+        reachable_ips = []
+        for ip in cam_ips:
+            if ip in arp:
+                reachable_ips.append(ip)
+            else:
+                skipped_offline.append(ip)
+                logger.info(f"Skipped {ip} — not in ARP table (offline)")
+        if skipped_offline:
+            logger.info(f"ARP check: {len(skipped_offline)} cameras offline, {len(reachable_ips)} reachable")
+        cam_ips = reachable_ips
+
+    if not cam_ips and not skipped_offline:
+        raise HTTPException(status_code=400, detail="No cameras found")
+
     # Ensure pool for RTSP cameras (creates 3 detector processes)
     with pool_lock:
         if pool is None:
@@ -1078,6 +1097,7 @@ def start_cameras(request: StartRequest):
         "started": started,
         "already_running": already_running,
         "skipped_disabled": skipped,
+        "skipped_offline": skipped_offline,
         "errors": errors,
         "total_active": total_active,
         "pool_detectors": len([d for d in pool_status.get("detectors", []) if d.get("alive")]),
