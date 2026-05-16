@@ -1897,6 +1897,9 @@ def live_overlay(
                 no_frame_count = 0
                 logger.info(f"live-overlay: using pool frames for {camera_ip}")
                 while time.time() < deadline:
+                    if pool is None:
+                        logger.info(f"live-overlay: {camera_ip} pool stopped, ending stream")
+                        return
                     now = time.time()
                     if frame_interval > 0 and (now - last_emit) < frame_interval:
                         time.sleep(0.02)

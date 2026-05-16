@@ -332,13 +332,14 @@ def detector_process(
     # Connect to shared memory
     pool = FramePoolReader(shm_names, slot_size)
 
-    # Suppress SharedMemory BufferError only during shutdown (harmless Windows quirk).
+    # Suppress SharedMemory cleanup errors only during shutdown (harmless Windows quirk).
+    # Python splits exception output across multiple write() calls, so we match several patterns.
     import sys
     _orig_stderr = sys.stderr
+    _shm_patterns = ("BufferError", "cannot close exported", "SharedMemory.__del__", "_mmap.close()")
     class _SuppressBufferErrorOnShutdown:
         def write(self, s):
-            # Only suppress during shutdown (stop_event set)
-            if stop_event.is_set() and ("BufferError" in s or "cannot close exported" in s):
+            if stop_event.is_set() and any(p in s for p in _shm_patterns):
                 return
             _orig_stderr.write(s)
         def flush(self):
