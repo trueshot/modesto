@@ -369,6 +369,11 @@ session_pool_stats = {
     "total_slots_in_use": 0,
 }
 
+# Detection stats for session summary — ip -> {"count": N, "tags": set()}
+session_detection_stats: dict = {}
+session_all_tags: set = set()  # all unique tags seen this session
+last_detection_scan_time: float = 0.0
+
 # Shared queue for HTTP workers only
 result_queue: Optional[multiprocessing.Queue] = None
 
@@ -515,6 +520,23 @@ def _update_session_camera_stats():
             session_pool_stats["max_pressure"] = max(session_pool_stats["max_pressure"], pressure)
             session_pool_stats["total_slots_in_use"] += slots_in_use
 
+        # Scan detection buffer for new detections since last scan
+        global last_detection_scan_time
+        with detection_lock:
+            for det in detection_buffer:
+                ts = det.get("timestamp", 0)
+                if ts <= last_detection_scan_time:
+                    continue
+                ip = det.get("camera_ip")
+                tag_id = det.get("tag_id")
+                if ip and tag_id is not None:
+                    if ip not in session_detection_stats:
+                        session_detection_stats[ip] = {"count": 0, "tags": set()}
+                    session_detection_stats[ip]["count"] += 1
+                    session_detection_stats[ip]["tags"].add(tag_id)
+                    session_all_tags.add(tag_id)
+        last_detection_scan_time = now
+
 
 def _log_session_summary():
     """Log aggregate camera health summary for the last interval."""
@@ -567,10 +589,15 @@ def _log_session_summary():
                 elif reconnects >= 1:
                     grade = chr(min(ord(grade) + 1, ord("F")))  # downgrade one letter
 
+            # Detection stats for this camera
+            det_stats = session_detection_stats.get(ip, {"count": 0, "tags": set()})
+            det_count = det_stats["count"]
+            det_tags = len(det_stats["tags"])
+
             lines.append(
                 f"  {ip:>15} | {mac:>17} | {model:>12} | "
                 f"fps={avg_fps:>4.1f} frames={total_frames:>6} peak={peak_frames:>6} up={uptime_pct:>5.1f}% "
-                f"reconn={reconnects} [{grade}]"
+                f"reconn={reconnects} dets={det_count:>5} tags={det_tags:>3} [{grade}]"
             )
 
         # Pool pressure summary
@@ -585,6 +612,11 @@ def _log_session_summary():
                 f"slots: avg={avg_slots:.1f}"
             )
 
+        # Detection totals
+        total_dets = sum(d["count"] for d in session_detection_stats.values())
+        lines.append(f"  [TAGS] detections={total_dets} unique_tags={len(session_all_tags)}" +
+                     (f" ids={sorted(session_all_tags)}" if session_all_tags else ""))
+
         logger.info("\n".join(lines))
 
         # Reset stats for next interval (per-window, not cumulative)
@@ -595,6 +627,8 @@ def _log_session_summary():
         session_pool_stats["total_pressure"] = 0.0
         session_pool_stats["max_pressure"] = 0.0
         session_pool_stats["total_slots_in_use"] = 0
+        session_detection_stats.clear()
+        session_all_tags.clear()
 
     last_summary_time = now
 
@@ -1876,6 +1910,7 @@ def get_session_summary():
         cameras = {}
         for ip, s in session_camera_stats.items():
             samples = s["samples"]
+            det_stats = session_detection_stats.get(ip, {"count": 0, "tags": set()})
             cameras[ip] = {
                 "mac": s["mac"],
                 "model": s["model"],
@@ -1885,8 +1920,12 @@ def get_session_summary():
                 "peak_frame_seq": s["peak_frame_seq"],
                 "reconnects": s["reconnects"],
                 "samples": samples,
+                "detections": det_stats["count"],
+                "unique_tags": sorted(det_stats["tags"]),
             }
         ps = dict(session_pool_stats)
+        total_dets = sum(d["count"] for d in session_detection_stats.values())
+        all_tags = sorted(session_all_tags)
 
     # Also log to file
     _log_session_summary()
@@ -1901,6 +1940,10 @@ def get_session_summary():
             "avg_pressure_pct": round(ps["total_pressure"] / ps["samples"], 2) if ps["samples"] else 0,
             "max_pressure_pct": ps["max_pressure"],
         } if ps["samples"] else None,
+        "detections": {
+            "total": total_dets,
+            "unique_tags": all_tags,
+        },
     }
 
 
