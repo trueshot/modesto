@@ -378,6 +378,7 @@ last_detection_scan_time: float = 0.0
 # A "gap" is a period > GAP_THRESHOLD_S with no detection of that tag
 GAP_THRESHOLD_S = 5.0
 MIN_STABLE_COUNT = 10  # need at least this many detections to be "stable"
+FLICKERY_DENSITY_THRESHOLD = 3.0  # dets/s below this is flickery (assumes ~5fps cameras)
 session_tag_stats: dict = {}
 
 # Shared queue for HTTP workers only
@@ -668,21 +669,28 @@ def _log_session_summary():
                 gaps = len(gap_times)
                 med_gap = median(gap_times)
 
-                # Stability label
+                # Detection density (dets/sec)
+                duration = ts["last_seen"] - ts["first_seen"]
+                density = ts["count"] / duration if duration > 0 else 0
+
+                # Stability label (density takes precedence for flickery)
                 if ts["count"] < MIN_STABLE_COUNT:
                     stability = "rare"
-                elif gaps == 0:
-                    stability = "stable"
+                elif density > 0 and density < FLICKERY_DENSITY_THRESHOLD:
+                    stability = "flickery"
                 elif gaps >= 3:
                     stability = "flaky"
-                else:
+                elif gaps > 0:
                     stability = "spotty"
+                else:
+                    stability = "stable"
 
                 # Outlier flag
                 outlier = " OUTLIER?" if (tag_id < outlier_low or tag_id > outlier_high) else ""
 
                 gap_str = f"{gaps:>2} gaps" + (f" med={med_gap:.0f}s" if gaps > 0 else "")
-                lines.append(f"    #{tag_id:<5} {ts['count']:>5} dets, {cams} cam{'s' if cams != 1 else ''}, "
+                density_str = f"{density:.1f}/s" if duration > 1 else ""
+                lines.append(f"    #{tag_id:<5} {ts['count']:>5} dets {density_str:>6}, {cams} cam{'s' if cams != 1 else ''}, "
                              f"{gap_str} ({stability}){outlier}")
 
         logger.info("\n".join(lines))
@@ -2022,18 +2030,26 @@ def get_session_summary():
             gaps = len(gap_times)
             count = ts["count"]
 
+            # Detection density
+            duration = ts["last_seen"] - ts["first_seen"]
+            density = count / duration if duration > 0 else 0
+
+            # Stability label (density takes precedence for flickery)
             if count < MIN_STABLE_COUNT:
                 stability = "rare"
-            elif gaps == 0:
-                stability = "stable"
+            elif density > 0 and density < FLICKERY_DENSITY_THRESHOLD:
+                stability = "flickery"
             elif gaps >= 3:
                 stability = "flaky"
-            else:
+            elif gaps > 0:
                 stability = "spotty"
+            else:
+                stability = "stable"
 
             tags[tag_id] = {
                 "count": count,
                 "cameras": sorted(ts["cameras"]),
+                "density_per_s": round(density, 2) if duration > 1 else None,
                 "gaps": gaps,
                 "median_gap_s": round(median(gap_times), 1) if gaps else None,
                 "stability": stability,
