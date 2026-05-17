@@ -7,33 +7,89 @@ Cycles through camera resolutions, measures detection quality at each,
 finds the optimal resolution for AprilTag detection.
 
 Usage:
-    python resolution-tuner.py 192.168.1.250
+    python resolution-tuner.py <camera-ip>
 
 APIs used:
-    - Camera service (8001): resolution control via duplex mode
+    - Camera service (8001): resolution control via duplex mode, version info
     - FastTag (8003): detection metrics
+    - lodge.db: sensor_profiles table for per-sensor resolution support
 """
 
 import sys
 import time
 import json
+import sqlite3
 import requests
 import numpy as np
 from dataclasses import dataclass
 from typing import Optional
+from pathlib import Path
 
 CAMERA_SERVICE = "http://127.0.0.1:8001"
 FASTTAG_SERVICE = "http://127.0.0.1:8003"
+DB_PATH = Path("C:/clients/modesto/warehouses/lodge/lodge.db")
 
-RESOLUTIONS = [
-    ("SVGA", "800x600"),
-    ("XGA", "1024x768"),
-    ("UXGA", "1600x1200"),
-]
+# Preset name to dimensions mapping
+RESOLUTION_DIMS = {
+    "QVGA": "320x240",
+    "VGA": "640x480",
+    "SVGA": "800x600",
+    "XGA": "1024x768",
+    "UXGA": "1600x1200",
+}
 
 SAMPLE_DURATION_SEC = 120  # 2 minutes per resolution
 WARMUP_SEC = 10  # wait after resolution change before sampling
 DARKNESS_THRESHOLD = 80  # mean pixel value below this = likely too dark for reliable detection
+
+
+def get_camera_sketch(camera_ip: str) -> Optional[str]:
+    """Get sketch name from camera /version endpoint."""
+    url = f"{CAMERA_SERVICE}/api/http-cameras/{camera_ip}/version"
+    try:
+        resp = requests.get(url, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            return data.get("sketch")
+        return None
+    except Exception as e:
+        print(f"  Warning: couldn't get version ({e})")
+        return None
+
+
+def get_sensor_profile(sketch: str) -> tuple[list[str], str]:
+    """
+    Query sensor_profiles table for resolutions supported by this sketch.
+    Returns (resolution_list, default_resolution).
+    Fallback: (["SVGA"], "SVGA") if sketch not found or DB error.
+    """
+    fallback = (["SVGA"], "SVGA")
+
+    if not DB_PATH.exists():
+        print(f"  Warning: DB not found at {DB_PATH}, using fallback")
+        return fallback
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT resolutions, default_res FROM sensor_profiles WHERE sketch = ?",
+            (sketch,)
+        )
+        row = cur.fetchone()
+        conn.close()
+
+        if row:
+            resolutions = json.loads(row[0])
+            default_res = row[1]
+            return (resolutions, default_res)
+        else:
+            print(f"  Warning: sketch '{sketch}' not in sensor_profiles, using fallback")
+            return fallback
+
+    except Exception as e:
+        print(f"  Warning: DB query failed ({e}), using fallback")
+        return fallback
 
 
 def check_brightness(camera_ip: str) -> tuple[bool, float]:
@@ -266,7 +322,7 @@ def recommend(results: list[ResolutionResult]) -> Optional[ResolutionResult]:
 def main():
     if len(sys.argv) < 2:
         print("Usage: python resolution-tuner.py <camera-ip>")
-        print("Example: python resolution-tuner.py 192.168.1.250")
+        print("Example: python resolution-tuner.py 192.168.0.250")
         sys.exit(1)
 
     camera_ip = sys.argv[1]
@@ -275,12 +331,24 @@ def main():
     print(f"{'='*60}")
 
     # Setup
-    print("\n[1/5] Enabling duplex mode...")
+    print("\n[1/6] Enabling duplex mode...")
     if not enable_duplex(camera_ip):
         print("Failed to enable duplex mode. Aborting.")
         sys.exit(1)
 
-    print("\n[2/5] Checking scene brightness...")
+    print("\n[2/6] Detecting sensor type...")
+    sketch = get_camera_sketch(camera_ip)
+    if sketch:
+        print(f"  Sketch: {sketch}")
+    else:
+        print("  Could not detect sketch, using fallback profile")
+        sketch = "__unknown__"
+
+    resolutions, default_res = get_sensor_profile(sketch)
+    print(f"  Resolutions: {resolutions}")
+    print(f"  Default: {default_res}")
+
+    print("\n[3/6] Checking scene brightness...")
     is_bright, mean_val = check_brightness(camera_ip)
     if not is_bright:
         print(f"  Scene too dark (mean={mean_val:.1f}, threshold={DARKNESS_THRESHOLD}).")
@@ -288,7 +356,7 @@ def main():
         sys.exit(1)
     print(f"  Brightness OK (mean={mean_val:.1f})")
 
-    print("\n[3/5] Starting FastTag detection...")
+    print("\n[4/6] Starting FastTag detection...")
     if not start_fasttag(camera_ip):
         print("Failed to start FastTag. Aborting.")
         sys.exit(1)
@@ -297,11 +365,12 @@ def main():
     print("  Waiting 10s for detection to stabilize...")
     time.sleep(10)
 
-    # Test each resolution
-    print(f"\n[4/5] Testing {len(RESOLUTIONS)} resolutions...")
+    # Test each resolution (low→high for faster warmup at low res)
+    print(f"\n[5/6] Testing {len(resolutions)} resolutions...")
     results = []
 
-    for preset, dimensions in RESOLUTIONS:
+    for preset in resolutions:
+        dimensions = RESOLUTION_DIMS.get(preset, "?x?")
         print(f"\n  Setting resolution to {preset}...")
         if not set_resolution(camera_ip, preset):
             print(f"  Skipping {preset} — failed to set")
@@ -314,9 +383,9 @@ def main():
         results.append(result)
         print_result(result)
 
-    # Reset to baseline
-    print("\n[5/5] Resetting to SVGA (baseline)...")
-    set_resolution(camera_ip, "SVGA")
+    # Reset to sensor default
+    print(f"\n[6/6] Resetting to {default_res} (sensor default)...")
+    set_resolution(camera_ip, default_res)
 
     # Summary
     print(f"\n{'='*60}")
