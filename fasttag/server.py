@@ -378,7 +378,7 @@ last_detection_scan_time: float = 0.0
 # A "gap" is a period > GAP_THRESHOLD_S with no detection of that tag
 GAP_THRESHOLD_S = 5.0
 MIN_STABLE_COUNT = 10  # need at least this many detections to be "stable"
-FLICKERY_DENSITY_THRESHOLD = 3.0  # dets/s below this is flickery (assumes ~5fps cameras)
+FLICKERY_HIT_RATE = 0.6  # need to detect tag on 60% of frames to be stable
 session_tag_stats: dict = {}
 
 # Shared queue for HTTP workers only
@@ -661,6 +661,12 @@ def _log_session_summary():
                 mid = len(s) // 2
                 return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
 
+            # Build camera fps lookup
+            cam_fps = {}
+            for ip, s in session_camera_stats.items():
+                if s["samples"] > 0:
+                    cam_fps[ip] = s["total_fps"] / s["samples"]
+
             # Sort by detection count descending
             for tag_id in sorted(session_tag_stats.keys(), key=lambda t: -session_tag_stats[t]["count"]):
                 ts = session_tag_stats[tag_id]
@@ -669,14 +675,19 @@ def _log_session_summary():
                 gaps = len(gap_times)
                 med_gap = median(gap_times)
 
-                # Detection density (dets/sec)
+                # Detection density and hit rate
                 duration = ts["last_seen"] - ts["first_seen"]
                 density = ts["count"] / duration if duration > 0 else 0
 
-                # Stability label (density takes precedence for flickery)
+                # Expected fps = average of cameras that saw this tag
+                tag_cam_fps = [cam_fps.get(ip, 0) for ip in ts["cameras"] if cam_fps.get(ip, 0) > 0]
+                expected_fps = sum(tag_cam_fps) / len(tag_cam_fps) if tag_cam_fps else 0
+                hit_rate = density / expected_fps if expected_fps > 0 else 0
+
+                # Stability label (hit rate takes precedence for flickery)
                 if ts["count"] < MIN_STABLE_COUNT:
                     stability = "rare"
-                elif density > 0 and density < FLICKERY_DENSITY_THRESHOLD:
+                elif expected_fps > 0 and hit_rate < FLICKERY_HIT_RATE:
                     stability = "flickery"
                 elif gaps >= 3:
                     stability = "flaky"
@@ -689,8 +700,8 @@ def _log_session_summary():
                 outlier = " OUTLIER?" if (tag_id < outlier_low or tag_id > outlier_high) else ""
 
                 gap_str = f"{gaps:>2} gaps" + (f" med={med_gap:.0f}s" if gaps > 0 else "")
-                density_str = f"{density:.1f}/s" if duration > 1 else ""
-                lines.append(f"    #{tag_id:<5} {ts['count']:>5} dets {density_str:>6}, {cams} cam{'s' if cams != 1 else ''}, "
+                hit_str = f"{hit_rate*100:.0f}%" if duration > 1 and expected_fps > 0 else ""
+                lines.append(f"    #{tag_id:<5} {ts['count']:>5} dets {hit_str:>4}, {cams} cam{'s' if cams != 1 else ''}, "
                              f"{gap_str} ({stability}){outlier}")
 
         logger.info("\n".join(lines))
@@ -2024,20 +2035,31 @@ def get_session_summary():
         else:
             outlier_low, outlier_high = 0, float('inf')
 
+        # Build camera fps lookup
+        cam_fps = {}
+        for ip, s in session_camera_stats.items():
+            if s["samples"] > 0:
+                cam_fps[ip] = s["total_fps"] / s["samples"]
+
         tags = {}
         for tag_id, ts in session_tag_stats.items():
             gap_times = ts["gap_times"]
             gaps = len(gap_times)
             count = ts["count"]
 
-            # Detection density
+            # Detection density and hit rate
             duration = ts["last_seen"] - ts["first_seen"]
             density = count / duration if duration > 0 else 0
 
-            # Stability label (density takes precedence for flickery)
+            # Expected fps = average of cameras that saw this tag
+            tag_cam_fps = [cam_fps.get(ip, 0) for ip in ts["cameras"] if cam_fps.get(ip, 0) > 0]
+            expected_fps = sum(tag_cam_fps) / len(tag_cam_fps) if tag_cam_fps else 0
+            hit_rate = density / expected_fps if expected_fps > 0 else 0
+
+            # Stability label (hit rate takes precedence for flickery)
             if count < MIN_STABLE_COUNT:
                 stability = "rare"
-            elif density > 0 and density < FLICKERY_DENSITY_THRESHOLD:
+            elif expected_fps > 0 and hit_rate < FLICKERY_HIT_RATE:
                 stability = "flickery"
             elif gaps >= 3:
                 stability = "flaky"
@@ -2049,7 +2071,7 @@ def get_session_summary():
             tags[tag_id] = {
                 "count": count,
                 "cameras": sorted(ts["cameras"]),
-                "density_per_s": round(density, 2) if duration > 1 else None,
+                "hit_rate_pct": round(hit_rate * 100, 1) if duration > 1 and expected_fps > 0 else None,
                 "gaps": gaps,
                 "median_gap_s": round(median(gap_times), 1) if gaps else None,
                 "stability": stability,
