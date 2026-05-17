@@ -182,7 +182,7 @@
 
     <div class="run-card">
         <div class="run-header">
-            <h3>192.168.0.40</h3>
+            <h3>192.168.0.40 (Run 1)</h3>
             <div class="meta">
                 <span>Sketch: poe_cam_eth.ino</span>
                 <span class="brightness-ok">Brightness: 134.4</span>
@@ -258,6 +258,90 @@
             <strong>Recommendation: SVGA (800x600)</strong> — highest min margin (43.7), close to threshold
         </div>
         <div class="warning">XGA has best avg (52.5) and 75% detections &gt;50, but lower min margin. Consider XGA if stability matters more than worst-case.</div>
+    </div>
+
+    <div class="run-card">
+        <div class="run-header">
+            <h3>192.168.0.40 (Run 2)</h3>
+            <div class="meta">
+                <span>Sketch: poe_cam_eth.ino</span>
+                <span class="brightness-ok">Brightness: 131.8</span>
+                <span>Auto-stop: 2510s</span>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Resolution</th>
+                    <th class="num">Min Margin</th>
+                    <th class="num">Avg Margin</th>
+                    <th class="num">Max Margin</th>
+                    <th class="num">Detections</th>
+                    <th class="num">Tags</th>
+                    <th class="num">&gt;50</th>
+                    <th>Verdict</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>QVGA (320x240)</td>
+                    <td class="num">0.0</td>
+                    <td class="num">0.0</td>
+                    <td class="num">0.0</td>
+                    <td class="num">0</td>
+                    <td class="num">0</td>
+                    <td class="num">0</td>
+                    <td class="verdict poor">POOR</td>
+                </tr>
+                <tr>
+                    <td>VGA (640x480)</td>
+                    <td class="num">26.4</td>
+                    <td class="num">41.1</td>
+                    <td class="num">46.3</td>
+                    <td class="num">688</td>
+                    <td class="num">2</td>
+                    <td class="num">0</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr>
+                    <td>SVGA (800x600)</td>
+                    <td class="num">28.0</td>
+                    <td class="num">39.2</td>
+                    <td class="num">47.5</td>
+                    <td class="num">1148</td>
+                    <td class="num">2</td>
+                    <td class="num">0</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr>
+                    <td>XGA (1024x768)</td>
+                    <td class="num">30.1</td>
+                    <td class="num">40.2</td>
+                    <td class="num">48.0</td>
+                    <td class="num">1135</td>
+                    <td class="num">2</td>
+                    <td class="num">0</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr>
+                    <td>UXGA (1600x1200)</td>
+                    <td class="num">26.5</td>
+                    <td class="num">38.4</td>
+                    <td class="num">47.9</td>
+                    <td class="num">1132</td>
+                    <td class="num">2</td>
+                    <td class="num">0</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="recommendation">
+            <strong>Recommendation: XGA (1024x768)</strong> — highest min margin (30.1)
+        </div>
+        <div class="warning">
+            <strong>vs Run 1:</strong> Detection count ~doubled (2 tags now visible at all resolutions vs 1 before at SVGA+).
+            Margins slightly lower (max ~48 vs ~64). Second tag came into view.
+        </div>
     </div>
 
     <h2>2026-05-16 (Yesterday — Dark Scene)</h2>
