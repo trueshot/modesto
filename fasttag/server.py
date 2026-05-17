@@ -374,9 +374,10 @@ session_detection_stats: dict = {}
 session_all_tags: set = set()  # all unique tags seen this session
 last_detection_scan_time: float = 0.0
 
-# Per-tag stats — tag_id -> {"count", "cameras": set, "first_seen", "last_seen", "gaps"}
+# Per-tag stats — tag_id -> {"count", "cameras": set, "first_seen", "last_seen", "gap_times": []}
 # A "gap" is a period > GAP_THRESHOLD_S with no detection of that tag
 GAP_THRESHOLD_S = 5.0
+MIN_STABLE_COUNT = 10  # need at least this many detections to be "stable"
 session_tag_stats: dict = {}
 
 # Shared queue for HTTP workers only
@@ -549,12 +550,13 @@ def _update_session_camera_stats():
                             "cameras": set(),
                             "first_seen": ts,
                             "last_seen": ts,
-                            "gaps": 0,
+                            "gap_times": [],
                         }
                     tag_s = session_tag_stats[tag_id]
                     # Check for gap since last detection of this tag
-                    if tag_s["count"] > 0 and (ts - tag_s["last_seen"]) > GAP_THRESHOLD_S:
-                        tag_s["gaps"] += 1
+                    gap_duration = ts - tag_s["last_seen"]
+                    if tag_s["count"] > 0 and gap_duration > GAP_THRESHOLD_S:
+                        tag_s["gap_times"].append(gap_duration)
                     tag_s["count"] += 1
                     tag_s["cameras"].add(ip)
                     tag_s["last_seen"] = ts
@@ -639,14 +641,49 @@ def _log_session_summary():
         total_dets = sum(d["count"] for d in session_detection_stats.values())
         lines.append(f"  [TAGS] {len(session_tag_stats)} unique, {total_dets} total detections")
         if session_tag_stats:
+            # Detect outlier tag IDs using IQR
+            tag_ids = sorted(session_tag_stats.keys())
+            if len(tag_ids) >= 4:
+                q1_idx, q3_idx = len(tag_ids) // 4, 3 * len(tag_ids) // 4
+                q1, q3 = tag_ids[q1_idx], tag_ids[q3_idx]
+                iqr = q3 - q1
+                outlier_low, outlier_high = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+            else:
+                # Not enough tags for IQR — use median-based heuristic
+                median_id = tag_ids[len(tag_ids) // 2]
+                outlier_low, outlier_high = median_id * 0.1, median_id * 10
+
+            def median(vals):
+                if not vals:
+                    return 0
+                s = sorted(vals)
+                mid = len(s) // 2
+                return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
+
             # Sort by detection count descending
             for tag_id in sorted(session_tag_stats.keys(), key=lambda t: -session_tag_stats[t]["count"]):
                 ts = session_tag_stats[tag_id]
                 cams = len(ts["cameras"])
-                gaps = ts["gaps"]
-                stability = "stable" if gaps == 0 else f"flaky" if gaps >= 3 else "spotty"
-                lines.append(f"    #{tag_id:<4} {ts['count']:>5} dets, {cams} cam{'s' if cams != 1 else ''}, "
-                             f"{gaps:>2} gaps >{GAP_THRESHOLD_S:.0f}s ({stability})")
+                gap_times = ts["gap_times"]
+                gaps = len(gap_times)
+                med_gap = median(gap_times)
+
+                # Stability label
+                if ts["count"] < MIN_STABLE_COUNT:
+                    stability = "rare"
+                elif gaps == 0:
+                    stability = "stable"
+                elif gaps >= 3:
+                    stability = "flaky"
+                else:
+                    stability = "spotty"
+
+                # Outlier flag
+                outlier = " OUTLIER?" if (tag_id < outlier_low or tag_id > outlier_high) else ""
+
+                gap_str = f"{gaps:>2} gaps" + (f" med={med_gap:.0f}s" if gaps > 0 else "")
+                lines.append(f"    #{tag_id:<5} {ts['count']:>5} dets, {cams} cam{'s' if cams != 1 else ''}, "
+                             f"{gap_str} ({stability}){outlier}")
 
         logger.info("\n".join(lines))
 
@@ -1959,14 +1996,48 @@ def get_session_summary():
         total_dets = sum(d["count"] for d in session_detection_stats.values())
         all_tags = sorted(session_all_tags)
 
-        # Per-tag stats
+        # Per-tag stats with outlier detection
+        def median(vals):
+            if not vals:
+                return 0
+            s = sorted(vals)
+            mid = len(s) // 2
+            return s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2
+
+        tag_ids = sorted(session_tag_stats.keys())
+        if len(tag_ids) >= 4:
+            q1_idx, q3_idx = len(tag_ids) // 4, 3 * len(tag_ids) // 4
+            q1, q3 = tag_ids[q1_idx], tag_ids[q3_idx]
+            iqr = q3 - q1
+            outlier_low, outlier_high = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        elif tag_ids:
+            median_id = tag_ids[len(tag_ids) // 2]
+            outlier_low, outlier_high = median_id * 0.1, median_id * 10
+        else:
+            outlier_low, outlier_high = 0, float('inf')
+
         tags = {}
         for tag_id, ts in session_tag_stats.items():
+            gap_times = ts["gap_times"]
+            gaps = len(gap_times)
+            count = ts["count"]
+
+            if count < MIN_STABLE_COUNT:
+                stability = "rare"
+            elif gaps == 0:
+                stability = "stable"
+            elif gaps >= 3:
+                stability = "flaky"
+            else:
+                stability = "spotty"
+
             tags[tag_id] = {
-                "count": ts["count"],
+                "count": count,
                 "cameras": sorted(ts["cameras"]),
-                "gaps": ts["gaps"],
-                "stability": "stable" if ts["gaps"] == 0 else "flaky" if ts["gaps"] >= 3 else "spotty",
+                "gaps": gaps,
+                "median_gap_s": round(median(gap_times), 1) if gaps else None,
+                "stability": stability,
+                "outlier": tag_id < outlier_low or tag_id > outlier_high,
             }
 
     # Also log to file
