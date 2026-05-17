@@ -1,5 +1,5 @@
 -- lodge.db snapshot
--- Generated: 2026-04-25T03:10:47.198Z
+-- Generated: 2026-05-17T01:49:16.381Z
 
 BEGIN TRANSACTION;
 
@@ -57,12 +57,15 @@ INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_119',NULL,'WC-MT94Wi28',NULL,NUL
 INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_169',NULL,'IPC',NULL,NULL,'192.168.0.169',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL,NULL);
 INSERT INTO "cameras" VALUES('UNKNOWN_192_168_0_235',NULL,'WC-MT94Wi28',NULL,NULL,'192.168.0.235',NULL,NULL,NULL,'Added from NVR1 console screenshot 2026-03-08. MAC unknown — behind NVR PoE.','2026-03-08 15:35:49',NULL,0,0,NULL,NULL,NULL);
 INSERT INTO "cameras" VALUES('46:1d:64:60:8a:84','PoE-CAM','M5Stack',NULL,'1024x768','192.168.0.7',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-10 18:44:14',NULL,0,1,'http','/stream',NULL);
-INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a4:98','PoE-CAM',NULL,NULL,'1024x768','192.168.0.221',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/stream',NULL);
 INSERT INTO "cameras" VALUES('3e:8a:1f:d7:9f:9c','PoE-CAM',NULL,NULL,'1280x720','192.168.0.229',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/stream',NULL);
 INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a4:a8','PoE-CAM',NULL,NULL,'1600x1200','192.168.0.230',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/stream','{"r": 20.9, "g": 12.8, "b": 23.5, "brightness": 15.3, "std": 32.2, "samples": 10, "source_log": "poecam-reliability.jsonl", "ambient_temp_f": 63, "captured_at": "2026-04-17T07:37:06.311481+00:00"}');
 INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a1:70','PoE-CAM',NULL,NULL,'640x480','192.168.0.231',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/stream',NULL);
 INSERT INTO "cameras" VALUES('3e:8a:1f:d7:a4:dc','PoE-CAM',NULL,NULL,NULL,'192.168.0.232',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/stream',NULL);
 INSERT INTO "cameras" VALUES('46:1d:64:60:8a:44','PoE-CAM','M5Stack',NULL,'1024x768','192.168.0.226',NULL,NULL,NULL,'ESP32 PoE camera. DHCP - IP may change on reboot. Factory firmware is M5PoECAM-style (github.com/m5stack/M5PoECAM): single-client HTTP server, any path returns one JPEG, /stream is MJPEG multipart (~9 fps). Request/response locks up after ~40 requests (W5500 socket pool). Persistent /stream is stable — use that via a proxy mediator. Warning (M5Stack docs): continuous high-res streaming can overheat and cause abnormal colors; needs cooling or duty cycling. Button on side cycles resolution. Docs: docs.m5stack.com/en/unit/M5PoECAM-W%20V1.1','2026-04-17 06:18:00',NULL,0,1,'http','/stream',NULL);
+INSERT INTO "cameras" VALUES('44:1d:64:60:8a:47','PoE-CAM',NULL,NULL,NULL,'192.168.0.250',NULL,NULL,NULL,NULL,'2026-05-14 20:26:47',NULL,NULL,NULL,'http','/stream',NULL);
+INSERT INTO "cameras" VALUES('3c:8a:1f:d7:a1:73','PoE-CAM',NULL,NULL,NULL,'192.168.0.252',NULL,NULL,NULL,NULL,'2026-05-14 20:49:54',NULL,NULL,NULL,'http','/stream',NULL);
+INSERT INTO "cameras" VALUES('44:1d:64:60:8a:87','PoE-CAM',NULL,NULL,NULL,'192.168.0.40',NULL,NULL,NULL,NULL,'2026-05-14 20:57:00',NULL,NULL,NULL,'http','/stream',NULL);
+INSERT INTO "cameras" VALUES('c4:79:05:e4:f5:0f','Uniview',NULL,NULL,NULL,'192.168.0.221',NULL,NULL,NULL,NULL,'2026-05-14 22:14:09','/Streaming/Channels/101',NULL,NULL,'rtsp',NULL,NULL);
 
 CREATE TABLE channels (
     id TEXT PRIMARY KEY,              -- 'nvr1_ch01', 'nvr2_ch05'
@@ -225,6 +228,7 @@ CREATE TABLE mac_prefixes (
 
 INSERT INTO "mac_prefixes" VALUES('3e:8a:1f:d7','PoE-CAM (LAA, stock M5PoECam batch B)','poe-cam','Locally-administered MAC family seen on 5 PoE-CAMs at the lodge as of gen-43. Set by stock M5PoECam firmware; not a real Espressif OUI. After M5CamServer flash these cams will switch to factory ETH MACs (real Espressif OUIs).');
 INSERT INTO "mac_prefixes" VALUES('46:1d:64:60:8a','PoE-CAM (LAA, stock M5PoECam batch A — M5Stack-marked)','poe-cam','Locally-administered MAC family seen on 2 PoE-CAMs at the lodge. These two have manufacturer="M5Stack" set in the cameras table; the 3e:8a:1f:d7 batch does not. After M5CamServer flash these will switch to factory ETH MACs.');
+INSERT INTO "mac_prefixes" VALUES('44:1d:64','PoE-CAM (LAA, stock M5PoECam batch C)','poe-cam','Locally-administered MAC seen on PoE-CAM at .10. Added gen-46.');
 
 CREATE TABLE mount_fiducial_visibility (
     mount_id TEXT REFERENCES mounts(id),
@@ -360,6 +364,16 @@ CREATE TABLE nvrs (
 
 INSERT INTO "nvrs" VALUES('nvr1','GW Security',NULL,'192.168.0.17','00:23:63:6e:bc:7f',16,'rtsp','ch{channel:02d}/0',NULL,NULL,'Back online 2026-02-17 at .6. Empty password. 14 active channels (ch08,ch11 empty). Ports 80,554,9000.','2026-01-22 12:23:18',NULL,'OURS',0);
 INSERT INTO "nvrs" VALUES('nvr2','UNIVIEW','XVR302-16Q3','192.168.0.10','c4:79:05:e4:f5:0f',24,'rtsp','unicast/c{channel}/s0',NULL,NULL,'Chinese UNIVIEW hybrid NVR. LAPI partially functional. Web UI in Chinese.','2026-01-22 12:23:18','210235XJGM324C000048','OURS',1);
+
+CREATE TABLE sensor_profiles (
+  sketch TEXT PRIMARY KEY,
+  sensor TEXT,
+  resolutions TEXT,
+  default_res TEXT
+);
+
+INSERT INTO "sensor_profiles" VALUES('poe_cam_eth.ino','OV3660','["QVGA", "VGA", "SVGA", "XGA", "UXGA"]','SVGA');
+INSERT INTO "sensor_profiles" VALUES('unit_cams3.ino','OV5640','["QVGA", "VGA", "UXGA"]','QVGA');
 
 CREATE TABLE sqlite_sequence(name,seq);
 
