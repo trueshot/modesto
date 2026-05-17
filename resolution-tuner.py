@@ -167,14 +167,18 @@ def set_resolution(camera_ip: str, preset: str) -> bool:
         return False
 
 
-def start_fasttag(camera_ip: str) -> bool:
-    """Start FastTag detection on camera."""
+def start_fasttag(camera_ip: str, auto_stop_seconds: int = 0) -> bool:
+    """Start FastTag detection on camera with optional auto-stop."""
     url = f"{FASTTAG_SERVICE}/start"
     payload = {"cameras": [camera_ip]}
+    if auto_stop_seconds > 0:
+        payload["auto_stop_seconds"] = auto_stop_seconds
     try:
         resp = requests.post(url, json=payload, timeout=10)
         if resp.status_code == 200:
             print(f"  FastTag started on {camera_ip}")
+            if auto_stop_seconds > 0:
+                print(f"  Auto-stop in {auto_stop_seconds}s ({auto_stop_seconds // 60}m)")
             return True
         else:
             print(f"  Failed to start FastTag: {resp.status_code} {resp.text}")
@@ -356,8 +360,13 @@ def main():
         sys.exit(1)
     print(f"  Brightness OK (mean={mean_val:.1f})")
 
+    # Calculate estimated run time for auto-stop
+    # (resolutions × (sample + warmup)) + setup overhead + 30 min buffer
+    estimated_run = len(resolutions) * (SAMPLE_DURATION_SEC + WARMUP_SEC) + 60
+    auto_stop = estimated_run + 1800
+
     print("\n[4/6] Starting FastTag detection...")
-    if not start_fasttag(camera_ip):
+    if not start_fasttag(camera_ip, auto_stop_seconds=auto_stop):
         print("Failed to start FastTag. Aborting.")
         sys.exit(1)
 
