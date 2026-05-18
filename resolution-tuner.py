@@ -21,11 +21,13 @@ import json
 import sqlite3
 import requests
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+from datetime import datetime
 from typing import Optional
 from pathlib import Path
 
 CAMERA_SERVICE = "http://127.0.0.1:8001"
+LOG_DIR = Path("C:/clients/modesto/tuner-logs")
 FASTTAG_SERVICE = "http://127.0.0.1:8003"
 DB_PATH = Path("C:/clients/modesto/warehouses/lodge/lodge.db")
 
@@ -41,6 +43,73 @@ RESOLUTION_DIMS = {
 SAMPLE_DURATION_SEC = 120  # 2 minutes per resolution
 WARMUP_SEC = 10  # wait after resolution change before sampling
 DARKNESS_THRESHOLD = 80  # mean pixel value below this = likely too dark for reliable detection
+
+
+class TunerLog:
+    """Dual-output logger: prints to stdout and writes to timestamped log file."""
+
+    def __init__(self, camera_ip: str):
+        self.camera_ip = camera_ip
+        self.start_time = datetime.now()
+        self.ts = self.start_time.strftime("%Y%m%d_%H%M%S")
+
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        self.log_path = LOG_DIR / f"tuner_{camera_ip.replace('.', '_')}_{self.ts}.log"
+        self.json_path = LOG_DIR / f"tuner_{camera_ip.replace('.', '_')}_{self.ts}.json"
+
+        self.file = open(self.log_path, "w", encoding="utf-8", buffering=1)
+        self.results_data = {
+            "camera_ip": camera_ip,
+            "started": self.start_time.isoformat(),
+            "sketch": None,
+            "brightness": None,
+            "resolutions": [],
+            "recommendation": None,
+        }
+
+    def print(self, msg: str = ""):
+        print(msg)
+        self.file.write(msg + "\n")
+
+    def set_meta(self, key: str, value):
+        self.results_data[key] = value
+
+    def add_result(self, r: 'ResolutionResult'):
+        """Add a resolution result to the JSON log."""
+        result_dict = {
+            "preset": r.preset,
+            "dimensions": r.dimensions,
+            "fps": round(r.fps, 2),
+            "detection_count": r.detection_count,
+            "unique_tags": r.unique_tags,
+            "margin_min": round(r.margin_min, 1),
+            "margin_avg": round(r.margin_avg, 1),
+            "tags": {}
+        }
+        for tag_id, t in r.tags.items():
+            result_dict["tags"][tag_id] = {
+                "detection_count": t.detection_count,
+                "margin_min": round(t.margin_min, 1),
+                "margin_avg": round(t.margin_avg, 1),
+                "margin_max": round(t.margin_max, 1),
+                "position_mean": [round(t.position_mean[0], 1), round(t.position_mean[1], 1)],
+                "position_std": t.position_std,
+                "corner_span_avg": round(t.corner_span_avg, 1),
+                "verdict": t.verdict(),
+            }
+        self.results_data["resolutions"].append(result_dict)
+
+    def set_recommendation(self, preset: str, reason: str):
+        self.results_data["recommendation"] = {"preset": preset, "reason": reason}
+
+    def close(self):
+        self.results_data["finished"] = datetime.now().isoformat()
+        self.file.close()
+        with open(self.json_path, "w", encoding="utf-8") as f:
+            json.dump(self.results_data, f, indent=2)
+        print(f"\nLogs written to:")
+        print(f"  {self.log_path}")
+        print(f"  {self.json_path}")
 
 
 def get_camera_sketch(camera_ip: str) -> Optional[str]:
@@ -361,19 +430,20 @@ def sample_resolution(camera_ip: str, preset: str, dimensions: str) -> Resolutio
     )
 
 
-def print_result(r: ResolutionResult):
+def print_result(r: ResolutionResult, log: Optional[TunerLog] = None):
     """Print result summary with per-tag breakdown."""
-    print(f"\n  {r.preset} ({r.dimensions}):")
-    print(f"    Total: {r.detection_count} detections, {r.unique_tags} tags")
+    out = log.print if log else print
+    out(f"\n  {r.preset} ({r.dimensions}):")
+    out(f"    Total: {r.detection_count} detections, {r.unique_tags} tags")
 
     for tag_id in sorted(r.tags.keys()):
         t = r.tags[tag_id]
         motion = "stationary" if t.position_std < 10 else f"moving ±{t.position_std:.0f}px"
-        print(f"    Tag {tag_id}: {t.detection_count} det, "
-              f"margin {t.margin_min:.0f}-{t.margin_max:.0f} (avg {t.margin_avg:.0f}), "
-              f"pos ({t.position_mean[0]:.0f},{t.position_mean[1]:.0f}) {motion}, "
-              f"span {t.corner_span_avg:.0f}px [{t.verdict()}]")
-    print(f"    FPS: {r.fps:.1f}")
+        out(f"    Tag {tag_id}: {t.detection_count} det, "
+            f"margin {t.margin_min:.0f}-{t.margin_max:.0f} (avg {t.margin_avg:.0f}), "
+            f"pos ({t.position_mean[0]:.0f},{t.position_mean[1]:.0f}) {motion}, "
+            f"span {t.corner_span_avg:.0f}px [{t.verdict()}]")
+    out(f"    FPS: {r.fps:.1f}")
 
 
 def recommend(results: list[ResolutionResult]) -> Optional[ResolutionResult]:
@@ -399,94 +469,106 @@ def main():
         sys.exit(1)
 
     camera_ip = sys.argv[1]
-    print(f"\n{'='*60}")
-    print(f"Resolution Auto-Tuner — Camera {camera_ip}")
-    print(f"{'='*60}")
+    log = TunerLog(camera_ip)
+
+    log.print(f"\n{'='*60}")
+    log.print(f"Resolution Auto-Tuner — Camera {camera_ip}")
+    log.print(f"{'='*60}")
 
     # Setup
-    print("\n[1/6] Enabling duplex mode...")
+    log.print("\n[1/6] Enabling duplex mode...")
     if not enable_duplex(camera_ip):
-        print("Failed to enable duplex mode. Aborting.")
+        log.print("Failed to enable duplex mode. Aborting.")
+        log.close()
         sys.exit(1)
 
-    print("\n[2/6] Detecting sensor type...")
+    log.print("\n[2/6] Detecting sensor type...")
     sketch = get_camera_sketch(camera_ip)
     if sketch:
-        print(f"  Sketch: {sketch}")
+        log.print(f"  Sketch: {sketch}")
     else:
-        print("  Could not detect sketch, using fallback profile")
+        log.print("  Could not detect sketch, using fallback profile")
         sketch = "__unknown__"
+    log.set_meta("sketch", sketch)
 
     resolutions, default_res = get_sensor_profile(sketch)
-    print(f"  Resolutions: {resolutions}")
-    print(f"  Default: {default_res}")
+    log.print(f"  Resolutions: {resolutions}")
+    log.print(f"  Default: {default_res}")
 
-    print("\n[3/6] Checking scene brightness...")
+    log.print("\n[3/6] Checking scene brightness...")
     is_bright, mean_val = check_brightness(camera_ip)
+    log.set_meta("brightness", round(mean_val, 1))
     if not is_bright:
-        print(f"  Scene too dark (mean={mean_val:.1f}, threshold={DARKNESS_THRESHOLD}).")
-        print("  Lights may be off. Aborting.")
+        log.print(f"  Scene too dark (mean={mean_val:.1f}, threshold={DARKNESS_THRESHOLD}).")
+        log.print("  Lights may be off. Aborting.")
+        log.close()
         sys.exit(1)
-    print(f"  Brightness OK (mean={mean_val:.1f})")
+    log.print(f"  Brightness OK (mean={mean_val:.1f})")
 
     # Calculate estimated run time for auto-stop
     # (resolutions × (sample + warmup)) + setup overhead + 30 min buffer
     estimated_run = len(resolutions) * (SAMPLE_DURATION_SEC + WARMUP_SEC) + 60
     auto_stop = estimated_run + 1800
 
-    print("\n[4/6] Starting FastTag detection...")
+    log.print("\n[4/6] Starting FastTag detection...")
     if not start_fasttag(camera_ip, auto_stop_seconds=auto_stop):
-        print("Failed to start FastTag. Aborting.")
+        log.print("Failed to start FastTag. Aborting.")
+        log.close()
         sys.exit(1)
 
     # Wait for detection to stabilize
-    print("  Waiting 10s for detection to stabilize...")
+    log.print("  Waiting 10s for detection to stabilize...")
     time.sleep(10)
 
     # Test each resolution (low→high for faster warmup at low res)
-    print(f"\n[5/6] Testing {len(resolutions)} resolutions...")
+    log.print(f"\n[5/6] Testing {len(resolutions)} resolutions...")
     results = []
 
     for preset in resolutions:
         dimensions = RESOLUTION_DIMS.get(preset, "?x?")
-        print(f"\n  Setting resolution to {preset}...")
+        log.print(f"\n  Setting resolution to {preset}...")
         if not set_resolution(camera_ip, preset):
-            print(f"  Skipping {preset} — failed to set")
+            log.print(f"  Skipping {preset} — failed to set")
             continue
 
-        print(f"  Warming up for {WARMUP_SEC}s...")
+        log.print(f"  Warming up for {WARMUP_SEC}s...")
         time.sleep(WARMUP_SEC)
 
         result = sample_resolution(camera_ip, preset, dimensions)
         results.append(result)
-        print_result(result)
+        print_result(result, log)
+        log.add_result(result)
 
     # Reset to sensor default
-    print(f"\n[6/6] Resetting to {default_res} (sensor default)...")
+    log.print(f"\n[6/6] Resetting to {default_res} (sensor default)...")
     set_resolution(camera_ip, default_res)
 
     # Summary
-    print(f"\n{'='*60}")
-    print("RESULTS SUMMARY")
-    print(f"{'='*60}")
+    log.print(f"\n{'='*60}")
+    log.print("RESULTS SUMMARY")
+    log.print(f"{'='*60}")
 
     for r in results:
         quality = "RELIABLE" if r.margin_min > 50 else "MARGINAL" if r.margin_min > 20 else "POOR"
-        print(f"  {r.preset:6} | min={r.margin_min:5.1f} | avg={r.margin_avg:5.1f} | count={r.detection_count:4} | {quality}")
+        log.print(f"  {r.preset:6} | min={r.margin_min:5.1f} | avg={r.margin_avg:5.1f} | count={r.detection_count:4} | {quality}")
 
     # Recommendation
     best = recommend(results)
     if best:
-        print(f"\n  RECOMMENDATION: {best.preset} ({best.dimensions})")
+        log.print(f"\n  RECOMMENDATION: {best.preset} ({best.dimensions})")
         if best.margin_min > 50:
-            print(f"    Reason: min margin {best.margin_min:.1f} > 50 (reliable), {best.detection_count} detections")
+            reason = f"min margin {best.margin_min:.1f} > 50 (reliable), {best.detection_count} detections"
+            log.print(f"    Reason: {reason}")
         else:
-            print(f"    Reason: highest min margin ({best.margin_min:.1f}) — but still below 50 threshold")
-            print(f"    WARNING: All resolutions produced marginal/poor detections")
+            reason = f"highest min margin ({best.margin_min:.1f}) — but still below 50 threshold"
+            log.print(f"    Reason: {reason}")
+            log.print(f"    WARNING: All resolutions produced marginal/poor detections")
+        log.set_recommendation(best.preset, reason)
     else:
-        print("\n  No recommendation — insufficient data")
+        log.print("\n  No recommendation — insufficient data")
 
-    print(f"\n{'='*60}")
+    log.print(f"\n{'='*60}")
+    log.close()
 
 
 if __name__ == "__main__":
