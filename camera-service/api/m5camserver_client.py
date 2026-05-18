@@ -35,11 +35,18 @@ from typing import Iterator, Optional
 
 @dataclass
 class VersionInfo:
-    """Result of one /version probe. is_m5camserver=False when the cam
-    didn't respond with M5CamServer-shaped JSON (could be stock firmware,
-    a non-camera HTTP device, or unreachable). The error field always
-    explains the negative case."""
-    is_m5camserver: bool
+    """Result of one /version probe.
+
+    is_m5camserver values:
+      True  — verified M5CamServer (got a valid JSON response with the right fields)
+      False — verified NOT M5CamServer (got an HTTP response that proves it: 404,
+              non-JSON 200, JSON missing required fields). Stock firmware lives here.
+      None  — uncertain. Transport failed before we saw any HTTP response
+              (ConnectionRefused, timeout, network unreachable). Could be a
+              wedged cam, a mediator holding the W5500 slot, or just offline.
+              Never let `None` overwrite a known True/False verdict.
+    """
+    is_m5camserver: Optional[bool]
     sketch: Optional[str] = None
     sketch_md5: Optional[str] = None
     build_date: Optional[str] = None
@@ -79,10 +86,15 @@ class M5CamServerProbe:
         Pass force=True to bypass cache and refetch (e.g. after a known firmware
         flash or power cycle).
 
-        On probe failure, prior successful info is preserved (timestamp bumped)
-        rather than overwritten with the failure — transient connection issues
-        (e.g. mediator holding the W5500 single-client slot) shouldn't erase
-        known-good firmware info.
+        Caching rules for transport failures (is_m5camserver=None):
+          - If a prior transport_ok entry exists, preserve it (bump its timestamp)
+            so transient ConnectionRefused / timeout doesn't erase a known-good
+            (or known-stock) verdict.
+          - If no prior entry exists, return the failure but DO NOT cache it.
+            A poisoned cache on first probe is what made .250 show "not a
+            camserver" while it was happily streaming via the mediator — the
+            mediator held the W5500 slot, the pre-warm probe got refused, and
+            the cache locked in that wrong answer.
         """
         cache_key = f"{ip}:{port}"
         with self._lock:
@@ -93,12 +105,13 @@ class M5CamServerProbe:
         info = self._probe(ip, port)
         with self._lock:
             prior = self._cache.get(cache_key)
-            # Preserve a prior probe that reached the application layer
-            # ("stock firmware detected" counts as informative) when the
-            # current probe failed at transport (ConnectionRefused / timeout).
-            if not info.transport_ok and prior is not None and prior.transport_ok:
-                prior.fetched_at = time.time()
-                return prior
+            if not info.transport_ok:
+                # Transport failure: preserve a prior good entry if we have one,
+                # otherwise return uncertain WITHOUT caching.
+                if prior is not None and prior.transport_ok:
+                    prior.fetched_at = time.time()
+                    return prior
+                return info
             self._cache[cache_key] = info
         return info
 
@@ -108,14 +121,19 @@ class M5CamServerProbe:
             return self._cache.get(f"{ip}:{port}")
 
     def _probe(self, ip: str, port: int) -> VersionInfo:
-        info = VersionInfo(is_m5camserver=False, fetched_at=time.time())
+        # Default to None (uncertain) — only set False/True once we've actually
+        # seen the HTTP layer respond with something definitive.
+        info = VersionInfo(is_m5camserver=None, fetched_at=time.time())
         conn = None
         try:
             conn = http.client.HTTPConnection(ip, port=port, timeout=self.timeout_s)
             conn.request("GET", "/version")
             resp = conn.getresponse()
             info.transport_ok = True  # got past TCP open + first HTTP byte
+            # From here on, every return path saw the HTTP layer respond, so
+            # is_m5camserver becomes a definitive True/False — never None.
             if resp.status != 200:
+                info.is_m5camserver = False
                 info.error = f"HTTP {resp.status}"
                 return info
             ct = (resp.getheader("Content-Type") or "").lower()
@@ -124,14 +142,17 @@ class M5CamServerProbe:
                 # Stock M5PoECam returns a JPEG for any non-/stream path,
                 # so a non-JSON response is the signature of stock firmware
                 # (or any device that doesn't speak M5CamServer).
+                info.is_m5camserver = False
                 info.error = f"non-JSON response ({ct or 'unknown'}) — likely stock firmware"
                 return info
             try:
                 data = json.loads(body)
             except json.JSONDecodeError as e:
+                info.is_m5camserver = False
                 info.error = f"invalid JSON: {e}"
                 return info
             if not isinstance(data, dict) or not self._REQUIRED_FIELDS.issubset(data.keys()):
+                info.is_m5camserver = False
                 info.error = "JSON missing M5CamServer fields"
                 return info
             info.is_m5camserver = True
