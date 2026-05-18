@@ -92,17 +92,189 @@
             margin-bottom: 15px;
             color: #900;
         }
+        .per-tag { margin-top: 20px; }
+        .per-tag h4 { margin: 10px 0 5px 0; font-size: 14px; color: #555; }
+        .per-tag table { font-size: 13px; }
+        .tag-bad { background: #fff0f0; }
+        .tag-weak { background: #fffaf0; }
+        .insight {
+            background: #f0fff4;
+            border-left: 4px solid #2a2;
+            padding: 12px 16px;
+            margin-top: 15px;
+            border-radius: 0 4px 4px 0;
+        }
+        .insight strong { color: #060; }
     </style>
 </head>
 <body>
     <h1>Resolution Auto-Tuner Results</h1>
     <p>AprilTag detection quality across camera resolutions. Goal: find resolution with min margin &gt; 50 (reliable tracking).</p>
 
-    <h2>2026-05-17 (Today)</h2>
+    <h2>2026-05-17 — Per-Tag Analysis (Latest)</h2>
 
     <div class="run-card">
         <div class="run-header">
-            <h3>192.168.0.250</h3>
+            <h3>192.168.0.40 — Per-Tag Breakdown</h3>
+            <div class="meta">
+                <span>Sketch: poe_cam_eth.ino</span>
+                <span class="brightness-ok">Brightness: 135.7</span>
+                <span>Tags: 148, 149</span>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Resolution</th>
+                    <th class="num">Tag 148 Avg</th>
+                    <th class="num">Tag 148 Span</th>
+                    <th>Tag 148</th>
+                    <th class="num">Tag 149 Avg</th>
+                    <th class="num">Tag 149 Span</th>
+                    <th>Tag 149</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>QVGA (320x240)</td>
+                    <td class="num">28</td>
+                    <td class="num">25px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num">45</td>
+                    <td class="num">33px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr>
+                    <td>VGA (640x480)</td>
+                    <td class="num">27</td>
+                    <td class="num">27px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num">45</td>
+                    <td class="num">33px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr>
+                    <td>SVGA (800x600)</td>
+                    <td class="num">29</td>
+                    <td class="num">32px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num">46</td>
+                    <td class="num">41px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr style="background: #f0fff0;">
+                    <td><strong>XGA (1024x768)</strong></td>
+                    <td class="num"><strong>35</strong></td>
+                    <td class="num">41px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num">46</td>
+                    <td class="num">53px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr>
+                    <td>UXGA (1600x1200)</td>
+                    <td class="num">31</td>
+                    <td class="num">62px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num">44</td>
+                    <td class="num">80px</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="recommendation">
+            <strong>Recommendation: XGA (1024x768)</strong> — best margin for weak tag (148: 35 avg vs 27-31 at other resolutions)
+        </div>
+        <div class="insight">
+            <strong>Tag 148 is the weak link</strong> — consistently 27-35 avg margin vs Tag 149's 44-46. Both tags are MARGINAL at all resolutions.
+        </div>
+    </div>
+
+    <div class="run-card">
+        <div class="run-header">
+            <h3>192.168.0.250 — Per-Tag Breakdown</h3>
+            <div class="meta">
+                <span>Sketch: poe_cam_eth.ino</span>
+                <span class="brightness-ok">Brightness: 144.7</span>
+                <span>Tags: 150, 151, 152</span>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Resolution</th>
+                    <th class="num">Tag 150 Avg</th>
+                    <th>Tag 150</th>
+                    <th class="num">Tag 151 Avg</th>
+                    <th>Tag 151</th>
+                    <th class="num">Tag 152 Avg</th>
+                    <th>Tag 152</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>QVGA (320x240)</td>
+                    <td class="num tag-bad">—</td>
+                    <td class="verdict poor tag-bad">—</td>
+                    <td class="num">—</td>
+                    <td class="verdict poor">—</td>
+                    <td class="num">20</td>
+                    <td class="verdict poor">POOR</td>
+                </tr>
+                <tr>
+                    <td>VGA (640x480)</td>
+                    <td class="num tag-bad">—</td>
+                    <td class="verdict poor tag-bad">—</td>
+                    <td class="num">27</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num">21</td>
+                    <td class="verdict poor">POOR</td>
+                </tr>
+                <tr>
+                    <td>SVGA (800x600)</td>
+                    <td class="num tag-bad">10</td>
+                    <td class="verdict poor tag-bad">POOR</td>
+                    <td class="num">27</td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num">26</td>
+                    <td class="verdict poor">POOR</td>
+                </tr>
+                <tr style="background: #f0fff0;">
+                    <td><strong>XGA (1024x768)</strong></td>
+                    <td class="num tag-bad">12</td>
+                    <td class="verdict poor tag-bad">POOR</td>
+                    <td class="num"><strong>35</strong></td>
+                    <td class="verdict marginal">MARGINAL</td>
+                    <td class="num"><strong>34</strong></td>
+                    <td class="verdict marginal">MARGINAL</td>
+                </tr>
+                <tr>
+                    <td>UXGA (1600x1200)</td>
+                    <td class="num tag-bad">13</td>
+                    <td class="verdict poor tag-bad">POOR</td>
+                    <td class="num">27</td>
+                    <td class="verdict poor">POOR</td>
+                    <td class="num">27</td>
+                    <td class="verdict poor">POOR</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="recommendation">
+            <strong>Recommendation: XGA (1024x768)</strong> — best for Tags 151/152 (34-35 avg). Ignore Tag 150.
+        </div>
+        <div class="dark-warning">
+            <strong>Tag 150 is broken</strong> — never exceeds margin 16 at any resolution. Needs physical inspection: damaged print, bad angle, or obstruction.
+        </div>
+        <div class="insight">
+            <strong>Without Tag 150:</strong> .250 would be MARGINAL like .40. XGA gives best results for the working tags.
+        </div>
+    </div>
+
+    <h2>2026-05-17 — Earlier Runs (Aggregate Only)</h2>
+
+    <div class="run-card">
+        <div class="run-header">
+            <h3>192.168.0.250 (Run 1)</h3>
             <div class="meta">
                 <span>Sketch: poe_cam_eth.ino</span>
                 <span class="brightness-ok">Brightness: 142.4</span>
@@ -403,13 +575,27 @@
     <div class="summary">
         <h2>Key Findings</h2>
         <ul>
+            <li><strong>Per-tag analysis reveals weak links:</strong> Aggregate "min margin" hides which specific tag is dragging down results. Tag 150 on .250 is broken (margin 10-16); Tag 148 on .40 is weak but functional (margin 27-35).</li>
+            <li><strong>XGA is the sweet spot:</strong> Both cameras perform best at XGA (1024x768). Higher resolution (UXGA) doesn't help and often hurts — more pixels but worse margins.</li>
+            <li><strong>Tag 150 needs physical inspection:</strong> Never exceeds margin 16 regardless of resolution or lighting. Likely damaged, angled badly, or partially obscured.</li>
             <li><strong>Lighting matters:</strong> .250 went from all-POOR (dark) to MARGINAL (lit). Brightness check (mean &gt;80) is necessary but not sufficient — color/IR issues not caught by grayscale mean.</li>
-            <li><strong>QVGA unusable:</strong> Zero detections on both cameras — tags too small at 320x240.</li>
-            <li><strong>Detection threshold:</strong> VGA (640x480) is the minimum viable resolution. Tags must be ~25+ pixels corner-to-corner.</li>
-            <li><strong>Sweet spot varies by camera:</strong> .250 prefers XGA, .40 prefers SVGA. Depends on tag distance and field of view.</li>
-            <li><strong>Higher resolution trade-off:</strong> UXGA finds more tags but often with worse margins — more pixels doesn't always mean better detection.</li>
+            <li><strong>QVGA surprisingly works:</strong> .40 detected tags at QVGA (320x240) with margin 28-45. Earlier runs showed zero — may depend on tag distance and lighting.</li>
             <li><strong>Neither camera reliable:</strong> No resolution achieved min margin &gt;50. May need closer tags, better angles, or larger tag prints.</li>
         </ul>
+
+        <h3>Per-Tag Summary</h3>
+        <table style="max-width: 600px;">
+            <thead>
+                <tr><th>Camera</th><th>Tag</th><th>Best Res</th><th>Best Margin</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>.40</td><td>148</td><td>XGA</td><td>35 avg</td><td class="verdict marginal">Weak link</td></tr>
+                <tr><td>.40</td><td>149</td><td>Any</td><td>44-46 avg</td><td class="verdict marginal">OK</td></tr>
+                <tr><td>.250</td><td>150</td><td>—</td><td>10-13 avg</td><td class="verdict poor">BROKEN</td></tr>
+                <tr><td>.250</td><td>151</td><td>XGA</td><td>35 avg</td><td class="verdict marginal">OK</td></tr>
+                <tr><td>.250</td><td>152</td><td>XGA</td><td>34 avg</td><td class="verdict marginal">OK</td></tr>
+            </tbody>
+        </table>
 
         <h3>Margin Thresholds</h3>
         <ul>
@@ -421,7 +607,7 @@
     </div>
 
     <footer style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 13px;">
-        Generated by resolution-tuner.py — modeltapriltagcat gen-18
+        Generated by resolution-tuner.py — modeltapriltagcat gen-19
     </footer>
 </body>
 </html>
