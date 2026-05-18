@@ -120,18 +120,63 @@ def check_brightness(camera_ip: str) -> tuple[bool, float]:
 
 
 @dataclass
-class ResolutionResult:
-    preset: str
-    dimensions: str
+class TagResult:
+    tag_id: int
     detection_count: int
     margin_min: float
     margin_avg: float
     margin_max: float
-    margin_above_50: int
-    margin_above_100: int
-    unique_tags: int
+    position_mean: tuple  # (cx, cy)
+    position_std: float   # sqrt(var_x + var_y), 0 = stationary
+    corner_span_min: float
+    corner_span_avg: float
+    corner_span_max: float
+
+    def verdict(self) -> str:
+        """Classify tag detection quality."""
+        if self.margin_min >= 50:
+            return "RELIABLE"
+        elif self.margin_min >= 20:
+            if self.corner_span_avg < 25:
+                return "MARGINAL (small)"
+            return "MARGINAL"
+        else:
+            return "POOR"
+
+
+@dataclass
+class ResolutionResult:
+    preset: str
+    dimensions: str
+    tags: dict  # tag_id -> TagResult
     fps: float
     sample_duration: float
+
+    @property
+    def detection_count(self) -> int:
+        return sum(t.detection_count for t in self.tags.values())
+
+    @property
+    def unique_tags(self) -> int:
+        return len(self.tags)
+
+    @property
+    def margin_min(self) -> float:
+        if not self.tags:
+            return 0.0
+        return min(t.margin_min for t in self.tags.values())
+
+    @property
+    def margin_avg(self) -> float:
+        if not self.tags:
+            return 0.0
+        total = sum(t.margin_avg * t.detection_count for t in self.tags.values())
+        count = sum(t.detection_count for t in self.tags.values())
+        return total / count if count > 0 else 0.0
+
+    @property
+    def margin_above_50(self) -> int:
+        return sum(1 for t in self.tags.values() if t.margin_min >= 50)
 
 
 def enable_duplex(camera_ip: str) -> bool:
@@ -225,7 +270,7 @@ def compute_corner_span(corners: list) -> float:
 
 
 def sample_resolution(camera_ip: str, preset: str, dimensions: str) -> ResolutionResult:
-    """Sample detection quality at current resolution."""
+    """Sample detection quality at current resolution with per-tag tracking."""
     print(f"\n  Sampling {preset} ({dimensions}) for {SAMPLE_DURATION_SEC}s...")
 
     start_ts = time.time()
@@ -264,46 +309,70 @@ def sample_resolution(camera_ip: str, preset: str, dimensions: str) -> Resolutio
             seen.add(key)
             unique_dets.append(d)
 
-    # Compute stats
-    margins = [d.get("decision_margin", 0) for d in unique_dets]
-    unique_tags = len(set(d.get("tag_id") for d in unique_dets))
+    # Group by tag_id and compute per-tag stats
+    tags_data: dict[int, list] = {}
+    for d in unique_dets:
+        tag_id = d.get("tag_id")
+        if tag_id is not None:
+            if tag_id not in tags_data:
+                tags_data[tag_id] = []
+            tags_data[tag_id].append(d)
 
-    if not margins:
-        return ResolutionResult(
-            preset=preset,
-            dimensions=dimensions,
-            detection_count=0,
-            margin_min=0,
-            margin_avg=0,
-            margin_max=0,
-            margin_above_50=0,
-            margin_above_100=0,
-            unique_tags=0,
-            fps=sum(fps_samples) / len(fps_samples) if fps_samples else 0,
-            sample_duration=SAMPLE_DURATION_SEC,
+    # Build TagResult for each tag
+    tags: dict[int, TagResult] = {}
+    for tag_id, detections in tags_data.items():
+        margins = [d.get("decision_margin", 0) for d in detections]
+
+        # Position stats
+        positions = [(d.get("center", [0, 0])) for d in detections]
+        cx_vals = [p[0] for p in positions]
+        cy_vals = [p[1] for p in positions]
+        pos_mean = (np.mean(cx_vals), np.mean(cy_vals)) if cx_vals else (0, 0)
+        pos_std = (np.std(cx_vals)**2 + np.std(cy_vals)**2)**0.5 if cx_vals else 0
+
+        # Corner span (diagonal distance)
+        spans = []
+        for d in detections:
+            corners = d.get("corners", [])
+            if len(corners) == 4:
+                c0, c2 = corners[0], corners[2]
+                span = ((c2[0] - c0[0])**2 + (c2[1] - c0[1])**2)**0.5
+                spans.append(span)
+
+        tags[tag_id] = TagResult(
+            tag_id=tag_id,
+            detection_count=len(detections),
+            margin_min=min(margins) if margins else 0,
+            margin_avg=sum(margins) / len(margins) if margins else 0,
+            margin_max=max(margins) if margins else 0,
+            position_mean=pos_mean,
+            position_std=round(pos_std, 1),
+            corner_span_min=min(spans) if spans else 0,
+            corner_span_avg=sum(spans) / len(spans) if spans else 0,
+            corner_span_max=max(spans) if spans else 0,
         )
 
     return ResolutionResult(
         preset=preset,
         dimensions=dimensions,
-        detection_count=len(unique_dets),
-        margin_min=min(margins),
-        margin_avg=sum(margins) / len(margins),
-        margin_max=max(margins),
-        margin_above_50=sum(1 for m in margins if m > 50),
-        margin_above_100=sum(1 for m in margins if m > 100),
-        unique_tags=unique_tags,
+        tags=tags,
         fps=sum(fps_samples) / len(fps_samples) if fps_samples else 0,
         sample_duration=SAMPLE_DURATION_SEC,
     )
 
 
 def print_result(r: ResolutionResult):
-    """Print result summary."""
+    """Print result summary with per-tag breakdown."""
     print(f"\n  {r.preset} ({r.dimensions}):")
-    print(f"    Detections: {r.detection_count} ({r.unique_tags} unique tags)")
-    print(f"    Margin: min={r.margin_min:.1f}, avg={r.margin_avg:.1f}, max={r.margin_max:.1f}")
-    print(f"    Quality: {r.margin_above_50} above 50, {r.margin_above_100} above 100")
+    print(f"    Total: {r.detection_count} detections, {r.unique_tags} tags")
+
+    for tag_id in sorted(r.tags.keys()):
+        t = r.tags[tag_id]
+        motion = "stationary" if t.position_std < 10 else f"moving ±{t.position_std:.0f}px"
+        print(f"    Tag {tag_id}: {t.detection_count} det, "
+              f"margin {t.margin_min:.0f}-{t.margin_max:.0f} (avg {t.margin_avg:.0f}), "
+              f"pos ({t.position_mean[0]:.0f},{t.position_mean[1]:.0f}) {motion}, "
+              f"span {t.corner_span_avg:.0f}px [{t.verdict()}]")
     print(f"    FPS: {r.fps:.1f}")
 
 
