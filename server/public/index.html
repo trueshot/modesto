@@ -275,7 +275,7 @@
         #cameraImageOverlay img {
             width: 100%;
             height: 100%;
-            object-fit: contain;
+            object-fit: fill;
             opacity: 0.5;
         }
         #overlayControls {
@@ -598,6 +598,7 @@
         <div class="param">
             <span class="label">Type:</span>
             <select class="value-input" id="doorType" style="width: 95px;">
+                <option value="opening">opening</option>
                 <option value="interior">interior</option>
                 <option value="bay">bay</option>
                 <option value="personnel">personnel</option>
@@ -680,8 +681,10 @@
         <img id="overlayImage" src="" alt="Camera Feed">
     </div>
     <div id="overlayControls">
+        <span id="overlaySource" style="color:#9fd; font-size:11px; font-family:'Courier New',monospace;">—</span>
         <label>Opacity: <span id="opacityValue">50%</span></label>
         <input type="range" id="opacitySlider" min="0" max="100" value="50" oninput="updateOverlayOpacity(this.value)">
+        <button class="overlayBtn" onclick="loadCameraImage()">Refresh Frame</button>
         <button class="overlayBtn" onclick="toggleOverlay()">Hide Overlay</button>
     </div>
 
@@ -722,6 +725,17 @@
         let placementStep = 0;  // 0=inactive, 1=waiting for mount point, 2=waiting for target
         let placementMountPoint = null;  // {position: Vector3, normal: Vector3}
         let placementMarker = null;  // Visual marker for mount point
+
+        // Gaylord Bins — placed via AprilTag detections (instanced for perf)
+        let gaylordBins = {};       // keyed by bin ID → {instance, palletInstance, ...}
+        let binTemplateMesh = null;  // shared geometry template
+        let palletTemplateMesh = null;
+        const SLAB_TOP = 4;
+        const PALLET_HEIGHT = 0.5;   // 6 inches
+        const BIN_HEIGHT = 2.0;      // 24 inches
+        const BIN_WIDTH = 4.0;       // 48 inches (east-west)
+        const BIN_DEPTH = 3.33;      // 40 inches (north-south)
+        const CORNER_CLIP = 0.33;    // ~4 inches octagonal clip
 
         // Camera Mapping — persisted to localStorage
         let cameraMappings = JSON.parse(localStorage.getItem('cameraMappings') || '{}');
@@ -826,6 +840,7 @@
             // Save mapping: mount (food name) -> camera IP
             cameraMappings[currentCameraData.id] = {
                 ip: thumb.ip,
+                fullIp: `192.168.0.${thumb.ip}`,
                 fullUrl: thumb.fullUrl
             };
             saveMappings();
@@ -875,19 +890,39 @@
             }
         }
 
+        // Show Image: LIVE frame from the mapped camera (proxied through this
+        // server so it works over the VPN), falling back to the last static
+        // snapshot in cameras/full/ if the live grab fails.
+        // modeltbabylon gen-10, 2026-08-26 (George: "grab the associated feed")
         function loadCameraImage() {
             const img = document.getElementById('overlayImage');
-            if (currentCameraData && currentCameraData.id) {
-                const mapping = cameraMappings[currentCameraData.id];
-                if (mapping && mapping.fullUrl) {
-                    img.src = mapping.fullUrl;
-                    img.onerror = () => { img.src = ''; };
-                } else {
-                    img.src = '';
-                }
-            } else {
+            const srcEl = document.getElementById('overlaySource');
+            const mapping = currentCameraData && currentCameraData.id
+                ? cameraMappings[currentCameraData.id] : null;
+            if (!mapping) {
                 img.src = '';
+                if (srcEl) srcEl.textContent = 'No camera mapped to this mount — use Map Camera';
+                return;
             }
+            const fullIp = mapping.fullIp ||
+                (mapping.ip && String(mapping.ip).includes('.') ? mapping.ip : `192.168.0.${mapping.ip}`);
+            const liveUrl = `/api/warehouses/${currentWarehouseId}/live/${fullIp}?t=${Date.now()}`;
+            if (srcEl) srcEl.textContent = `Grabbing live frame from ${fullIp}…`;
+            img.onerror = () => {
+                // Live grab failed -> static snapshot fallback
+                img.onerror = () => {
+                    img.src = '';
+                    if (srcEl) srcEl.textContent = `No image for ${fullIp} (live + snapshot both failed)`;
+                };
+                img.src = mapping.fullUrl || '';
+                if (srcEl) srcEl.textContent = `SNAPSHOT (live grab failed) — ${fullIp}`;
+            };
+            img.onload = () => {
+                if (srcEl && img.src.includes('/live/')) {
+                    srcEl.textContent = `LIVE — ${fullIp} @ ${new Date().toLocaleTimeString()}`;
+                }
+            };
+            img.src = liveUrl;
         }
 
         function updateOverlayOpacity(value) {
@@ -1101,6 +1136,104 @@
             }
         }
 
+        // Gaylord Bin Functions — modeltbabylon gen-10 (instanced for thousands)
+        function initBinTemplates(scene) {
+            if (binTemplateMesh) return;  // already initialized
+
+            // Pallet template — simple box
+            palletTemplateMesh = BABYLON.MeshBuilder.CreateBox(
+                '_palletTemplate',
+                { width: BIN_WIDTH, height: PALLET_HEIGHT, depth: BIN_DEPTH },
+                scene
+            );
+            const palletMat = new BABYLON.StandardMaterial('palletMat', scene);
+            palletMat.diffuseColor = new BABYLON.Color3(0.55, 0.35, 0.15);
+            palletTemplateMesh.material = palletMat;
+            palletTemplateMesh.isVisible = false;  // template hidden, instances render
+
+            // Bin template — octagonal cross-section
+            const hw = BIN_WIDTH / 2;
+            const hd = BIN_DEPTH / 2;
+            const c = CORNER_CLIP;
+            const shape = [
+                new BABYLON.Vector3(-hw + c, 0, -hd),
+                new BABYLON.Vector3(hw - c, 0, -hd),
+                new BABYLON.Vector3(hw, 0, -hd + c),
+                new BABYLON.Vector3(hw, 0, hd - c),
+                new BABYLON.Vector3(hw - c, 0, hd),
+                new BABYLON.Vector3(-hw + c, 0, hd),
+                new BABYLON.Vector3(-hw, 0, hd - c),
+                new BABYLON.Vector3(-hw, 0, -hd + c)
+            ];
+            binTemplateMesh = BABYLON.MeshBuilder.ExtrudePolygon(
+                '_binTemplate',
+                { shape: shape, depth: BIN_HEIGHT },
+                scene
+            );
+            const binMat = new BABYLON.StandardMaterial('binMat', scene);
+            binMat.diffuseColor = new BABYLON.Color3(0.92, 0.9, 0.85);
+            binMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+            binTemplateMesh.material = binMat;
+            binTemplateMesh.isVisible = false;
+
+            console.log('📦 Bin templates initialized (instanced rendering ready)');
+        }
+
+        function createGaylordBin(scene, binId, svgX, svgY, options = {}) {
+            initBinTemplates(scene);
+
+            const rotation = options.rotation || 0;
+            const stacked = options.stacked || 1;
+            const label = options.label || binId;
+
+            // Remove existing bin with same ID
+            if (gaylordBins[binId]) removeGaylordBin(binId);
+
+            const rotRad = rotation * Math.PI / 180;
+            const instances = [];
+
+            for (let stack = 0; stack < stacked; stack++) {
+                const stackY = SLAB_TOP + stack * (PALLET_HEIGHT + BIN_HEIGHT);
+
+                // Pallet instance
+                const pInst = palletTemplateMesh.createInstance(`gaylord_${binId}_p${stack}`);
+                pInst.position.set(svgX, stackY + PALLET_HEIGHT / 2, -svgY);
+                pInst.rotation.y = rotRad;
+                instances.push(pInst);
+
+                // Bin instance (ExtrudePolygon extrudes downward, so offset by full height)
+                const bInst = binTemplateMesh.createInstance(`gaylord_${binId}_b${stack}`);
+                bInst.position.set(svgX, stackY + PALLET_HEIGHT + BIN_HEIGHT, -svgY);
+                bInst.rotation.y = rotRad;
+                instances.push(bInst);
+            }
+
+            gaylordBins[binId] = {
+                id: binId, instances: instances,
+                svgX: svgX, svgY: svgY,
+                rotation: rotation, stacked: stacked, label: label
+            };
+
+            return gaylordBins[binId];
+        }
+
+        function removeGaylordBin(binId) {
+            const bin = gaylordBins[binId];
+            if (bin && bin.instances) {
+                bin.instances.forEach(inst => inst.dispose());
+            }
+            delete gaylordBins[binId];
+        }
+
+        function removeAllGaylordBins() {
+            Object.keys(gaylordBins).forEach(id => removeGaylordBin(id));
+        }
+
+        function updateGaylordBin(binId, svgX, svgY, options = {}) {
+            if (!currentScene) return;
+            createGaylordBin(currentScene, binId, svgX, svgY, options);
+        }
+
         // WebSocket setup
         function initWebSocket() {
             ws = new WebSocket(`ws://${window.location.hostname}:8080`);
@@ -1134,6 +1267,30 @@
                         console.log('🔄 RELOADING WAREHOUSE:', data.warehouseId);
                         // Camera view will be automatically restored from sessionStorage after reload
                         loadWarehouse(data.warehouseId);
+                    }
+
+                    // Handle gaylord bin placement from AprilTag pipeline
+                    else if (data.type === 'place-bins') {
+                        // Expects: { type: 'place-bins', bins: [{id, svgX, svgY, rotation?, stacked?, label?}, ...] }
+                        console.log(`📦 Received ${data.bins.length} bin placements`);
+                        if (data.clearExisting) removeAllGaylordBins();
+                        data.bins.forEach(b => {
+                            if (currentScene) {
+                                createGaylordBin(currentScene, b.id, b.svgX, b.svgY, {
+                                    rotation: b.rotation || 0,
+                                    stacked: b.stacked || 1,
+                                    label: b.label || b.id
+                                });
+                            }
+                        });
+                    }
+
+                    else if (data.type === 'remove-bin') {
+                        removeGaylordBin(data.binId);
+                    }
+
+                    else if (data.type === 'clear-bins') {
+                        removeAllGaylordBins();
                     }
 
                     // Handle queries from Claude
@@ -1443,6 +1600,31 @@
                     }
                 } catch (e) {
                     console.error('Failed to load camera JSON overlay:', e);
+                }
+
+                // Load persisted mount->camera linkages from lodge.db (server is
+                // the source of truth; localStorage is only a cache). Without this,
+                // Show Image only worked in the browser that made the mapping.
+                // modeltbabylon gen-10, 2026-08-26 — closes GAP 6
+                try {
+                    const linkResp = await fetch(`/api/warehouses/${warehouseId}/linkages`);
+                    const linkData = await linkResp.json();
+                    const serverLinks = linkData.linkages || {};
+                    let n = 0;
+                    for (const [mountId, l] of Object.entries(serverLinks)) {
+                        const octet = l.ip.split('.')[3];
+                        cameraMappings[mountId] = {
+                            ip: octet,
+                            fullIp: l.ip,
+                            mac: l.mac,
+                            fullUrl: `/warehouses/${warehouseId}/cameras/full/${octet}.jpg`
+                        };
+                        n++;
+                    }
+                    saveMappings();
+                    console.log(`Loaded ${n} mount->camera linkages from server`);
+                } catch (e) {
+                    console.error('Failed to load linkages from server:', e);
                 }
 
                 // Create scene
@@ -1954,7 +2136,8 @@
             document.getElementById('doorDoorWidth').value = door.doorWidth || '';
 
             // Properties
-            document.getElementById('doorType').value = door.type || 'interior';
+            // 'opening' is the spec default when type is omitted (modeltsvgcat gen-6)
+            document.getElementById('doorType').value = door.type || 'opening';
             document.getElementById('doorOrientation').value = door.orientation || 'horizontal';
             document.getElementById('doorFacing').value = door.facing || 'north';
             document.getElementById('doorPortal').value = door.portal || '';

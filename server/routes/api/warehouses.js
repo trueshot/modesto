@@ -164,4 +164,62 @@ router.get('/:id/metadata', (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Mount -> camera linkages (the persisted result of the viewer's Map Camera)
+// GET /api/warehouses/:id/linkages
+//   -> { linkages: { <mountId>: { ip, mac, channel, confidence } } }
+// Source of truth is <id>.db (linkages JOIN cameras). The viewer loads this
+// on warehouse load so mappings work in ANY browser, not just the one that
+// made them. — modeltbabylon gen-10, 2026-08-26 (George: Show Image blank)
+// ---------------------------------------------------------------------------
+router.get('/:id/linkages', (req, res) => {
+  const { id } = req.params;
+  const dbPath = path.join(config.warehousesPath, id, `${id}.db`);
+  if (!fs.existsSync(dbPath)) return res.json({ linkages: {} });
+  try {
+    const Database = require('better-sqlite3');
+    const db = new Database(dbPath, { readonly: true });
+    const rows = db.prepare(`
+      SELECT l.mount_id, l.camera_mac, l.channel_id, l.confidence, c.ip
+      FROM linkages l LEFT JOIN cameras c ON c.mac = l.camera_mac
+    `).all();
+    db.close();
+    const linkages = {};
+    for (const r of rows) {
+      if (!r.ip) continue;
+      linkages[r.mount_id] = { ip: r.ip, mac: r.camera_mac, channel: r.channel_id, confidence: r.confidence };
+    }
+    res.json({ linkages });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Live camera frame, proxied through this server.
+// GET /api/warehouses/:id/live/:ip  -> image/jpeg (no-store)
+// camera-service (127.0.0.1:8001) is only reachable ON lodge_cat; browsers
+// over the VPN reach this server, so this route is the bridge. Same pattern
+// as modeltcamerascat's MEP /api/snapshot/:ip. — modeltbabylon gen-10
+// ---------------------------------------------------------------------------
+const CAMERA_SERVICE = process.env.CAMERA_SERVICE_URL || 'http://127.0.0.1:8001';
+router.get('/:id/live/:ip', async (req, res) => {
+  const ip = req.params.ip;
+  if (!/^[0-9]{1,3}([.][0-9]{1,3}){3}$/.test(ip)) return res.status(400).json({ error: 'bad ip' });
+  const url = `${CAMERA_SERVICE}/api/camera/${ip}/frame?encoding=jpeg&timeout=8`;
+  try {
+    const r = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      return res.status(r.status).json({ error: `camera-service ${r.status}`, detail: text.slice(0, 200) });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.set('Content-Type', r.headers.get('content-type') || 'image/jpeg');
+    res.set('Cache-Control', 'no-store');
+    res.send(buf);
+  } catch (e) {
+    res.status(504).json({ error: e.name === 'TimeoutError' ? 'capture timed out' : e.message });
+  }
+});
+
 module.exports = router;
