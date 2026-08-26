@@ -1068,9 +1068,9 @@
             const dx = targetPoint.x - mountPoint.x;
             const dz = targetPoint.z - mountPoint.z;  // In Babylon coords
 
-            // Direction: 0=North(-Z), 90=East(+X), 180=South(+Z), 270=West(-X)
-            // atan2 gives angle from +X axis, we need angle from -Z axis
-            let direction = Math.atan2(dx, -dz) * 180 / Math.PI;
+            // Direction: 0=North(+Z), 90=East(+X), 180=South(-Z), 270=West(-X)
+            // (unified 2026-08-26; Babylon Z = -svgY, so north is +Z)
+            let direction = Math.atan2(dx, dz) * 180 / Math.PI;
             if (direction < 0) direction += 360;
 
             // Calculate tilt (angle down from horizontal)
@@ -1383,7 +1383,7 @@
             const direction = new BABYLON.Vector3(
                 horizontalDist * Math.sin(directionRad),
                 verticalDist,
-                -horizontalDist * Math.cos(directionRad)
+                horizontalDist * Math.cos(directionRad)   // north is +Z (unified 2026-08-26)
             );
 
             // Create ray from camera position
@@ -1980,7 +1980,7 @@
             const svgY = -pos.z;
             const elevation = pos.y - (currentCameraData.slabElevation || 4);
 
-            let directionDeg = -(universalCamera.rotation.y * 180 / Math.PI);
+            let directionDeg = universalCamera.rotation.y * 180 / Math.PI;  // unified 2026-08-26
             while (directionDeg < 0) directionDeg += 360;
             while (directionDeg >= 360) directionDeg -= 360;
 
@@ -2022,7 +2022,9 @@
 
             // Apply direction
             const directionRad = direction * Math.PI / 180;
-            universalCamera.rotation.y = -directionRad;
+            // DIRECTION CONVENTION (unified 2026-08-26): 0=N(+Z) 90=E(+X).
+            // Babylon +rotation.y turns +Z toward +X, so the sign is +.
+            universalCamera.rotation.y = directionRad;
 
             // Apply tilt
             const tiltRad = tilt * Math.PI / 180;
@@ -2285,7 +2287,9 @@
             universalCamera.position = new BABYLON.Vector3(camPosX, camPosY, camPosZ);
 
             const directionRad = cam.direction * Math.PI / 180;
-            universalCamera.rotation.y = -directionRad;
+            // DIRECTION CONVENTION (unified 2026-08-26): 0=N(+Z) 90=E(+X).
+            // Babylon +rotation.y turns +Z toward +X, so the sign is +.
+            universalCamera.rotation.y = directionRad;
 
             const tiltRad = cam.tilt * Math.PI / 180;
             universalCamera.rotation.x = tiltRad;
