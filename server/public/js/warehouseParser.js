@@ -1154,13 +1154,41 @@ class ModelTBuilder {
             this.scene
         );
 
-        // Position on floor directly under the door
+        // Place the label INSIDE the slab on the interior side of the door
+        // (opposite 'facing', which is the exterior side), and turn the text so
+        // it reads correctly when standing inside, facing the door.
+        // modeltbabylon gen-10 — George 2026-08-26: labels straddled the wall
+        // line (half hovering outside) and north-wall text was upside-down
+        // because rotation.y was always 0.
+        const facing = door.facing ||
+            (door.orientation === 'vertical' ? 'east' : 'south');
+        const labelInset = 2.0; // ft from wall centerline to label center (label is 2ft deep)
+        // Interior offset in BABYLON space (X east; Z = -SVG Y, so NORTH is +Z):
+        //   faces north -> interior is south -> -Z
+        //   faces south -> interior is north -> +Z
+        //   faces east  -> interior is west  -> -X
+        //   faces west  -> interior is east  -> +X
+        const interior = {
+            north: { dx: 0, dz: -labelInset },
+            south: { dx: 0, dz:  labelInset },
+            east:  { dx: -labelInset, dz: 0 },
+            west:  { dx:  labelInset, dz: 0 }
+        }[facing] || { dx: 0, dz: 0 };
+
         labelPlane.position = new BABYLON.Vector3(
-            door.x,
+            door.x + interior.dx,
             labelHeight,
-            -door.y
+            -door.y + interior.dz
         );
         labelPlane.rotation.x = Math.PI / 2; // Lay flat on floor
+        // With rotation.x = PI/2 and rotation.y = 0, text-top points +Z (south).
+        // Rotate so text-top points toward the door (its facing direction).
+        labelPlane.rotation.y = {
+            south: 0,
+            north: Math.PI,
+            east:  Math.PI / 2,
+            west: -Math.PI / 2
+        }[facing] || 0;
 
         // Material with texture
         const labelMat = new BABYLON.StandardMaterial(`doorLabelMat_${slabId}_${door.id}`, this.scene);
