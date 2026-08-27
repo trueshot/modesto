@@ -779,19 +779,6 @@
           "slideDirection": "left"
         },
         {
-          "id": "pierce",
-          "wallId": "beatrice",
-          "x": 252,
-          "y": 308,
-          "type": "cooler",
-          "orientation": "horizontal",
-          "facing": "north",
-          "openingWidth": 9,
-          "openingHeight": 9,
-          "insulation": 4,
-          "slideDirection": "left"
-        },
-        {
           "id": "buchanan",
           "wallId": "anne",
           "x": 180,
