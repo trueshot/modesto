@@ -805,14 +805,15 @@
         {
           "id": "reagan",
           "wallId": "beatrice",
-          "x": 279,
+          "x": 308,
           "y": 308,
           "type": "cooler",
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 8,
           "openingHeight": 8,
-          "insulation": 4
+          "insulation": 4,
+          "slideDirection": "left"
         }
       ],
       "cameras": [
