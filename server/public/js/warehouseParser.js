@@ -1009,9 +1009,11 @@ class ModelTBuilder {
     buildBayDoor(door, slabTop, slabId) {
         const openingWidth = door.openingWidth || door.bayWidth || door.width || 10;
         const openingHeight = door.openingHeight || 12;
+        const leafWidth = door.leafWidth || (openingWidth - 1);   // spec 5.4.7: L = leafWidth, default W-1
         const doorBase = slabTop;
         const doorCenterY = doorBase + openingHeight / 2;
         const sides = this.doorSides(door);
+        this.buildJambs(door, slabId, openingWidth, leafWidth, openingHeight, doorBase);
         const wallHalf = ModelTBuilder.WALL_T / 2;
 
         // Dock seal (black rubber frame around door) — EXTERIOR face
@@ -1069,7 +1071,7 @@ class ModelTBuilder {
 
         const panel = BABYLON.MeshBuilder.CreateBox(
             `${slabId}_${door.id}_panel`,
-            { width: openingWidth - 0.5, height: openingHeight - 0.5, depth: 0.15 },
+            { width: leafWidth, height: openingHeight - 0.5, depth: 0.15 },
             this.scene
         );
         const curtainPerp = sides.inn(wallHalf + 0.10);   // curtain runs just inside the wall
@@ -1085,7 +1087,7 @@ class ModelTBuilder {
         const bayTrackW = door.trackWidth || 0.5;
         const trackPerp = sides.inn(wallHalf + 0.15);
         [-1, 1].forEach((side, i) => {
-            const along = side * (openingWidth / 2 + bayTrackW / 2);
+            const along = side * (leafWidth / 2 + bayTrackW / 2);   // tracks on the jambs, at the curtain edge
             const ao = door.orientation === 'vertical' ? { x: 0, y: along } : { x: along, y: 0 };
             const track = BABYLON.MeshBuilder.CreateBox(
                 `${slabId}_${door.id}_${i === 0 ? 'left' : 'right'}Track`,
@@ -1101,7 +1103,7 @@ class ModelTBuilder {
         const bayHousingH = door.housingHeight || 2;
         const bayHousing = BABYLON.MeshBuilder.CreateCylinder(
             `${slabId}_${door.id}_housing`,
-            { diameter: bayHousingH, height: openingWidth + bayTrackW * 2, tessellation: 16 },
+            { diameter: bayHousingH, height: leafWidth + bayTrackW * 2, tessellation: 16 },
             this.scene
         );
         const housingPerp = sides.inn(wallHalf + bayHousingH / 2);
@@ -1146,6 +1148,32 @@ class ModelTBuilder {
     }
 
     /**
+     * Steel jambs narrowing a W-wide cutout to an L-wide leaf: one post each side,
+     * full opening height, wall-deep, centered on the wall line. Spec 5.4.7 (2D draws
+     * these as side walls). No-op when L >= W. — modeltbabylon gen-11
+     */
+    buildJambs(door, slabId, openingWidth, leafWidth, openingHeight, doorBase) {
+        const jambW = (openingWidth - leafWidth) / 2;
+        if (jambW <= 0.01) return;
+        const isVertical = door.orientation === 'vertical';
+        const mat = new BABYLON.StandardMaterial(`jambMat_${slabId}_${door.id}`, this.scene);
+        mat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.32);   // steel
+        [-1, 1].forEach((side, i) => {
+            const along = side * (openingWidth / 2 - jambW / 2);
+            const ao = isVertical ? { x: 0, y: along } : { x: along, y: 0 };
+            const jamb = BABYLON.MeshBuilder.CreateBox(
+                `${slabId}_${door.id}_jamb${i}`,
+                { width: isVertical ? ModelTBuilder.WALL_T : jambW, height: openingHeight, depth: isVertical ? jambW : ModelTBuilder.WALL_T },
+                this.scene
+            );
+            jamb.position = this.svgToBabylon(door.x + ao.x, door.y + ao.y, doorBase + openingHeight / 2);
+            jamb.material = mat;
+            jamb.isPickable = false;
+            this.meshes.doors.push(jamb);
+        });
+    }
+
+    /**
      * Side vectors for a door, derived from facing (= outward normal).
      * Returns SVG-space offsets: out(d) = d ft toward the facing side (exterior),
      * inn(d) = d ft toward the interior. Missing facing -> zero offsets (straddle).
@@ -1174,10 +1202,12 @@ class ModelTBuilder {
     buildRollupDoor(door, slabTop, slabId) {
         const openingWidth = door.openingWidth || door.bayWidth || door.width || 10;
         const openingHeight = door.openingHeight || 10;
+        const leafWidth = door.leafWidth || (openingWidth - 1);   // spec 5.4.7: L = leafWidth, default W-1
         const doorBase = slabTop;
         const doorCenterY = doorBase + openingHeight / 2;
         const housingHeight = door.housingHeight || 2;
         const trackWidth = door.trackWidth || 0.5;
+        this.buildJambs(door, slabId, openingWidth, leafWidth, openingHeight, doorBase);
         const sides = this.doorSides(door);
         const wallHalf = ModelTBuilder.WALL_T / 2;
         const trackPerp = sides.inn(wallHalf + 0.15);          // tracks on the interior face
@@ -1194,7 +1224,7 @@ class ModelTBuilder {
             { width: trackWidth, height: openingHeight, depth: 0.3 },
             this.scene
         );
-        const leftOffset = door.orientation === 'vertical' ? { x: 0, y: -openingWidth / 2 - trackWidth / 2 } : { x: -openingWidth / 2 - trackWidth / 2, y: 0 };
+        const leftOffset = door.orientation === 'vertical' ? { x: 0, y: -leafWidth / 2 - trackWidth / 2 } : { x: -leafWidth / 2 - trackWidth / 2, y: 0 };
         leftTrack.position = this.svgToBabylon(door.x + leftOffset.x + trackPerp.x, door.y + leftOffset.y + trackPerp.y, doorCenterY);
         if (door.orientation === 'vertical') leftTrack.rotation.y = Math.PI / 2;
         leftTrack.material = frameMaterial;
@@ -1206,7 +1236,7 @@ class ModelTBuilder {
             { width: trackWidth, height: openingHeight, depth: 0.3 },
             this.scene
         );
-        const rightOffset = door.orientation === 'vertical' ? { x: 0, y: openingWidth / 2 + trackWidth / 2 } : { x: openingWidth / 2 + trackWidth / 2, y: 0 };
+        const rightOffset = door.orientation === 'vertical' ? { x: 0, y: leafWidth / 2 + trackWidth / 2 } : { x: leafWidth / 2 + trackWidth / 2, y: 0 };
         rightTrack.position = this.svgToBabylon(door.x + rightOffset.x + trackPerp.x, door.y + rightOffset.y + trackPerp.y, doorCenterY);
         if (door.orientation === 'vertical') rightTrack.rotation.y = Math.PI / 2;
         rightTrack.material = frameMaterial;
@@ -1216,7 +1246,7 @@ class ModelTBuilder {
         // Roll housing (cylinder above door)
         const housing = BABYLON.MeshBuilder.CreateCylinder(
             `${slabId}_${door.id}_housing`,
-            { diameter: housingHeight, height: openingWidth + trackWidth * 2, tessellation: 16 },
+            { diameter: housingHeight, height: leafWidth + trackWidth * 2, tessellation: 16 },
             this.scene
         );
         housing.position = this.svgToBabylon(door.x + housingPerp.x, door.y + housingPerp.y, doorBase + openingHeight + housingHeight / 2);
@@ -1236,7 +1266,7 @@ class ModelTBuilder {
 
         const panel = BABYLON.MeshBuilder.CreateBox(
             `${slabId}_${door.id}_panel`,
-            { width: openingWidth - 0.3, height: openingHeight - 0.3, depth: 0.1 },
+            { width: leafWidth, height: openingHeight - 0.3, depth: 0.1 },
             this.scene
         );
         panel.position = this.svgToBabylon(door.x + curtainPerp.x, door.y + curtainPerp.y, doorCenterY);
