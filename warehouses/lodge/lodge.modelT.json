@@ -737,7 +737,7 @@
           "wallId": "abigail",
           "x": 254,
           "y": 239,
-          "type": "interior",
+          "type": "rollup",
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 15
@@ -747,7 +747,7 @@
           "wallId": "abigail",
           "x": 284,
           "y": 239,
-          "type": "interior",
+          "type": "rollup",
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 15
