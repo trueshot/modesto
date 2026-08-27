@@ -493,20 +493,17 @@ function generateSlab(corners) {
 
 // Generate door overlay
 function generateDoor(door, index) {
-  const { id, x, y, width, bayWidth, doorWidth, openingWidth, leafWidth, type = 'opening', orientation = 'horizontal', facing = 'north' } = door;
+  const { id, x, y, openingWidth, leafWidth, type = 'opening', orientation = 'horizontal', facing = 'north' } = door;
 
-  // Width model (MODELT_SPECIFICATION v0.5 §5.4.2 ruling, modestocat 2026-08-27):
-  //   openingWidth (ft) = THE hole in the wall.
-  //   leafWidth   (ft) = the door leaf/panel inside it; default openingWidth - 1.
-  // Legacy fallback (bayWidth|width -> openingWidth; doorWidth inches / 12 -> leafWidth)
-  // is kept ONLY until the lodge data migration lands, then can be removed.
-  let resolvedOpening = openingWidth;
-  if (resolvedOpening === undefined) resolvedOpening = (bayWidth !== undefined ? bayWidth : width);
-  let resolvedLeaf = leafWidth;
-  if (resolvedLeaf === undefined) {
-    if (doorWidth !== undefined) resolvedLeaf = doorWidth / 12;          // legacy: inches -> feet
-    else if (resolvedOpening !== undefined) resolvedLeaf = resolvedOpening - 1; // default
-  }
+  // Width model (MODELT_SPECIFICATION v0.5 §5.4.2, Section 12 width ruling (5) addendum):
+  //   openingWidth (ft) = THE hole in the wall (required on every door).
+  //   leafWidth   (ft) = the door leaf/panel inside it; optional, default openingWidth - 1.
+  // Deprecated bayWidth/width/doorWidth are NOT read here — a legacy file warns loudly in
+  // validateWarehouseSpec() and renders degenerate rather than from a dead fallback path.
+  const resolvedOpening = openingWidth;
+  const resolvedLeaf = (leafWidth !== undefined)
+    ? leafWidth
+    : (resolvedOpening !== undefined ? resolvedOpening - 1 : undefined);
 
   const actualBayWidth = resolvedOpening;
   const actualDoorWidth = resolvedLeaf;
@@ -1249,6 +1246,26 @@ function validateWarehouseSpec(spec) {
         type: 'door',
         id: door.id,
         message: `Door "${door.id}"${where(door)} missing wallId - every door must belong to a wall`
+      });
+    }
+    // Width model (v0.5 §5.4.2, Section 12 width ruling (5) addendum): openingWidth is
+    // required; bayWidth/width/doorWidth are deprecated. generateDoor() no longer reads
+    // the legacy fields, so a legacy file must fail LOUDLY here instead of rendering
+    // from a dead path.
+    ['bayWidth', 'width', 'doorWidth'].forEach(f => {
+      if (door[f] !== undefined) {
+        violations.push({
+          type: 'door',
+          id: door.id,
+          message: `Deprecated width field "${f}" on door "${door.id}"${where(door)} - migrate to openingWidth/leafWidth`
+        });
+      }
+    });
+    if (door.openingWidth === undefined) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Door "${door.id}"${where(door)} missing openingWidth (ft) - required on every door`
       });
     }
     // Instance-side fields (v0.5 §5.4 ruling, modestocat 2026-08-27): the hardware
