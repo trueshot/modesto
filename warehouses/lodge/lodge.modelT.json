@@ -811,7 +811,8 @@
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 8,
-          "openingHeight": 10
+          "openingHeight": 8,
+          "insulation": 4
         }
       ],
       "cameras": [
