@@ -1168,84 +1168,120 @@ function validateWarehouseSpec(spec) {
   const violations = [];
   const validNames = conventions.namingConventions;
 
-  // Validate partition wall names
-  if (spec.partitionWalls) {
-    spec.partitionWalls.forEach(wall => {
-      if (!validNames.partitionWalls.includes(wall.id)) {
-        violations.push({
-          type: 'partitionWall',
-          id: wall.id,
-          message: `Invalid partition wall name "${wall.id}" - must use female name from naming conventions`,
-          validNames: validNames.partitionWalls
-        });
-      }
-    });
-  }
+  // Collect entities from BOTH formats so validation covers v2, not just v1:
+  //   v1: top-level spec.doors / spec.cameras / spec.columns / spec.partitionWalls
+  //   v2: spec.slabs[].doors / .cameras / .columns / .walls (type 'partition')
+  // (Authorized by modestocat 2026-08-27 — before this, v2 specs were never validated.)
+  const slabs = Array.isArray(spec.slabs) ? spec.slabs : [];
+  const doors = [];
+  const cameras = [];
+  const columns = [];
+  const partitionWalls = [];
 
-  // Validate door names (unique + from list)
-  if (spec.doors) {
-    const doorIds = spec.doors.map(d => d.id);
-    const seenIds = new Set();
+  slabs.forEach(s => {
+    (s.doors || []).forEach(d => doors.push({ ...d, _slab: s.id }));
+    (s.cameras || []).forEach(c => cameras.push({ ...c, _slab: s.id }));
+    (s.columns || []).forEach(c => columns.push({ ...c, _slab: s.id }));
+    (s.walls || []).forEach(w => { if (w.type === 'partition') partitionWalls.push({ ...w, _slab: s.id }); });
+  });
+  (spec.doors || []).forEach(d => doors.push(d));
+  (spec.cameras || []).forEach(c => cameras.push(c));
+  (spec.columns || []).forEach(c => columns.push(c));
+  (spec.partitionWalls || []).forEach(w => partitionWalls.push(w));
 
-    spec.doors.forEach(door => {
-      // Check if name is valid
-      if (!validNames.doors.includes(door.id)) {
-        violations.push({
-          type: 'door',
-          id: door.id,
-          message: `Invalid door name "${door.id}" - must use president/politician name from naming conventions`,
-          validNames: validNames.doors
-        });
-      }
+  const where = e => (e && e._slab) ? ` (slab ${e._slab})` : '';
 
-      // Check for duplicates
-      if (seenIds.has(door.id)) {
-        violations.push({
-          type: 'door',
-          id: door.id,
-          message: `Duplicate door ID "${door.id}" - each door must have unique identifier`
-        });
-      }
-      seenIds.add(door.id);
+  // Validate slab names (celestial pool) — v2 only; v1 has a single unnamed slab
+  slabs.forEach(slab => {
+    if (slab.id && validNames.slabs && !validNames.slabs.includes(slab.id)) {
+      violations.push({
+        type: 'slab',
+        id: slab.id,
+        message: `Invalid slab name "${slab.id}" - must use celestial body from naming conventions`,
+        validNames: validNames.slabs
+      });
+    }
+  });
 
-      // Check if door has wallId
-      if (!door.wallId) {
-        violations.push({
-          type: 'door',
-          id: door.id,
-          message: `Door "${door.id}" missing wallId - every door must belong to a wall`
-        });
-      }
-    });
-  }
+  // Validate partition wall names (female names)
+  partitionWalls.forEach(wall => {
+    if (!validNames.partitionWalls.includes(wall.id)) {
+      violations.push({
+        type: 'partitionWall',
+        id: wall.id,
+        message: `Invalid partition wall name "${wall.id}"${where(wall)} - must use female name from naming conventions`,
+        validNames: validNames.partitionWalls
+      });
+    }
+  });
 
-  // Validate camera names
-  if (spec.cameras) {
-    spec.cameras.forEach(camera => {
-      if (!validNames.cameras.includes(camera.id)) {
-        violations.push({
-          type: 'camera',
-          id: camera.id,
-          message: `Invalid camera name "${camera.id}" - must use food name from naming conventions`,
-          validNames: validNames.cameras
-        });
-      }
-    });
-  }
+  // Validate door names (from list + unique + has wallId)
+  const seenDoorIds = new Set();
+  doors.forEach(door => {
+    if (!validNames.doors.includes(door.id)) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Invalid door name "${door.id}"${where(door)} - must use president/politician name from naming conventions`,
+        validNames: validNames.doors
+      });
+    }
+    if (seenDoorIds.has(door.id)) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Duplicate door ID "${door.id}"${where(door)} - each door must have unique identifier`
+      });
+    }
+    seenDoorIds.add(door.id);
+    if (!door.wallId) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Door "${door.id}"${where(door)} missing wallId - every door must belong to a wall`
+      });
+    }
+  });
 
-  // Validate column names
-  if (spec.columns) {
-    spec.columns.forEach(column => {
-      if (!validNames.columns.includes(column.id)) {
-        violations.push({
-          type: 'column',
-          id: column.id,
-          message: `Invalid column name "${column.id}" - must use tree name from naming conventions`,
-          validNames: validNames.columns
-        });
-      }
-    });
-  }
+  // Validate camera names (food) + heading/tilt ranges (spec 8.3)
+  cameras.forEach(camera => {
+    if (!validNames.cameras.includes(camera.id)) {
+      violations.push({
+        type: 'camera',
+        id: camera.id,
+        message: `Invalid camera name "${camera.id}"${where(camera)} - must use food name from naming conventions`,
+        validNames: validNames.cameras
+      });
+    }
+    if (camera.direction !== undefined &&
+        (typeof camera.direction !== 'number' || camera.direction < 0 || camera.direction >= 360)) {
+      violations.push({
+        type: 'camera',
+        id: camera.id,
+        message: `Camera "${camera.id}"${where(camera)} direction ${camera.direction} out of range - must be in [0, 360)`
+      });
+    }
+    if (camera.tilt !== undefined &&
+        (typeof camera.tilt !== 'number' || camera.tilt < 0 || camera.tilt > 90)) {
+      violations.push({
+        type: 'camera',
+        id: camera.id,
+        message: `Camera "${camera.id}"${where(camera)} tilt ${camera.tilt} out of range - must be in [0, 90]`
+      });
+    }
+  });
+
+  // Validate column names (tree)
+  columns.forEach(column => {
+    if (!validNames.columns.includes(column.id)) {
+      violations.push({
+        type: 'column',
+        id: column.id,
+        message: `Invalid column name "${column.id}"${where(column)} - must use tree name from naming conventions`,
+        validNames: validNames.columns
+      });
+    }
+  });
 
   // Write violations back to JSON
   conventions.violations = violations;
