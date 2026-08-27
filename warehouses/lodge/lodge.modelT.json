@@ -429,343 +429,342 @@
           "wallId": "mercury_perimeter",
           "x": 190,
           "y": 100,
-          "bayWidth": 16,
-          "doorWidth": 192,
           "type": "bay",
           "orientation": "horizontal",
-          "facing": "north"
+          "facing": "north",
+          "openingWidth": 16,
+          "leafWidth": 16
         },
         {
           "id": "lincoln",
           "wallId": "mercury_perimeter",
           "x": 220,
           "y": 100,
-          "bayWidth": 16,
-          "doorWidth": 192,
           "type": "bay",
           "orientation": "horizontal",
-          "facing": "north"
+          "facing": "north",
+          "openingWidth": 16,
+          "leafWidth": 16
         },
         {
           "id": "jefferson",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 272,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "adams",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 262,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "madison",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 252,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "monroe",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 242,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "jackson",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 227,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "vanburen",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 217,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "harrison",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 207,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "tyler",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 197,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "polk",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 187,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "taylor",
           "wallId": "mercury_perimeter",
           "x": 329,
           "y": 177,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "grant",
           "wallId": "mercury_perimeter",
           "x": 170,
           "y": 267,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "hayes",
           "wallId": "mercury_perimeter",
           "x": 170,
           "y": 257,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "garfield",
           "wallId": "mercury_perimeter",
           "x": 170,
           "y": 247,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "arthur",
           "wallId": "mercury_perimeter",
           "x": 170,
           "y": 227,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "cleveland",
           "wallId": "mercury_perimeter",
           "x": 170,
           "y": 217,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "mckinley",
           "wallId": "mercury_perimeter",
           "x": 170,
           "y": 207,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "roosevelt",
           "wallId": "mercury_perimeter",
           "x": 157,
           "y": 400,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "horizontal",
-          "facing": "south"
+          "facing": "south",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "taft",
           "wallId": "mercury_perimeter",
           "x": 170,
           "y": 400,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "horizontal",
-          "facing": "south"
+          "facing": "south",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "wilson",
           "wallId": "mercury_perimeter",
           "x": 150,
           "y": 382,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "harding",
           "wallId": "mercury_perimeter",
           "x": 150,
           "y": 362,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "coolidge",
           "wallId": "mercury_perimeter",
           "x": 150,
           "y": 342,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "hoover",
           "wallId": "mercury_perimeter",
           "x": 150,
           "y": 322,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "truman",
           "wallId": "mercury_perimeter",
           "x": 150,
           "y": 302,
-          "bayWidth": 10,
-          "doorWidth": 104,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "west"
+          "facing": "west",
+          "openingWidth": 10,
+          "leafWidth": 8.667
         },
         {
           "id": "carter",
           "wallId": "mercury_perimeter",
           "x": 330,
           "y": 136,
-          "bayWidth": 16,
-          "doorWidth": 192,
           "type": "bay",
           "orientation": "vertical",
-          "facing": "east"
+          "facing": "east",
+          "openingWidth": 16,
+          "leafWidth": 16
         },
         {
           "id": "eisenhower",
           "wallId": "abigail",
           "x": 179,
           "y": 243,
-          "width": 15,
           "type": "interior",
           "orientation": "horizontal",
           "facing": "north",
-          "height": 10
+          "height": 10,
+          "openingWidth": 15
         },
         {
           "id": "kennedy",
           "wallId": "abigail",
           "x": 200,
           "y": 239,
-          "width": 15,
           "type": "interior",
           "orientation": "horizontal",
           "facing": "north",
-          "height": 10
+          "height": 10,
+          "openingWidth": 15
         },
         {
           "id": "johnson",
           "wallId": "abigail",
           "x": 254,
           "y": 239,
-          "width": 15,
           "type": "interior",
           "orientation": "horizontal",
-          "facing": "north"
+          "facing": "north",
+          "openingWidth": 15
         },
         {
           "id": "nixon",
           "wallId": "abigail",
           "x": 284,
           "y": 239,
-          "width": 15,
           "type": "interior",
           "orientation": "horizontal",
-          "facing": "north"
+          "facing": "north",
+          "openingWidth": 15
         },
         {
           "id": "quincy",
           "wallId": "beatrice",
           "x": 198.1,
           "y": 307.8,
-          "bayWidth": 8,
-          "doorWidth": 96,
           "type": "cooler",
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 8,
           "openingHeight": 8,
           "insulation": 4,
-          "slideDirection": "left"
+          "slideDirection": "left",
+          "leafWidth": 8
         },
         {
           "id": "fillmore",
@@ -777,7 +776,6 @@
           "facing": "north",
           "openingWidth": 8,
           "openingHeight": 8,
-          "bayWidth": 8,
           "insulation": 4,
           "slideDirection": "left"
         },
@@ -791,7 +789,6 @@
           "facing": "north",
           "openingWidth": 9,
           "openingHeight": 9,
-          "bayWidth": 8,
           "insulation": 4,
           "slideDirection": "left"
         },
@@ -828,8 +825,7 @@
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 8,
-          "openingHeight": 10,
-          "bayWidth": 8
+          "openingHeight": 10
         }
       ],
       "cameras": [
