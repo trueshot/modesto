@@ -722,16 +722,17 @@ class ModelTBuilder {
             hangers.push(hanger);
         });
 
-        // --- Register as a sliding door so the twin can open/close it ---
+        // --- Register as a twin door (kind slide) so the sensing loop can open/close it ---
         // Fully open = panel parked one panel-width toward the slide side (opening clear).
         const slideAxis = isVertical
             ? new BABYLON.Vector3(0, 0, -slideSign)   // SVG +y = Babylon -z
             : new BABYLON.Vector3(slideSign, 0, 0);
         const movers = [panel, ...hangers];
-        this.slidingDoors = this.slidingDoors || {};
-        this.slidingDoors[door.id] = {
+        this.twinDoors = this.twinDoors || {};
+        this.twinDoors[door.id] = {
             doorId: door.id,
             slabId: slabId,
+            kind: 'slide',
             movers: movers,
             closedPositions: movers.map(m => m.position.clone()),
             slideVector: slideAxis.scale(panelW),
@@ -739,6 +740,7 @@ class ModelTBuilder {
             fraction: 0
         };
         panel.metadata.open = false;
+        panel.metadata.twinDoor = true;
     }
 
     /**
@@ -911,7 +913,7 @@ class ModelTBuilder {
      * — modeltbabylon gen-11
      */
     setDoorState(doorId, state, animate = true) {
-        const d = this.slidingDoors && this.slidingDoors[doorId];
+        const d = this.twinDoors && this.twinDoors[doorId];
         if (!d) return null;
 
         const fraction = typeof state === 'number'
@@ -922,6 +924,24 @@ class ModelTBuilder {
 
         const ease = new BABYLON.CubicEase();
         ease.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+
+        if (d.kind === 'roll') {
+            // Curtain rolls up into the housing: shrink from the bottom, top edge pinned.
+            const visible = Math.max(0.03, 1 - fraction);
+            const targetY = d.topY - d.panelHeight * visible / 2;
+            const p = d.panel;
+            if (animate) {
+                BABYLON.Animation.CreateAndStartAnimation(`roll_${doorId}_s`, p, 'scaling.y', 60, 120,
+                    p.scaling.y, visible, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, ease);
+                BABYLON.Animation.CreateAndStartAnimation(`roll_${doorId}_y`, p, 'position.y', 60, 120,
+                    p.position.y, targetY, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, ease);
+            } else {
+                p.scaling.y = visible;
+                p.position.y = targetY;
+            }
+            p.metadata.open = d.open;
+            return d;
+        }
 
         d.movers.forEach((mesh, i) => {
             const target = d.closedPositions[i].add(d.slideVector.scale(fraction));
@@ -944,10 +964,30 @@ class ModelTBuilder {
      */
     getDoorStates() {
         const out = {};
-        Object.values(this.slidingDoors || {}).forEach(d => {
-            out[d.doorId] = { open: d.open, fraction: d.fraction, slabId: d.slabId };
+        Object.values(this.twinDoors || {}).forEach(d => {
+            out[d.doorId] = { open: d.open, fraction: d.fraction, kind: d.kind, slabId: d.slabId };
         });
         return out;
+    }
+
+    /**
+     * Register a bay/rollup curtain so setDoorState can roll it up into the housing.
+     * — modeltbabylon gen-11
+     */
+    registerRollingDoor(door, panel, slabId, panelHeight) {
+        this.twinDoors = this.twinDoors || {};
+        this.twinDoors[door.id] = {
+            doorId: door.id,
+            slabId: slabId,
+            kind: 'roll',
+            panel: panel,
+            panelHeight: panelHeight,
+            topY: panel.position.y + panelHeight / 2,
+            open: false,
+            fraction: 0
+        };
+        panel.metadata = Object.assign(panel.metadata || {}, { twinDoor: true, part: 'panel', open: false });
+        panel.isPickable = true;   // click to toggle
     }
 
     /**
@@ -1009,7 +1049,7 @@ class ModelTBuilder {
         // Roll-up door panel (metal slats)
         const panelMaterial = new BABYLON.StandardMaterial(`bayPanelMat_${slabId}_${door.id}`, this.scene);
         panelMaterial.diffuseColor = new BABYLON.Color3(0.7, 0.7, 0.7); // Light gray metal
-        panelMaterial.alpha = 0.3;
+        panelMaterial.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);   // opaque: twin shows real state
 
         const panel = BABYLON.MeshBuilder.CreateBox(
             `${slabId}_${door.id}_panel`,
@@ -1052,6 +1092,7 @@ class ModelTBuilder {
             slabId: slabId,
             doorId: door.id
         };
+        this.registerRollingDoor(door, panel, slabId, openingHeight - 0.5);
     }
 
     /**
@@ -1127,7 +1168,7 @@ class ModelTBuilder {
         // Roll-up panel (semi-transparent)
         const panelMaterial = new BABYLON.StandardMaterial(`rollupPanelMat_${slabId}_${door.id}`, this.scene);
         panelMaterial.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.6);
-        panelMaterial.alpha = 0.25;
+        panelMaterial.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);   // opaque: twin shows real state
 
         const panel = BABYLON.MeshBuilder.CreateBox(
             `${slabId}_${door.id}_panel`,
@@ -1147,6 +1188,7 @@ class ModelTBuilder {
             slabId: slabId,
             doorId: door.id
         };
+        this.registerRollingDoor(door, panel, slabId, openingHeight - 0.3);
     }
 
     /**

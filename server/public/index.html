@@ -1336,7 +1336,7 @@
         // Manual toggle (click the panel) for demos/testing
         function toggleSlidingDoor(doorId) {
             const builder = currentScene && currentScene.metadata && currentScene.metadata.builder;
-            const d = builder && builder.slidingDoors && builder.slidingDoors[doorId];
+            const d = builder && builder.twinDoors && builder.twinDoors[doorId];
             if (!d) return;
             const next = !d.open;
             builder.setDoorState(doorId, next);
@@ -2152,8 +2152,8 @@
                 // Otherwise, check for door label clicks
                 if (pickResult.hit && pickResult.pickedMesh) {
                     const mesh = pickResult.pickedMesh;
-                    // Click a cooler door panel to slide it (manual test of the twin state)
-                    if (mesh.metadata && mesh.metadata.type === 'cooler' && mesh.metadata.part === 'panel') {
+                    // Click any twin door panel to toggle it (cooler slides, bay/rollup rolls up)
+                    if (mesh.metadata && mesh.metadata.twinDoor) {
                         toggleSlidingDoor(mesh.metadata.doorId);
                         return;
                     }

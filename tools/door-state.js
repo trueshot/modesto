@@ -8,7 +8,7 @@
 //   node tools/door-state.js lodge --batch '{"quincy":"open","fillmore":"closed"}'
 //
 // The server relays {type:'door-state'|'door-states'} to every browser viewing
-// that warehouse; the viewer slides the panel (cooler doors) accordingly.
+// that warehouse; cooler doors slide, bay/rollup curtains roll up into the housing.
 // Env: MODELT_WS (default ws://localhost:8080)
 
 const WebSocket = require(require('path').join(__dirname, '..', 'server', 'node_modules', 'ws'));
