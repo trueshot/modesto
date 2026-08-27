@@ -176,6 +176,25 @@ wss.on('connection', (ws) => {
         }
       }
 
+      // Door open/closed state from the sensing loop -> every browser viewing this warehouse
+      //   {type:'door-state',  warehouseId, doorId, state:'open'|'closed'|0..1}
+      //   {type:'door-states', warehouseId, doors:[{doorId, state}, ...]}
+      // — modeltbabylon gen-11
+      else if (data.type === 'door-state' || data.type === 'door-states') {
+        const warehouseClients = clients.get(data.warehouseId);
+        const n = data.type === 'door-states' ? (data.doors || []).length : 1;
+        if (warehouseClients && warehouseClients.size > 0) {
+          warehouseClients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+              client.send(JSON.stringify(data));
+            }
+          });
+          console.log(`🚪 door-state (${n}) for ${data.warehouseId} -> ${warehouseClients.size} browser client(s)`);
+        } else {
+          console.log(`🚪 door-state for ${data.warehouseId}: no browser clients connected`);
+        }
+      }
+
       // Handle query from Claude (via modelt-query.js)
       else if (data.type === 'query') {
         clientType = 'claude-cli';

@@ -702,6 +702,7 @@ class ModelTBuilder {
         this.meshes.doors.push(track);
 
         // Two trolley hangers tying the panel top to the rail
+        const hangers = [];
         [-1, 1].forEach((side, i) => {
             const along = side * panelW / 4;
             const hp = isVertical ? { x: 0, y: along } : { x: along, y: 0 };
@@ -718,7 +719,26 @@ class ModelTBuilder {
             hanger.material = metalMat;
             hanger.isPickable = false;
             this.meshes.doors.push(hanger);
+            hangers.push(hanger);
         });
+
+        // --- Register as a sliding door so the twin can open/close it ---
+        // Fully open = panel parked one panel-width toward the slide side (opening clear).
+        const slideAxis = isVertical
+            ? new BABYLON.Vector3(0, 0, -slideSign)   // SVG +y = Babylon -z
+            : new BABYLON.Vector3(slideSign, 0, 0);
+        const movers = [panel, ...hangers];
+        this.slidingDoors = this.slidingDoors || {};
+        this.slidingDoors[door.id] = {
+            doorId: door.id,
+            slabId: slabId,
+            movers: movers,
+            closedPositions: movers.map(m => m.position.clone()),
+            slideVector: slideAxis.scale(panelW),
+            open: false,
+            fraction: 0
+        };
+        panel.metadata.open = false;
     }
 
     /**
@@ -881,6 +901,53 @@ class ModelTBuilder {
             default:      sign = 1;
         }
         return left ? sign : -sign;
+    }
+
+    /**
+     * Open/close a sliding (cooler) door in the twin.
+     * state: true|'open', false|'closed', or a fraction 0..1 (0 = closed).
+     * Slides the panel + hangers along the track; ~1.5 s eased when animate.
+     * Returns the door record ({open, fraction, ...}) or null if unknown.
+     * — modeltbabylon gen-11
+     */
+    setDoorState(doorId, state, animate = true) {
+        const d = this.slidingDoors && this.slidingDoors[doorId];
+        if (!d) return null;
+
+        const fraction = typeof state === 'number'
+            ? Math.max(0, Math.min(1, state))
+            : (state === true || state === 'open' || state === 'opened') ? 1 : 0;
+        d.open = fraction > 0.5;
+        d.fraction = fraction;
+
+        const ease = new BABYLON.CubicEase();
+        ease.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+
+        d.movers.forEach((mesh, i) => {
+            const target = d.closedPositions[i].add(d.slideVector.scale(fraction));
+            if (animate) {
+                BABYLON.Animation.CreateAndStartAnimation(
+                    `slide_${doorId}_${i}`, mesh, 'position', 60, 90,
+                    mesh.position.clone(), target,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, ease
+                );
+            } else {
+                mesh.position = target;
+            }
+        });
+        d.movers[0].metadata.open = d.open;
+        return d;
+    }
+
+    /**
+     * Snapshot of every sliding door: { doorId: {open, fraction, slabId} }
+     */
+    getDoorStates() {
+        const out = {};
+        Object.values(this.slidingDoors || {}).forEach(d => {
+            out[d.doorId] = { open: d.open, fraction: d.fraction, slabId: d.slabId };
+        });
+        return out;
     }
 
     /**

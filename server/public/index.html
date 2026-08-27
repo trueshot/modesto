@@ -1285,6 +1285,13 @@
                         });
                     }
 
+                    // Door open/closed state from the sensing loop — modeltbabylon gen-11
+                    //   {type:'door-state',  warehouseId, doorId, state:'open'|'closed'|0..1}
+                    //   {type:'door-states', warehouseId, doors:[{doorId, state}, ...]}
+                    else if (data.type === 'door-state' || data.type === 'door-states') {
+                        applyDoorStates(data);
+                    }
+
                     else if (data.type === 'remove-bin') {
                         removeGaylordBin(data.binId);
                     }
@@ -1312,6 +1319,30 @@
             };
         }
 
+        // Apply door-state message(s) to the twin — modeltbabylon gen-11
+        function applyDoorStates(data) {
+            const builder = currentScene && currentScene.metadata && currentScene.metadata.builder;
+            if (!builder || !builder.setDoorState) return;
+            const list = data.type === 'door-states' ? (data.doors || []) : [data];
+            list.forEach(d => {
+                const id = d.doorId || d.id;
+                const state = d.state !== undefined ? d.state : d.open;
+                const res = builder.setDoorState(id, state, d.animate !== false);
+                if (res) console.log(`🚪 door ${id} -> ${res.open ? 'OPEN' : 'CLOSED'} (${res.fraction})`);
+                else console.warn(`🚪 door-state: no sliding door "${id}" in this scene`);
+            });
+        }
+
+        // Manual toggle (click the panel) for demos/testing
+        function toggleSlidingDoor(doorId) {
+            const builder = currentScene && currentScene.metadata && currentScene.metadata.builder;
+            const d = builder && builder.slidingDoors && builder.slidingDoors[doorId];
+            if (!d) return;
+            const next = !d.open;
+            builder.setDoorState(doorId, next);
+            console.log(`🚪 door ${doorId} toggled -> ${next ? 'OPEN' : 'CLOSED'}`);
+        }
+
         // Handle queries from Claude via WebSocket
         function handleQuery(query) {
             if (query.command === 'get-camera-intersection') {
@@ -1324,6 +1355,15 @@
                     queryId: query.queryId,
                     command: query.command,
                     result: intersection
+                }));
+            }
+            else if (query.command === 'get-door-states') {
+                const builder = currentScene && currentScene.metadata && currentScene.metadata.builder;
+                ws.send(JSON.stringify({
+                    type: 'query-response',
+                    queryId: query.queryId,
+                    command: query.command,
+                    result: builder && builder.getDoorStates ? builder.getDoorStates() : {}
                 }));
             }
             else if (query.command === 'get-current-view') {
@@ -2112,6 +2152,11 @@
                 // Otherwise, check for door label clicks
                 if (pickResult.hit && pickResult.pickedMesh) {
                     const mesh = pickResult.pickedMesh;
+                    // Click a cooler door panel to slide it (manual test of the twin state)
+                    if (mesh.metadata && mesh.metadata.type === 'cooler' && mesh.metadata.part === 'panel') {
+                        toggleSlidingDoor(mesh.metadata.doorId);
+                        return;
+                    }
                     if (mesh.metadata && mesh.metadata.isDoorLabel) {
                         console.log('Door label clicked:', mesh.metadata.doorId);
                         window.showDoorPanel(mesh.metadata.doorData);
