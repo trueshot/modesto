@@ -1548,7 +1548,14 @@ class ModelTBuilder {
         // because rotation.y was always 0.
         const facing = door.facing ||
             (door.orientation === 'vertical' ? 'east' : 'south');
-        const labelInset = 2.0; // ft from wall centerline to label center (label is 2ft deep)
+        // Nameplate sits just past the dock leveler when the door has one (George 2026-08-27:
+        // the leveler plates were covering the nameplates). Leveler spans T/2 .. T/2 + depth
+        // from the centerline point C; the label is labelSize/4 deep.
+        const hasLeveler = door.type === 'bay' && door.hasDockLeveler !== false;
+        const levelerDepth = door.levelerDepth || 6;
+        const labelInset = hasLeveler
+            ? ModelTBuilder.WALL_T / 2 + levelerDepth + 0.25 + labelSize / 8
+            : 2.0; // ft from wall centerline to label center (label is 2ft deep)
         // Interior offset in BABYLON space (X east; Z = -SVG Y, so NORTH is +Z):
         //   faces north -> interior is south -> -Z
         //   faces south -> interior is north -> +Z
