@@ -673,12 +673,14 @@ class ModelTBuilder {
         this.meshes.doors.push(panel);
 
         // --- Overhead track: covers the opening plus a full panel width on the parked side ---
-        const slideSign = this.getSlideSign(door);   // +1/-1 along the wall axis (SVG coords)
+        const slideSign = this.getSlideSign(door);   // +1/-1 along the wall axis (SVG coords), 0 = unknown
+        const sideKnown = slideSign !== 0;
+        if (!sideKnown) console.warn(`Door ${door.id}: slideDirection missing — drawn neutral (no parked side), cannot animate`);
         const trackH = 0.25, trackD = 0.25;           // 3" x 3" rail
         const hangerH = 0.25;                         // trolley hanger between panel top and rail
-        const trackLen = panelW * 2 + 0.5;
+        const trackLen = sideKnown ? panelW * 2 + 0.5 : panelW + 0.5;   // neutral: spans the opening only
         const trackCenterY = panelTop + hangerH + trackH / 2;
-        const trackShift = slideSign * panelW / 2;    // rail center sits between closed and parked positions
+        const trackShift = slideSign * panelW / 2;    // rail center sits between closed and parked positions (0 when neutral)
         const trackParallel = isVertical ? { x: 0, y: trackShift } : { x: trackShift, y: 0 };
 
         const metalMat = new BABYLON.StandardMaterial(`coolerTrackMat_${slabId}_${door.id}`, this.scene);
@@ -737,12 +739,14 @@ class ModelTBuilder {
             kind: 'slide',
             movers: movers,
             closedPositions: movers.map(m => m.position.clone()),
-            slideVector: slideAxis.scale(panelW),
+            slideVector: slideAxis.scale(sideKnown ? panelW : 0),   // neutral door: state recorded, not drawn
+            sideKnown: sideKnown,
             open: false,
             fraction: 0
         };
         panel.metadata.open = false;
         panel.metadata.twinDoor = true;
+        panel.metadata.sideKnown = sideKnown;
     }
 
     /**
@@ -892,10 +896,12 @@ class ModelTBuilder {
      * Sign (+1/-1) along the wall axis toward a sliding door's parked side.
      * slideDirection is 'left' | 'right' AS SEEN FROM THE FACING SIDE
      * (standing outside the cooler, looking at the door). SVG axes: +x east, +y south.
-     * Defaults to 'left' when unspecified. — modeltbabylon gen-11
+     * Returns 0 when slideDirection is absent — NO default: a guessed side would be
+     * drawn as fact (ruled 2026-08-27). — modeltbabylon gen-11
      */
     getSlideSign(door) {
-        const left = (door.slideDirection || 'left') !== 'right';
+        if (door.slideDirection !== 'left' && door.slideDirection !== 'right') return 0;
+        const left = door.slideDirection === 'left';
         let sign;
         switch (door.facing) {
             case 'north': sign = 1;  break;   // viewer looks south: left hand = east (+x)
@@ -967,7 +973,8 @@ class ModelTBuilder {
     getDoorStates() {
         const out = {};
         Object.values(this.twinDoors || {}).forEach(d => {
-            out[d.doorId] = { open: d.open, fraction: d.fraction, kind: d.kind, slabId: d.slabId };
+            out[d.doorId] = { open: d.open, fraction: d.fraction, kind: d.kind, slabId: d.slabId,
+                              sideKnown: d.sideKnown !== false };
         });
         return out;
     }
