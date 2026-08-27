@@ -799,7 +799,7 @@
           "y": 286,
           "type": "rollup",
           "orientation": "vertical",
-          "facing": "east",
+          "facing": "west",
           "openingWidth": 10,
           "openingHeight": 10
         },
