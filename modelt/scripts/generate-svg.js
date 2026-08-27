@@ -495,25 +495,37 @@ function generateSlab(corners) {
 function generateDoor(door, index) {
   const { id, x, y, openingWidth, leafWidth, type = 'opening', orientation = 'horizontal', facing = 'north' } = door;
 
+  const doorId = id || `${type}_${index}`;
+
+  // Invalid door: openingWidth is required (§5.4.2). Emitting NaN geometry could make a
+  // strict SVG consumer reject the WHOLE file, so draw a valid, loud error marker instead
+  // (red dashed wall-band rect + '!'). validateWarehouseSpec() already warns by name. (§8)
+  if (openingWidth === undefined) {
+    const mw = orientation === 'vertical' ? 1 : 2;
+    const mh = orientation === 'vertical' ? 2 : 1;
+    const mx = orientation === 'vertical' ? 0 : -mw / 2;
+    const my = orientation === 'vertical' ? -mh / 2 : 0;
+    return `
+  <g id="door_${doorId}" transform="translate(${x},${y})" data-type="${type}" data-error="missing-openingWidth">
+    <rect x="${mx}" y="${my}" width="${mw}" height="${mh}" fill="none" stroke="#ff0000" stroke-width="0.2" stroke-dasharray="0.3,0.3"/>
+    <text x="0" y="0.85" font-size="1" text-anchor="middle" fill="#ff0000" font-weight="bold">!</text>
+  </g>`;
+  }
+
   // Width model (MODELT_SPECIFICATION v0.5 §5.4.2, Section 12 width ruling (5) addendum):
   //   openingWidth (ft) = THE hole in the wall (required on every door).
   //   leafWidth   (ft) = the door leaf/panel inside it; optional, default openingWidth - 1.
   // Deprecated bayWidth/width/doorWidth are NOT read here — a legacy file warns loudly in
-  // validateWarehouseSpec() and renders degenerate rather than from a dead fallback path.
+  // validateWarehouseSpec() and (above) renders an error marker, not a dead fallback path.
   const resolvedOpening = openingWidth;
-  const resolvedLeaf = (leafWidth !== undefined)
-    ? leafWidth
-    : (resolvedOpening !== undefined ? resolvedOpening - 1 : undefined);
+  const resolvedLeaf = (leafWidth !== undefined) ? leafWidth : resolvedOpening - 1;
 
   const actualBayWidth = resolvedOpening;
   const actualDoorWidth = resolvedLeaf;
-  const sideWallWidth = (resolvedOpening !== undefined && resolvedLeaf !== undefined)
-    ? (resolvedOpening - resolvedLeaf) / 2
-    : 0.5;
+  const sideWallWidth = (resolvedOpening - resolvedLeaf) / 2;
 
   const halfBayWidth = actualBayWidth / 2;
   const halfDoorWidth = actualDoorWidth / 2;
-  const doorId = id || `${type}_${index}`;
 
   // Determine opening color based on door type
   // Interior doors: white to show clear opening through partition walls
@@ -1197,6 +1209,38 @@ function validateWarehouseSpec(spec) {
   (spec.partitionWalls || []).forEach(w => partitionWalls.push(w));
 
   const where = e => (e && e._slab) ? ` (slab ${e._slab})` : '';
+
+  // Data resolution (Section 3.1, George 2026-08-27): REQUIRED fields are WHOLE FEET;
+  // nothing may require a fraction. Warn (warn-only) on a fractional required length/
+  // position. Optional fields (e.g. leafWidth) may carry up to 3 dp and are exempt.
+  const isFraction = v => typeof v === 'number' && Math.abs(v - Math.round(v)) > 1e-9;
+  const fracWarn = (kind, id, field, val, ctx) => {
+    if (isFraction(val)) {
+      violations.push({
+        type: kind,
+        id,
+        message: `${kind} "${id}"${ctx} ${field} = ${val} must be a whole number of feet (required field)`
+      });
+    }
+  };
+  doors.forEach(d => ['x', 'y', 'openingWidth'].forEach(f => fracWarn('door', d.id, f, d[f], where(d))));
+  cameras.forEach(c => ['x', 'y'].forEach(f => fracWarn('camera', c.id, f, c[f], where(c))));
+  columns.forEach(c => ['x', 'y'].forEach(f => fracWarn('column', c.id, f, c[f], where(c))));
+  const checkSegs = (segs, kind, id, ctx) => (segs || []).forEach((seg, i) => {
+    if (isFraction(seg.length)) {
+      violations.push({
+        type: kind,
+        id,
+        message: `${kind} "${id}"${ctx} segment[${i}] length = ${seg.length} must be a whole number of feet (required field)`
+      });
+    }
+  });
+  slabs.forEach(s => {
+    checkSegs(s.segments, 'slab', s.id, '');
+    (s.walls || []).forEach(w => checkSegs(w.segments, 'wall', w.id, ` (slab ${s.id})`));
+  });
+  if (spec.slab) checkSegs(spec.slab.segments, 'slab', spec.slab.id || 'slab', '');
+  (spec.partitionWalls || []).forEach(w => checkSegs(w.segments, 'wall', w.id, ''));
 
   // Validate slab names (celestial pool) — v2 only; v1 has a single unnamed slab
   slabs.forEach(slab => {
