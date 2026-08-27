@@ -301,6 +301,32 @@
         #overlayControls input[type="range"] {
             width: 150px;
         }
+        /* Movement speed panel (arrow keys / WASD in a camera view) — modeltbabylon gen-12 */
+        #speedPanel {
+            position: absolute;
+            bottom: 130px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.8);
+            border: 1px solid rgba(100, 200, 255, 0.5);
+            border-radius: 5px;
+            padding: 6px 10px;
+            color: white;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            z-index: 60;
+        }
+        #speedPanel input[type="range"] {
+            width: 110px;
+        }
+        #speedPanel .speedValue {
+            color: rgba(100, 200, 255, 1);
+            font-weight: bold;
+            min-width: 34px;
+            text-align: right;
+        }
         .overlayBtn {
             background: rgba(200, 100, 255, 0.8);
             color: white;
@@ -688,6 +714,13 @@
         <button class="overlayBtn" onclick="toggleOverlay()">Hide Overlay</button>
     </div>
 
+    <!-- Movement speed (arrow keys / WASD) -->
+    <div id="speedPanel" title="Arrow-key / WASD movement speed in a camera view">
+        <span>Move speed</span>
+        <input type="range" id="speedSlider" min="0.5" max="20" step="0.5" value="2" oninput="setMoveSpeed(this.value)">
+        <span class="speedValue" id="speedValue">2.0</span>
+    </div>
+
     <!-- Camera Mapping Panel -->
     <div id="cameraMappingPanel">
         <button id="mappingPanelClose" onclick="closeMappingPanel()">×</button>
@@ -719,6 +752,19 @@
         let ws = null;
         let viewMarker = null;  // Floating marker box in front of camera
         let overlayActive = false;
+
+        // Arrow-key / WASD movement speed for the first-person camera (ft per
+        // frame-step); persisted per browser. modeltbabylon gen-12, 2026-08-27
+        let moveSpeed = parseFloat(localStorage.getItem('camMoveSpeed')) || 2;
+        function setMoveSpeed(value) {
+            moveSpeed = Math.max(0.5, parseFloat(value) || 2);
+            if (universalCamera) universalCamera.speed = moveSpeed;
+            localStorage.setItem('camMoveSpeed', String(moveSpeed));
+            const slider = document.getElementById('speedSlider');
+            const label = document.getElementById('speedValue');
+            if (slider && parseFloat(slider.value) !== moveSpeed) slider.value = moveSpeed;
+            if (label) label.textContent = moveSpeed.toFixed(1);
+        }
 
         // Camera Placement Mode
         let placementMode = false;
@@ -1780,7 +1826,7 @@
                 new BABYLON.Vector3(centerX, centerY, centerZ),
                 scene
             );
-            universalCamera.speed = 2;
+            universalCamera.speed = moveSpeed;  // slider-controlled, see setMoveSpeed
             universalCamera.angularSensibility = 1000;
             universalCamera.inertia = 0; // No momentum
 
@@ -2501,6 +2547,9 @@
             console.log('╚════════════════════════════════════════╝');
 
             try {
+                // Sync the move-speed slider to the persisted value
+                setMoveSpeed(moveSpeed);
+
                 // Initialize WebSocket connection
                 initWebSocket();
 
