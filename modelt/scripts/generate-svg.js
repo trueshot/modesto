@@ -1251,6 +1251,33 @@ function validateWarehouseSpec(spec) {
         message: `Door "${door.id}"${where(door)} missing wallId - every door must belong to a wall`
       });
     }
+    // Instance-side fields (v0.5 §5.4 ruling, modestocat 2026-08-27): the hardware
+    // SIDE must never be defaulted. Absent -> warn; 2D draws a neutral opening with
+    // data-hardware-side='unknown'. cooler needs slideDirection; personnel needs
+    // hingePosition + swingDirection.
+    if (door.type === 'cooler' && door.slideDirection === undefined) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Cooler door "${door.id}"${where(door)} missing slideDirection (left|right) - required; hardware side must not be defaulted`
+      });
+    }
+    if (door.type === 'personnel') {
+      if (door.hingePosition === undefined) {
+        violations.push({
+          type: 'door',
+          id: door.id,
+          message: `Personnel door "${door.id}"${where(door)} missing hingePosition (left|right) - required; hinge side must not be defaulted`
+        });
+      }
+      if (door.swingDirection === undefined) {
+        violations.push({
+          type: 'door',
+          id: door.id,
+          message: `Personnel door "${door.id}"${where(door)} missing swingDirection (inward|outward) - required; swing side must not be defaulted`
+        });
+      }
+    }
   });
 
   // Validate camera names (food) + heading/tilt ranges (spec 8.3)
