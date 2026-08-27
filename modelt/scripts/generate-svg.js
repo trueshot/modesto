@@ -492,135 +492,122 @@ function generateSlab(corners) {
 }
 
 // Generate door overlay
+// Bird's-eye door geometry — MODELT_SPECIFICATION §5.4.4 + §5.4.7 (normative, 2026-08-27).
+// Canonical frame = a door facing NORTH (out = -y, interior = +y, left = +x). Each part
+// from the §5.4.7 tables becomes an axis-aligned rect placed at (q along +left, p perp
+// +outward): canonical x = q, y = -p. The whole door is then rotated by `facing` so the
+// four cardinal orientations reduce to one transform. (x,y) is the door CENTER on the wall
+// centerline (§5.4.5). Static plan draws every door CLOSED + the personnel swing arc.
 function generateDoor(door, index) {
-  const { id, x, y, openingWidth, leafWidth, type = 'opening', orientation = 'horizontal', facing = 'north' } = door;
-
+  const { id, x, y, openingWidth, leafWidth, type = 'opening', facing = 'north' } = door;
   const doorId = id || `${type}_${index}`;
+  const round = v => Math.round(v * 1000) / 1000;
+  const bearing = { north: 0, east: 90, south: 180, west: 270 }[facing] ?? 0;
 
-  // Invalid door: openingWidth is required (§5.4.2). Emitting NaN geometry could make a
-  // strict SVG consumer reject the WHOLE file, so draw a valid, loud error marker instead
-  // (red dashed wall-band rect + '!'). validateWarehouseSpec() already warns by name. (§8)
+  // Frame origin (§5.4.5, ruled 2026-08-27): the stored (x,y) is the opening center on the
+  // OUTWARD face; the §5.4.7 canonical frame is centered on the wall CENTERLINE point
+  // C = (x,y) + in*(T/2), where in = interior normal (opposite `facing`). This keeps
+  // whole-foot door coords (§3.1) while aligning the drawing with the wall band.
+  const T = 1;          // wall thickness (walls[].thickness default 1 ft, §3.1) = the band 2D draws
+  const T2 = T / 2;     // 0.5
+  const inNormal = { north: [0, 1], south: [0, -1], east: [-1, 0], west: [1, 0] }[facing] ?? [0, 1];
+  const Cx = round(x + inNormal[0] * T2);
+  const Cy = round(y + inNormal[1] * T2);
+
+  // Invalid door: openingWidth is required (§5.4.2). Draw a valid, loud error marker rather
+  // than NaN geometry (which can make strict SVG consumers reject the whole file). (§8)
   if (openingWidth === undefined) {
-    const mw = orientation === 'vertical' ? 1 : 2;
-    const mh = orientation === 'vertical' ? 2 : 1;
-    const mx = orientation === 'vertical' ? 0 : -mw / 2;
-    const my = orientation === 'vertical' ? -mh / 2 : 0;
     return `
-  <g id="door_${doorId}" transform="translate(${x},${y})" data-type="${type}" data-error="missing-openingWidth">
-    <rect x="${mx}" y="${my}" width="${mw}" height="${mh}" fill="none" stroke="#ff0000" stroke-width="0.2" stroke-dasharray="0.3,0.3"/>
-    <text x="0" y="0.85" font-size="1" text-anchor="middle" fill="#ff0000" font-weight="bold">!</text>
+  <g id="door_${doorId}" transform="translate(${Cx},${Cy}) rotate(${bearing})" data-type="${type}" data-error="missing-openingWidth">
+    <rect x="-1" y="-0.5" width="2" height="1" fill="none" stroke="#ff0000" stroke-width="0.2" stroke-dasharray="0.3,0.3"/>
+    <text x="0" y="0.35" font-size="1" text-anchor="middle" fill="#ff0000" font-weight="bold">!</text>
   </g>`;
   }
 
-  // Width model (MODELT_SPECIFICATION v0.5 §5.4.2, Section 12 width ruling (5) addendum):
-  //   openingWidth (ft) = THE hole in the wall (required on every door).
-  //   leafWidth   (ft) = the door leaf/panel inside it; optional, default openingWidth - 1.
-  // Deprecated bayWidth/width/doorWidth are NOT read here — a legacy file warns loudly in
-  // validateWarehouseSpec() and (above) renders an error marker, not a dead fallback path.
-  const resolvedOpening = openingWidth;
-  const resolvedLeaf = (leafWidth !== undefined) ? leafWidth : resolvedOpening - 1;
-
-  const actualBayWidth = resolvedOpening;
-  const actualDoorWidth = resolvedLeaf;
-  const sideWallWidth = (resolvedOpening - resolvedLeaf) / 2;
-
-  const halfBayWidth = actualBayWidth / 2;
-  const halfDoorWidth = actualDoorWidth / 2;
-
-  // Determine opening color based on door type
-  // Interior doors: white to show clear opening through partition walls
-  // Bay/exterior doors: slab color to blend with floor
+  const W = openingWidth;  // T, T2 already defined above (frame origin)
+  // Per-type leafWidth default (§5.4.7): bay/rollup W-1, cooler W+1 (panel overlaps), personnel W-0.2.
+  const leafDefault = { bay: W - 1, rollup: W - 1, cooler: W + 1, personnel: W - 0.2 };
+  const L = (leafWidth !== undefined) ? leafWidth : (leafDefault[type] !== undefined ? leafDefault[type] : W - 1);
   const openingFill = (type === 'interior') ? '#ffffff' : '#8888aa';
 
-  let doorSVG = `
-  <g id="door_${doorId}" transform="translate(${x},${y})">`;
+  // Canonical part: q along +left, p perp +outward, `along` extent over left, `depth` over out.
+  const R = (q, p, along, depth, attrs) =>
+    `\n    <rect x="${round(q - along / 2)}" y="${round(-p - depth / 2)}" width="${round(along)}" height="${round(depth)}" ${attrs}/>`;
 
-  if (orientation === 'horizontal') {
-    // Horizontal door (on N/S wall)
-    // Left side wall
-    doorSVG += `
-    <rect x="${-halfBayWidth}" y="0" width="${sideWallWidth}" height="1" fill="#00449e"/>`;
+  const parts = [];
+  let hardwareSide = 'n/a';
 
-    // Center opening: white for interior, slab color for exterior
-    doorSVG += `
-    <rect x="${-halfDoorWidth}" y="0" width="${actualDoorWidth}" height="1" fill="${openingFill}"/>`;
-
-    // Right side wall
-    doorSVG += `
-    <rect x="${halfDoorWidth}" y="0" width="${sideWallWidth}" height="1" fill="#00449e"/>`;
-
-    // Type-specific decorations on the opening
-    if (type === 'bay') {
-      // Sectional lines for bay door
-      doorSVG += `
-    <line x1="${-halfDoorWidth}" y1="0.33" x2="${halfDoorWidth}" y2="0.33" stroke="#666" stroke-width="0.05"/>
-    <line x1="${-halfDoorWidth}" y1="0.67" x2="${halfDoorWidth}" y2="0.67" stroke="#666" stroke-width="0.05"/>`;
-    } else if (type === 'personnel') {
-      // Door swing arc
-      if (facing === 'north') {
-        doorSVG += `
-    <path d="M ${-halfDoorWidth},-0.5 A ${actualDoorWidth},${actualDoorWidth} 0 0,1 ${halfDoorWidth},-0.5" stroke="#999" stroke-width="0.05" fill="none" stroke-dasharray="0.2,0.2"/>`;
-      } else {
-        doorSVG += `
-    <path d="M ${-halfDoorWidth},1.5 A ${actualDoorWidth},${actualDoorWidth} 0 0,0 ${halfDoorWidth},1.5" stroke="#999" stroke-width="0.05" fill="none" stroke-dasharray="0.2,0.2"/>`;
-      }
-    } else if (type === 'cooler') {
-      // Light blue tint for cooler
-      doorSVG += `
-    <rect x="${-halfDoorWidth}" y="0" width="${actualDoorWidth}" height="1" fill="#aaccff" fill-opacity="0.3"/>`;
-    } else if (type === 'rollup') {
-      // Horizontal ribbing for rollup door
-      doorSVG += `
-    <line x1="${-halfDoorWidth}" y1="0.2" x2="${halfDoorWidth}" y2="0.2" stroke="#666" stroke-width="0.03"/>
-    <line x1="${-halfDoorWidth}" y1="0.4" x2="${halfDoorWidth}" y2="0.4" stroke="#666" stroke-width="0.03"/>
-    <line x1="${-halfDoorWidth}" y1="0.6" x2="${halfDoorWidth}" y2="0.6" stroke="#666" stroke-width="0.03"/>
-    <line x1="${-halfDoorWidth}" y1="0.8" x2="${halfDoorWidth}" y2="0.8" stroke="#666" stroke-width="0.03"/>`;
+  if (type === 'bay' || type === 'rollup') {
+    const isRollup = type === 'rollup';
+    const dia = door.housingHeight || 2;
+    const hasSeal = !isRollup && door.hasDockSeal !== false;
+    const hasLeveler = !isRollup && door.hasDockLeveler !== false;
+    const levW = door.levelerWidth || 8, levD = door.levelerDepth || 6;
+    const jAlong = (W - L) / 2, jQ = W / 2 - (W - L) / 4;
+    hardwareSide = 'interior';
+    // z-order bottom -> top (§5.4.7): leveler, housing, tracks, curtain, opening, jambs, seal, bumpers.
+    if (hasLeveler) parts.push(R(0, -(T2 + 3.0), levW, levD, 'fill="#888" fill-opacity="0.25"'));
+    parts.push(R(0, -(T2 + 1.0), L + 1, dia, 'fill="#666" fill-opacity="0.9"'));                 // roll housing
+    parts.push(R(+(L / 2 + 0.25), -(T2 + 0.15), 0.5, 0.3, 'fill="#555"'));                        // guide track (left)
+    parts.push(R(-(L / 2 + 0.25), -(T2 + 0.15), 0.5, 0.3, 'fill="#555"'));                        // guide track (right)
+    parts.push(R(0, -(T2 + 0.10), L, isRollup ? 0.10 : 0.15, 'fill="#999"'));                     // curtain
+    parts.push(R(0, 0, W, T, `fill="${openingFill}"`));                                           // opening cut
+    if (jAlong > 0.001) {                                                                          // jambs x2 (in wall)
+      parts.push(R(+jQ, 0, jAlong, T, 'fill="#00449e"'));
+      parts.push(R(-jQ, 0, jAlong, T, 'fill="#00449e"'));
     }
-
+    if (hasSeal) parts.push(R(0, +(T2 + 0.75), W + 2, 1.5, 'fill="#333" fill-opacity="0.9"'));    // dock seal (one band)
+    if (door.hasBumpers) {                                                                         // bumpers x2 (optional)
+      parts.push(R(+(W / 2 - 0.5), +(T2 + 0.2), 1.0, 0.4, 'fill="#ffb000"'));
+      parts.push(R(-(W / 2 - 0.5), +(T2 + 0.2), 1.0, 0.4, 'fill="#ffb000"'));
+    }
+  } else if (type === 'cooler') {
+    const slide = door.slideDirection;
+    const t = (door.insulation || 4) / 12;
+    const PW = (leafWidth !== undefined) ? leafWidth : W + 1;
+    const pPanel = +(T2 + 1 / 12 + t / 2);
+    parts.push(R(0, 0, W, T, `fill="${openingFill}"`));                                           // opening
+    parts.push(R(0, +(T2 + 0.04), W + 0.67, 0.083, 'fill="#00449e"'));                            // frame (outward face)
+    parts.push(R(0, -(T2 + 0.04), W + 0.67, 0.083, 'fill="#00449e"'));                            // frame (interior face)
+    if (slide === 'left' || slide === 'right') {
+      const s = slide === 'left' ? 1 : -1;
+      hardwareSide = slide;
+      parts.push(R(s * PW / 2, pPanel, 2 * PW + 0.5, 0.25, 'fill="#444"'));                       // track/rail
+      parts.push(R(0, pPanel, PW, t, 'fill="#8888aa"'));                                          // panel (closed)
+      parts.push(R(+PW / 4, pPanel, 0.2, 0.2, 'fill="#444"'));                                    // hangers x2
+      parts.push(R(-PW / 4, pPanel, 0.2, 0.2, 'fill="#444"'));
+    } else {
+      hardwareSide = 'unknown';  // never guess a side (§5.4.7): rail spanning the opening only
+      parts.push(R(0, pPanel, W, 0.25, 'fill="#444"'));
+    }
+  } else if (type === 'personnel') {
+    const hinge = door.hingePosition, swing = door.swingDirection;
+    parts.push(R(0, 0, W, T, `fill="${openingFill}"`));                                           // opening
+    parts.push(R(+(W / 2 + 0.125), 0, 0.25, 0.25, 'fill="#00449e"'));                             // frame (side jamb)
+    parts.push(R(-(W / 2 + 0.125), 0, 0.25, 0.25, 'fill="#00449e"'));                             // frame (side jamb)
+    if ((hinge === 'left' || hinge === 'right') && (swing === 'inward' || swing === 'outward')) {
+      const h = hinge === 'left' ? 1 : -1, w = swing === 'outward' ? 1 : -1;
+      hardwareSide = `${hinge}/${swing}`;
+      const pLeaf = w * (T2 + 0.075);
+      parts.push(R(0, pLeaf, W - 0.2, 0.15, 'fill="#999"'));                                      // leaf (closed)
+      // swing arc: quarter circle radius W-0.2 centered on the hinge jamb, on the swing side.
+      const Rr = W - 0.2;
+      const Cx = round(-h * (W / 2 - 0.1)), Cy = round(-(w * (T2 + 0.075)));   // closed free end
+      const Ox = round(h * (W / 2 - 0.1)), Oy = round(-(w * Rr));             // open free end
+      const sweep = (h * w > 0) ? 1 : 0;
+      parts.push(`\n    <path d="M ${Cx},${Cy} A ${round(Rr)},${round(Rr)} 0 0,${sweep} ${Ox},${Oy}" fill="none" stroke="#999" stroke-width="0.05" stroke-dasharray="0.2,0.2"/>`);
+    } else {
+      hardwareSide = 'unknown';  // missing hingePosition/swingDirection: opening + frame only
+    }
   } else {
-    // Vertical door (on E/W wall)
-    // Top side wall
-    doorSVG += `
-    <rect x="0" y="${-halfBayWidth}" width="1" height="${sideWallWidth}" fill="#00449e"/>`;
-
-    // Center opening: white for interior, slab color for exterior
-    doorSVG += `
-    <rect x="0" y="${-halfDoorWidth}" width="1" height="${actualDoorWidth}" fill="${openingFill}"/>`;
-
-    // Bottom side wall
-    doorSVG += `
-    <rect x="0" y="${halfDoorWidth}" width="1" height="${sideWallWidth}" fill="#00449e"/>`;
-
-    // Type-specific decorations
-    if (type === 'bay') {
-      doorSVG += `
-    <line x1="0.33" y1="${-halfDoorWidth}" x2="0.33" y2="${halfDoorWidth}" stroke="#666" stroke-width="0.05"/>
-    <line x1="0.67" y1="${-halfDoorWidth}" x2="0.67" y2="${halfDoorWidth}" stroke="#666" stroke-width="0.05"/>`;
-    } else if (type === 'personnel') {
-      if (facing === 'east') {
-        doorSVG += `
-    <path d="M 1.5,${-halfDoorWidth} A ${actualDoorWidth},${actualDoorWidth} 0 0,1 1.5,${halfDoorWidth}" stroke="#999" stroke-width="0.05" fill="none" stroke-dasharray="0.2,0.2"/>`;
-      } else {
-        doorSVG += `
-    <path d="M -0.5,${-halfDoorWidth} A ${actualDoorWidth},${actualDoorWidth} 0 0,0 -0.5,${halfDoorWidth}" stroke="#999" stroke-width="0.05" fill="none" stroke-dasharray="0.2,0.2"/>`;
-      }
-    } else if (type === 'cooler') {
-      doorSVG += `
-    <rect x="0" y="${-halfDoorWidth}" width="1" height="${actualDoorWidth}" fill="#aaccff" fill-opacity="0.3"/>`;
-    } else if (type === 'rollup') {
-      // Horizontal ribbing for rollup door (rotated for vertical)
-      doorSVG += `
-    <line x1="0.2" y1="${-halfDoorWidth}" x2="0.2" y2="${halfDoorWidth}" stroke="#666" stroke-width="0.03"/>
-    <line x1="0.4" y1="${-halfDoorWidth}" x2="0.4" y2="${halfDoorWidth}" stroke="#666" stroke-width="0.03"/>
-    <line x1="0.6" y1="${-halfDoorWidth}" x2="0.6" y2="${halfDoorWidth}" stroke="#666" stroke-width="0.03"/>
-    <line x1="0.8" y1="${-halfDoorWidth}" x2="0.8" y2="${halfDoorWidth}" stroke="#666" stroke-width="0.03"/>`;
-    }
+    // interior / opening: opening only, no hardware
+    parts.push(R(0, 0, W, T, `fill="${openingFill}"`));
   }
 
-  doorSVG += `
+  const dataAttrs = `data-type="${type}" data-facing="${facing}" data-hardware-side="${hardwareSide}"`;
+  return `
+  <g id="door_${doorId}" transform="translate(${Cx},${Cy}) rotate(${bearing})" ${dataAttrs}>${parts.join('')}
   </g>`;
-
-  return doorSVG;
 }
 
 // Generate all doors
