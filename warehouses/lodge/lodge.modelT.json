@@ -883,7 +883,7 @@
           "tilt": 5.8,
           "viewingAngle": 80,
           "range": 50,
-          "location": "Main Floor, West wall mounting, facing East toward loading bays",
+          "location": "Main Floor, West wall mounting, facing NNE (22 deg) toward the north bay doors",
           "roll": 0,
           "intrinsics": {
             "calibrated": true,
