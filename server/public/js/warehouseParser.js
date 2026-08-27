@@ -390,7 +390,9 @@ class ModelTBuilder {
             // Calculate door position and width along the segment
             // Use absolute distance along the segment (always positive)
             const doorPos = isHorizontal ? Math.abs(door.x - p1.x) : Math.abs(door.y - p1.y);
-            const doorWidth = door.bayWidth || 10;
+            // Same precedence as the type builders (was bayWidth||10: a personnel door with
+            // only openingWidth:3 got a 10ft hole) — modeltbabylon gen-11
+            const doorWidth = door.openingWidth || door.bayWidth || door.width || 10;
             const doorHeight = door.openingHeight || 10;  // per-door cutout height (modeltbabylon gen-11)
             const doorStart = doorPos - doorWidth / 2;
             const doorEnd = doorPos + doorWidth / 2;
