@@ -493,16 +493,26 @@ function generateSlab(corners) {
 
 // Generate door overlay
 function generateDoor(door, index) {
-  const { id, x, y, width, bayWidth, doorWidth, type = 'opening', orientation = 'horizontal', facing = 'north' } = door;
+  const { id, x, y, width, bayWidth, doorWidth, openingWidth, leafWidth, type = 'opening', orientation = 'horizontal', facing = 'north' } = door;
 
-  // Convert doorWidth from inches to feet if provided
-  const doorWidthFeet = doorWidth ? doorWidth / 12 : null;
+  // Width model (MODELT_SPECIFICATION v0.5 §5.4.2 ruling, modestocat 2026-08-27):
+  //   openingWidth (ft) = THE hole in the wall.
+  //   leafWidth   (ft) = the door leaf/panel inside it; default openingWidth - 1.
+  // Legacy fallback (bayWidth|width -> openingWidth; doorWidth inches / 12 -> leafWidth)
+  // is kept ONLY until the lodge data migration lands, then can be removed.
+  let resolvedOpening = openingWidth;
+  if (resolvedOpening === undefined) resolvedOpening = (bayWidth !== undefined ? bayWidth : width);
+  let resolvedLeaf = leafWidth;
+  if (resolvedLeaf === undefined) {
+    if (doorWidth !== undefined) resolvedLeaf = doorWidth / 12;          // legacy: inches -> feet
+    else if (resolvedOpening !== undefined) resolvedLeaf = resolvedOpening - 1; // default
+  }
 
-  // If bayWidth and doorWidth are specified, calculate side walls
-  const useBayAndDoor = bayWidth && doorWidthFeet;
-  const actualBayWidth = useBayAndDoor ? bayWidth : width;
-  const actualDoorWidth = useBayAndDoor ? doorWidthFeet : (width - 1); // Old: door was width - 1 (0.5' endcaps on each side)
-  const sideWallWidth = useBayAndDoor ? (bayWidth - doorWidthFeet) / 2 : 0.5;
+  const actualBayWidth = resolvedOpening;
+  const actualDoorWidth = resolvedLeaf;
+  const sideWallWidth = (resolvedOpening !== undefined && resolvedLeaf !== undefined)
+    ? (resolvedOpening - resolvedLeaf) / 2
+    : 0.5;
 
   const halfBayWidth = actualBayWidth / 2;
   const halfDoorWidth = actualDoorWidth / 2;
