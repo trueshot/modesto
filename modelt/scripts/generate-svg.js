@@ -991,14 +991,16 @@ function generateModelTSVG(spec) {
     viewBoxWidth = property.boundary.width;
     viewBoxHeight = property.boundary.height;
   } else {
-    // Calculate from all slabs
+    // Calculate from all slabs. Pad by DOOR_MARGIN (§5.4.7) so outward door parts
+    // (dock seals reach ~2 ft beyond the wall) never clip at the edge.
+    const DOOR_MARGIN = 2.5;
     const allCorners = slabs.flatMap(slab => slab.corners || []);
     const allX = allCorners.map(c => c.x);
     const allY = allCorners.map(c => c.y);
-    minX = Math.min(...allX);
-    minY = Math.min(...allY);
-    const maxX = Math.max(...allX);
-    const maxY = Math.max(...allY);
+    minX = Math.min(...allX) - DOOR_MARGIN;
+    minY = Math.min(...allY) - DOOR_MARGIN;
+    const maxX = Math.max(...allX) + DOOR_MARGIN;
+    const maxY = Math.max(...allY) + DOOR_MARGIN;
     viewBoxWidth = maxX - minX;
     viewBoxHeight = maxY - minY;
   }
@@ -1100,13 +1102,15 @@ function generateModelTSVG_V1(warehouseSpec) {
     maxX = minX + viewBoxWidth;
     maxY = minY + viewBoxHeight;
   } else {
-    // Fall back to slab-based calculation
+    // Fall back to slab-based calculation, padded by DOOR_MARGIN (§5.4.7) so outward
+    // door parts (dock seals) never clip at the edge.
+    const DOOR_MARGIN = 2.5;
     const allX = slab.corners.map(c => c.x);
     const allY = slab.corners.map(c => c.y);
-    minX = Math.min(...allX);
-    maxX = Math.max(...allX);
-    minY = Math.min(...allY);
-    maxY = Math.max(...allY);
+    minX = Math.min(...allX) - DOOR_MARGIN;
+    maxX = Math.max(...allX) + DOOR_MARGIN;
+    minY = Math.min(...allY) - DOOR_MARGIN;
+    maxY = Math.max(...allY) + DOOR_MARGIN;
     viewBoxWidth = maxX - minX;
     viewBoxHeight = maxY - minY;
   }
@@ -1299,6 +1303,15 @@ function validateWarehouseSpec(spec) {
         message: `Door "${door.id}"${where(door)} missing openingWidth (ft) - required on every door`
       });
     }
+    // Cooler panel must overlap the opening (§5.4.7): a stored cooler leafWidth <= W is invalid.
+    if (door.type === 'cooler' && door.leafWidth !== undefined && door.openingWidth !== undefined
+        && door.leafWidth <= door.openingWidth) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Cooler door "${door.id}"${where(door)} leafWidth ${door.leafWidth} <= openingWidth ${door.openingWidth} - the sliding panel must be wider than the hole (default W+1)`
+      });
+    }
     // Instance-side fields (v0.5 §5.4 ruling, modestocat 2026-08-27): the hardware
     // SIDE must never be defaulted. Absent -> warn; 2D draws a neutral opening with
     // data-hardware-side='unknown'. cooler needs slideDirection; personnel needs
@@ -1327,6 +1340,29 @@ function validateWarehouseSpec(spec) {
       }
     }
   });
+
+  // Outward-extent check (§5.4.7): when property.boundary is explicit, a door's outward
+  // parts (dock seal reaches ~1.5 ft beyond the stored outward-face (x,y)) must not exceed
+  // it — the auto-calc path pads instead, but an explicit boundary is authored, so warn.
+  const boundary = spec.property && spec.property.boundary;
+  if (boundary) {
+    const OUTWARD_REACH = 1.5;
+    const round1 = v => Math.round(v * 10) / 10;
+    const outVec = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
+    const bx0 = boundary.x, by0 = boundary.y, bx1 = boundary.x + boundary.width, by1 = boundary.y + boundary.height;
+    doors.forEach(d => {
+      if (d.x === undefined || d.y === undefined) return;
+      const v = outVec[d.facing] || [0, -1];
+      const ex = d.x + v[0] * OUTWARD_REACH, ey = d.y + v[1] * OUTWARD_REACH;
+      if (ex < bx0 || ex > bx1 || ey < by0 || ey > by1) {
+        violations.push({
+          type: 'door',
+          id: d.id,
+          message: `Door "${d.id}"${where(d)} outward extent (${round1(ex)},${round1(ey)}) exceeds property.boundary [${bx0},${by0},${bx1},${by1}] - seal will clip`
+        });
+      }
+    });
+  }
 
   // Validate camera names (food) + heading/tilt ranges (spec 8.3)
   cameras.forEach(camera => {
