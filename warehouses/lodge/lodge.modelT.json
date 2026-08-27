@@ -768,7 +768,7 @@
         {
           "id": "fillmore",
           "wallId": "beatrice",
-          "x": 296,
+          "x": 268,
           "y": 308,
           "type": "cooler",
           "orientation": "horizontal",
@@ -805,7 +805,7 @@
         {
           "id": "reagan",
           "wallId": "beatrice",
-          "x": 308,
+          "x": 298,
           "y": 308,
           "type": "cooler",
           "orientation": "horizontal",
