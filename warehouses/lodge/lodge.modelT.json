@@ -763,8 +763,7 @@
           "openingWidth": 8,
           "openingHeight": 8,
           "insulation": 4,
-          "slideDirection": "left",
-          "leafWidth": 8
+          "slideDirection": "left"
         },
         {
           "id": "fillmore",
