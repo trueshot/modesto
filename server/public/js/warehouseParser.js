@@ -200,6 +200,7 @@ class ModelTBuilder {
 
         // Filter doors that belong to this wall
         const wallDoors = doors.filter(door => door.wallId === wall.id);
+        const orient = this.polygonOrientation(corners);
 
         for (let i = 0; i < corners.length; i++) {
             const p1 = corners[i];
@@ -217,6 +218,7 @@ class ModelTBuilder {
             // Find doors on this wall segment
             const segmentDoors = this.findDoorsOnSegment(wallDoors, p1, p2, isHorizontal, isVertical);
 
+            const before = this.meshes.walls.length;
             if (segmentDoors.length === 0) {
                 // No doors - create simple box wall
                 this.createSimpleWallSegment(slabId, wall.id, i, p1, p2, dx, dy, length,
@@ -226,6 +228,10 @@ class ModelTBuilder {
                 this.createWallSegmentWithDoors(slabId, wall.id, i, p1, p2, dx, dy, length,
                     isHorizontal, isVertical, wallHeight, wallThickness, slabTop, segmentDoors, wallMaterial, 'walls');
             }
+            // Flush-inward band (spec 5.2): outward face on the boundary, body T inward
+            const inw = this.inwardNormal(p1, p2, orient);
+            const target = (isHorizontal ? inw.y : inw.x) * wallThickness / 2;
+            this.newWallMeshes('walls', before).forEach(m => this.alignWallBand(m, p1, p2, isHorizontal, target));
         }
     }
 
@@ -487,6 +493,7 @@ class ModelTBuilder {
             // Find doors on this segment
             const segmentDoors = this.findDoorsOnSegment(wallDoors, p1, p2, isHorizontal, isVertical);
 
+            const beforeW = this.meshes.walls.length, beforeP = this.meshes.partitionWalls.length;
             if (segmentDoors.length === 0) {
                 // No doors - create simple box wall
                 this.createSimplePartitionSegment(slabId, wall.id, segIdx, p1, p2, dx, dy, length,
@@ -496,6 +503,9 @@ class ModelTBuilder {
                 this.createWallSegmentWithDoors(slabId, wall.id, segIdx, p1, p2, dx, dy, length,
                     isHorizontal, isVertical, wallHeight, wallThickness, slabTop, segmentDoors, partitionMaterial, 'partitionWalls');
             }
+            // Partition band centered on the turtle line (see alignWallBand note)
+            [...this.newWallMeshes('walls', beforeW), ...this.newWallMeshes('partitionWalls', beforeP)]
+                .forEach(m => this.alignWallBand(m, p1, p2, isHorizontal, 0));
 
             // Update current position for next segment
             currentX = p2.x;
@@ -582,8 +592,11 @@ class ModelTBuilder {
     /**
      * Build a door mesh (v2) - dispatches to type-specific builders
      */
-    buildDoorMesh(door, slabElevation, slabId) {
+    buildDoorMesh(doorData, slabElevation, slabId) {
         const slabTop = slabElevation;
+        // All hardware is placed relative to C, the door's point on the wall centerline
+        // (spec 5.4.5, ruled 2026-08-27). See doorAtCenterline().
+        const door = this.doorAtCenterline(doorData, slabId);
 
         // Dispatch to type-specific builder
         switch (door.type) {
@@ -1145,6 +1158,98 @@ class ModelTBuilder {
             doorId: door.id
         };
         this.registerRollingDoor(door, panel, slabId, openingHeight - 0.5);
+    }
+
+    /**
+     * WALL BAND PLACEMENT — RULED 2026-08-27 (spec 5.2): a perimeter wall sits ON the slab,
+     * outward face flush with the boundary, band extending T inward, never straddling.
+     * Partition bands: centered on the turtle line (3D rule pending a spec ruling; 2D today
+     * is right-of-travel for multi-segment partitions and +x for single vertical ones).
+     * The segment builders extrude/center differently, so after creating a segment we MEASURE
+     * its band and translate it to the target. — modeltbabylon gen-11
+     */
+    polygonOrientation(corners) {
+        let a = 0;
+        for (let i = 0; i < corners.length; i++) {
+            const p = corners[i], q = corners[(i + 1) % corners.length];
+            a += p.x * q.y - q.x * p.y;
+        }
+        return a > 0 ? 1 : -1;
+    }
+
+    /** Inward unit normal (SVG coords) of perimeter segment p1->p2 for polygon orientation o. */
+    inwardNormal(p1, p2, o) {
+        const dx = p2.x - p1.x, dy = p2.y - p1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        return o > 0 ? { x: -dy / len, y: dx / len } : { x: dy / len, y: -dx / len };
+    }
+
+    /**
+     * Translate a wall mesh so its band center sits targetOffset ft from the segment line,
+     * measured along the SVG perpendicular axis (y for horizontal segments, x for vertical).
+     */
+    alignWallBand(mesh, p1, p2, isHorizontal, targetOffset) {
+        mesh.computeWorldMatrix(true);
+        const bb = mesh.getBoundingInfo().boundingBox;
+        if (isHorizontal) {
+            const nowY = -(bb.minimumWorld.z + bb.maximumWorld.z) / 2;   // Babylon z = -svgY
+            mesh.position.z -= (p1.y + targetOffset) - nowY;
+        } else {
+            const nowX = (bb.minimumWorld.x + bb.maximumWorld.x) / 2;
+            mesh.position.x += (p1.x + targetOffset) - nowX;
+        }
+        mesh.computeWorldMatrix(true);
+    }
+
+    /** Meshes appended to this.meshes[kind] since count. */
+    newWallMeshes(kind, count) {
+        return this.meshes[kind].slice(count);
+    }
+
+    /**
+     * The door's point C on the WALL CENTERLINE — every hardware part is placed relative to C.
+     * Spec 5.4.5 (ruled 2026-08-27): a perimeter door's (x,y) is the opening center on the
+     * OUTWARD face, so C = (x,y) + in*T/2. Partition lines are centerlines in 3D, so C = foot
+     * of (x,y) on the line. Implemented as a projection onto the wall's band centerline, so it
+     * is robust to which face the data recorded. Returns a copy of the door with x,y = C.
+     */
+    doorAtCenterline(door, slabId) {
+        const slab = this.spec.slabs && this.spec.slabs.find(s => s.id === slabId);
+        if (!slab || !door.wallId) return door;
+        const wall = (slab.walls || []).find(w => w.id === door.wallId || `${slabId}_${w.id}` === door.wallId);
+        if (!wall) return door;
+        const T = ModelTBuilder.WALL_T;
+        let pts, closed, orient = 0;
+        if (wall.corners) {
+            pts = wall.corners; closed = true; orient = this.polygonOrientation(pts);
+        } else if (wall.start && wall.segments) {
+            pts = [{ x: wall.start.x, y: wall.start.y }];
+            wall.segments.forEach(s => {
+                const p = pts[pts.length - 1], d = s.direction;
+                pts.push({ x: p.x + (d === 'east' ? s.length : d === 'west' ? -s.length : 0),
+                           y: p.y + (d === 'south' ? s.length : d === 'north' ? -s.length : 0) });
+            });
+            closed = false;
+        } else return door;
+
+        let best = null;
+        const n = closed ? pts.length : pts.length - 1;
+        for (let i = 0; i < n; i++) {
+            const p1 = pts[i], p2 = pts[(i + 1) % pts.length];
+            const dx = p2.x - p1.x, dy = p2.y - p1.y, len2 = dx * dx + dy * dy;
+            if (len2 < 0.01) continue;
+            const t = Math.max(0, Math.min(1, ((door.x - p1.x) * dx + (door.y - p1.y) * dy) / len2));
+            const fx = p1.x + t * dx, fy = p1.y + t * dy;
+            const dist = Math.hypot(door.x - fx, door.y - fy);
+            if (!best || dist < best.dist) best = { dist, fx, fy, p1, p2 };
+        }
+        if (!best || best.dist > 3) return door;   // not on this wall — leave as recorded
+        let cx = best.fx, cy = best.fy;
+        if (closed) {
+            const inw = this.inwardNormal(best.p1, best.p2, orient);
+            cx += inw.x * T / 2; cy += inw.y * T / 2;
+        }
+        return Object.assign({}, door, { x: cx, y: cy, recordedX: door.x, recordedY: door.y });
     }
 
     /**
