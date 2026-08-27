@@ -371,7 +371,6 @@ class ModelTBuilder {
      * Profile is in XZ plane: X = horizontal length, Z = vertical height
      */
     generateWallProfileWithDoors(p1, p2, segmentLength, wallHeight, doors, isHorizontal, isVertical) {
-        const doorHeight = 10.0; // Standard door height
         const profile = [];
 
         // Sort doors by absolute position along the segment (0 to length)
@@ -392,6 +391,7 @@ class ModelTBuilder {
             // Use absolute distance along the segment (always positive)
             const doorPos = isHorizontal ? Math.abs(door.x - p1.x) : Math.abs(door.y - p1.y);
             const doorWidth = door.bayWidth || 10;
+            const doorHeight = door.openingHeight || 10;  // per-door cutout height (modeltbabylon gen-11)
             const doorStart = doorPos - doorWidth / 2;
             const doorEnd = doorPos + doorWidth / 2;
 
@@ -605,42 +605,120 @@ class ModelTBuilder {
     }
 
     /**
-     * Build a cooler door with door frames on both sides
-     * Orange frame = exterior side (facing direction)
-     * Pink frame = interior side (opposite of facing)
-     * Each frame: left piece, right piece, top piece (4" wide, 1" thick)
+     * Build a cooler door: insulated sliding panel hung from an overhead track
+     * on the facing (warm) side of the wall, plus a thin frame on each side.
+     * Data fields: openingWidth/openingHeight (ft), insulation (in),
+     * slideDirection ('left'|'right' AS SEEN FROM THE FACING SIDE — standing
+     * outside the cooler, looking at the door). Panel renders CLOSED.
+     * Modeled on lodge door quincy (cam photo 2025-11-22). — modeltbabylon gen-11
      */
     buildCoolerDoor(door, slabTop, slabId) {
         const openingWidth = door.openingWidth || door.bayWidth || door.width || 8;
         const openingHeight = door.openingHeight || 8;
         const doorBase = slabTop;
+        const isVertical = door.orientation === 'vertical';
 
-        const frameWidth = 4 / 12;      // 4 inches = 0.33 ft
-        const frameThick = 1 / 12;      // 1 inch = 0.083 ft (sticks out from wall)
+        const frameWidth = 4 / 12;      // 4 inches
+        const frameThick = 1 / 12;      // 1 inch (sticks out from wall)
         const wallThickness = 0.5;      // Wall is 0.5 ft thick
         const wallHalf = wallThickness / 2;
 
-        // Orange = exterior side (the "facing" direction)
-        const orangeMat = new BABYLON.StandardMaterial(`coolerOrangeMat_${slabId}_${door.id}`, this.scene);
-        orangeMat.diffuseColor = new BABYLON.Color3(1, 0.5, 0); // Orange
-        orangeMat.emissiveColor = new BABYLON.Color3(0.2, 0.1, 0); // Slight glow
+        // Thin aluminum frame on both faces of the wall
+        // (was orange/pink debug materials for exterior/interior — the panel side now shows facing)
+        const frameMat = new BABYLON.StandardMaterial(`coolerFrameMat_${slabId}_${door.id}`, this.scene);
+        frameMat.diffuseColor = new BABYLON.Color3(0.75, 0.75, 0.78);
+        frameMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
 
-        // Pink = interior side (opposite of facing)
-        const pinkMat = new BABYLON.StandardMaterial(`coolerPinkMat_${slabId}_${door.id}`, this.scene);
-        pinkMat.diffuseColor = new BABYLON.Color3(1, 0.4, 0.7); // Pink
-        pinkMat.emissiveColor = new BABYLON.Color3(0.2, 0.08, 0.14); // Slight glow
-
-        // Exterior frame sits on wall face (wallHalf + half of frame thickness)
         const exteriorDist = wallHalf + frameThick / 2;
         const interiorDist = -(wallHalf + frameThick / 2);
-
-        // Build frame on exterior side (orange)
         this.buildDoorFrame(door, slabId, 'exterior', openingWidth, openingHeight,
-            doorBase, frameWidth, frameThick, exteriorDist, orangeMat);
-
-        // Build frame on interior side (pink)
+            doorBase, frameWidth, frameThick, exteriorDist, frameMat);
         this.buildDoorFrame(door, slabId, 'interior', openingWidth, openingHeight,
-            doorBase, frameWidth, frameThick, interiorDist, pinkMat);
+            doorBase, frameWidth, frameThick, interiorDist, frameMat);
+
+        // --- Sliding panel on the facing side, closed over the opening ---
+        const panelThick = (door.insulation || 4) / 12;  // insulation inches -> ft
+        const panelGap = 1 / 12;                          // standoff from the wall face
+        const panelOverlap = 0.5;                         // 6" past the opening each side + top
+        const floorClear = 1 / 12;                        // hangs 1" above the slab
+        const panelW = openingWidth + panelOverlap * 2;
+        const panelH = openingHeight + panelOverlap;
+        const panelBottom = doorBase + floorClear;
+        const panelTop = panelBottom + panelH;
+        const panelDist = wallHalf + panelGap + panelThick / 2;  // wall center -> panel center
+        const panelPerp = this.getFacingOffset(door.facing, panelDist);
+
+        const panelMat = new BABYLON.StandardMaterial(`coolerPanelMat_${slabId}_${door.id}`, this.scene);
+        panelMat.diffuseColor = new BABYLON.Color3(0.93, 0.93, 0.91);  // white insulated panel
+        panelMat.specularColor = new BABYLON.Color3(0.15, 0.15, 0.15);
+
+        const panel = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_coolerdoor_panel`,
+            {
+                width: isVertical ? panelThick : panelW,
+                height: panelH,
+                depth: isVertical ? panelW : panelThick
+            },
+            this.scene
+        );
+        panel.position = this.svgToBabylon(
+            door.x + panelPerp.x,
+            door.y + panelPerp.y,
+            panelBottom + panelH / 2
+        );
+        panel.material = panelMat;
+        panel.metadata = { type: 'cooler', part: 'panel', doorId: door.id, slabId: slabId, facing: door.facing };
+        this.meshes.doors.push(panel);
+
+        // --- Overhead track: covers the opening plus a full panel width on the parked side ---
+        const slideSign = this.getSlideSign(door);   // +1/-1 along the wall axis (SVG coords)
+        const trackH = 0.25, trackD = 0.25;           // 3" x 3" rail
+        const hangerH = 0.25;                         // trolley hanger between panel top and rail
+        const trackLen = panelW * 2 + 0.5;
+        const trackCenterY = panelTop + hangerH + trackH / 2;
+        const trackShift = slideSign * panelW / 2;    // rail center sits between closed and parked positions
+        const trackParallel = isVertical ? { x: 0, y: trackShift } : { x: trackShift, y: 0 };
+
+        const metalMat = new BABYLON.StandardMaterial(`coolerTrackMat_${slabId}_${door.id}`, this.scene);
+        metalMat.diffuseColor = new BABYLON.Color3(0.55, 0.55, 0.58);  // galvanized
+        metalMat.specularColor = new BABYLON.Color3(0.4, 0.4, 0.4);
+
+        const track = BABYLON.MeshBuilder.CreateBox(
+            `${slabId}_${door.id}_coolerdoor_track`,
+            {
+                width: isVertical ? trackD : trackLen,
+                height: trackH,
+                depth: isVertical ? trackLen : trackD
+            },
+            this.scene
+        );
+        track.position = this.svgToBabylon(
+            door.x + panelPerp.x + trackParallel.x,
+            door.y + panelPerp.y + trackParallel.y,
+            trackCenterY
+        );
+        track.material = metalMat;
+        track.isPickable = false;
+        this.meshes.doors.push(track);
+
+        // Two trolley hangers tying the panel top to the rail
+        [-1, 1].forEach((side, i) => {
+            const along = side * panelW / 4;
+            const hp = isVertical ? { x: 0, y: along } : { x: along, y: 0 };
+            const hanger = BABYLON.MeshBuilder.CreateBox(
+                `${slabId}_${door.id}_coolerdoor_hanger${i}`,
+                { width: 0.2, height: hangerH, depth: 0.2 },
+                this.scene
+            );
+            hanger.position = this.svgToBabylon(
+                door.x + panelPerp.x + hp.x,
+                door.y + panelPerp.y + hp.y,
+                panelTop + hangerH / 2
+            );
+            hanger.material = metalMat;
+            hanger.isPickable = false;
+            this.meshes.doors.push(hanger);
+        });
     }
 
     /**
@@ -787,22 +865,22 @@ class ModelTBuilder {
     }
 
     /**
-     * Get track offset based on door facing and slide direction
+     * Sign (+1/-1) along the wall axis toward a sliding door's parked side.
+     * slideDirection is 'left' | 'right' AS SEEN FROM THE FACING SIDE
+     * (standing outside the cooler, looking at the door). SVG axes: +x east, +y south.
+     * Defaults to 'left' when unspecified. — modeltbabylon gen-11
      */
-    getTrackOffset(door, slideDirection, openingWidth) {
-        const offset = slideDirection === 'left' ? -openingWidth * 0.25 : openingWidth * 0.25;
+    getSlideSign(door) {
+        const left = (door.slideDirection || 'left') !== 'right';
+        let sign;
         switch (door.facing) {
-            case 'north':
-            case 'south':
-                return { x: offset, y: 0 };
-            case 'east':
-            case 'west':
-                return { x: 0, y: offset };
-            default:
-                return door.orientation === 'vertical'
-                    ? { x: 0, y: offset }
-                    : { x: offset, y: 0 };
+            case 'north': sign = 1;  break;   // viewer looks south: left hand = east (+x)
+            case 'south': sign = -1; break;   // viewer looks north: left = west (-x)
+            case 'east':  sign = 1;  break;   // viewer looks west:  left = south (+y)
+            case 'west':  sign = -1; break;   // viewer looks east:  left = north (-y)
+            default:      sign = 1;
         }
+        return left ? sign : -sign;
     }
 
     /**
