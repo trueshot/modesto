@@ -44,6 +44,10 @@ class ModelTParser {
  * Supports both v1 (flat) and v2 (multi-slab) formats
  */
 class ModelTBuilder {
+    // Wall thickness, feet. RULED 2026-08-27 (George): data is whole feet; default wall = 1 ft
+    // (= what the 2D plan draws). A per-wall walls[].thickness (integer ft) may override later.
+    static WALL_T = 1.0;
+
     constructor(scene, spec) {
         this.scene = scene;
         this.spec = spec;
@@ -189,7 +193,7 @@ class ModelTBuilder {
         const corners = wall.corners;
         const slabTop = slabElevation;
         const wallHeight = 15.0;
-        const wallThickness = 0.5;
+        const wallThickness = ModelTBuilder.WALL_T;
 
         const wallMaterial = new BABYLON.StandardMaterial(`wallMat_${slabId}_${wall.id}`, this.scene);
         wallMaterial.diffuseColor = new BABYLON.Color3(0, 0.27, 0.62);
@@ -437,7 +441,7 @@ class ModelTBuilder {
     buildPartitionWallMesh(wall, slabElevation, slabId, doors = []) {
         const slabTop = slabElevation;
         const wallHeight = 15.0;
-        const wallThickness = 0.5;
+        const wallThickness = ModelTBuilder.WALL_T;
 
         const partitionMaterial = new BABYLON.StandardMaterial(`partitionMat_${slabId}_${wall.id}`, this.scene);
         partitionMaterial.diffuseColor = new BABYLON.Color3(0, 0.27, 0.62);
@@ -622,7 +626,7 @@ class ModelTBuilder {
 
         const frameWidth = 4 / 12;      // 4 inches
         const frameThick = 1 / 12;      // 1 inch (sticks out from wall)
-        const wallThickness = 0.5;      // Wall is 0.5 ft thick
+        const wallThickness = ModelTBuilder.WALL_T;      // wall thickness (ft)
         const wallHalf = wallThickness / 2;
 
         // Thin aluminum frame on both faces of the wall
@@ -1008,7 +1012,7 @@ class ModelTBuilder {
         const doorBase = slabTop;
         const doorCenterY = doorBase + openingHeight / 2;
         const sides = this.doorSides(door);
-        const wallHalf = 0.25;
+        const wallHalf = ModelTBuilder.WALL_T / 2;
 
         // Dock seal (black rubber frame around door) — EXTERIOR face
         if (door.hasDockSeal !== false) {
@@ -1175,7 +1179,7 @@ class ModelTBuilder {
         const housingHeight = door.housingHeight || 2;
         const trackWidth = door.trackWidth || 0.5;
         const sides = this.doorSides(door);
-        const wallHalf = 0.25;
+        const wallHalf = ModelTBuilder.WALL_T / 2;
         const trackPerp = sides.inn(wallHalf + 0.15);          // tracks on the interior face
         const housingPerp = sides.inn(wallHalf + housingHeight / 2);
         const curtainPerp = sides.inn(wallHalf + 0.10);
@@ -1710,7 +1714,7 @@ class ModelTBuilder {
         const corners = this.spec.walls.corners;
         const slabTop = 4.0;  // Top of slab (Y=4)
         const wallHeight = 15.0;  // 15 feet high
-        const wallThickness = 0.5;  // 6 inches thick
+        const wallThickness = ModelTBuilder.WALL_T;
         const wallBase = slabTop;  // Wall bottom sits on slab top
         const wallCenterY = wallBase + wallHeight / 2;  // Center Y position
 
@@ -1779,7 +1783,7 @@ class ModelTBuilder {
 
         const slabTop = 4.0;  // Top of slab (Y=4)
         const wallHeight = 10.0;  // Partition walls are shorter
-        const wallThickness = 0.5;
+        const wallThickness = ModelTBuilder.WALL_T;
         const wallBase = slabTop;  // Wall bottom sits on slab top
         const wallCenterY = wallBase + wallHeight / 2;  // Center Y position
 
