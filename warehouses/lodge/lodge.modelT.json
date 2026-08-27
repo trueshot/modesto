@@ -425,17 +425,6 @@
       ],
       "doors": [
         {
-          "id": "washington",
-          "wallId": "mercury_perimeter",
-          "x": 190,
-          "y": 100,
-          "type": "bay",
-          "orientation": "horizontal",
-          "facing": "north",
-          "openingWidth": 16,
-          "leafWidth": 16
-        },
-        {
           "id": "lincoln",
           "wallId": "mercury_perimeter",
           "x": 220,
