@@ -119,6 +119,23 @@ const server = app.listen(config.port, () => {
 const wss = new WebSocket.Server({ port: 8080 });
 const clients = new Map(); // Map of warehouseId -> Set of connected clients
 
+// Forward a message verbatim to every OPEN browser registered for its
+// warehouse. Returns the count actually sent. Used by the test / reload /
+// door-state / query relay branches so the "fan out to this warehouse's
+// browsers" logic lives in exactly one place. — modestomulti gen-6
+function forwardToWarehouse(data) {
+  const warehouseClients = clients.get(data.warehouseId);
+  if (!warehouseClients || warehouseClients.size === 0) return 0;
+  let sent = 0;
+  warehouseClients.forEach(client => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify(data));
+      sent++;
+    }
+  });
+  return sent;
+}
+
 wss.on('connection', (ws) => {
   console.log('WebSocket client connected (unidentified)');
   let clientWarehouseId = null;
@@ -143,71 +160,32 @@ wss.on('connection', (ws) => {
       // Handle test message from Claude
       else if (data.type === 'test') {
         clientType = 'claude-cli';
-        console.log(`🤖 CLAUDE test message for ${data.warehouseId}: "${data.message}"`);
-        // Forward test message to all clients viewing this warehouse
-        const warehouseClients = clients.get(data.warehouseId);
-        if (warehouseClients) {
-          warehouseClients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify(data));
-            }
-          });
-          console.log(`   ✓ Forwarded to ${warehouseClients.size} browser client(s)`);
-        } else {
-          console.log(`   ✗ No browser clients connected for warehouse "${data.warehouseId}"`);
-        }
+        const sent = forwardToWarehouse(data);
+        console.log(`🤖 CLAUDE test message for ${data.warehouseId}: "${data.message}" → ${sent} browser client(s)`);
       }
 
       // Handle reload warehouse command from Claude
       else if (data.type === 'reload-warehouse') {
         clientType = 'claude-cli';
-        console.log(`🤖 CLAUDE reload command for ${data.warehouseId}`);
-        // Forward reload command to all clients viewing this warehouse
-        const warehouseClients = clients.get(data.warehouseId);
-        if (warehouseClients) {
-          warehouseClients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify(data));
-            }
-          });
-          console.log(`   ✓ Reload sent to ${warehouseClients.size} browser client(s)`);
-        } else {
-          console.log(`   ✗ No browser clients connected for warehouse "${data.warehouseId}"`);
-        }
+        const sent = forwardToWarehouse(data);
+        console.log(`🤖 CLAUDE reload command for ${data.warehouseId} → ${sent} browser client(s)`);
       }
 
       // Door open/closed state from the sensing loop -> every browser viewing this warehouse
       //   {type:'door-state',  warehouseId, doorId, state:'open'|'closed'|0..1}
       //   {type:'door-states', warehouseId, doors:[{doorId, state}, ...]}
-      // — modeltbabylon gen-11
+      // — modeltbabylon gen-11, relay via forwardToWarehouse — modestomulti gen-6
       else if (data.type === 'door-state' || data.type === 'door-states') {
-        const warehouseClients = clients.get(data.warehouseId);
         const n = data.type === 'door-states' ? (data.doors || []).length : 1;
-        if (warehouseClients && warehouseClients.size > 0) {
-          warehouseClients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify(data));
-            }
-          });
-          console.log(`🚪 door-state (${n}) for ${data.warehouseId} -> ${warehouseClients.size} browser client(s)`);
-        } else {
-          console.log(`🚪 door-state for ${data.warehouseId}: no browser clients connected`);
-        }
+        const sent = forwardToWarehouse(data);
+        console.log(`🚪 door-state (${n}) for ${data.warehouseId} → ${sent} browser client(s)`);
       }
 
       // Handle query from Claude (via modelt-query.js)
       else if (data.type === 'query') {
         clientType = 'claude-cli';
-        console.log(`🤖 CLAUDE query for ${data.warehouseId}: ${data.command}`);
-        // Forward query to all clients viewing this warehouse
-        const warehouseClients = clients.get(data.warehouseId);
-        if (warehouseClients) {
-          warehouseClients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(JSON.stringify(data));
-            }
-          });
-        }
+        const sent = forwardToWarehouse(data);
+        console.log(`🤖 CLAUDE query for ${data.warehouseId}: ${data.command} → ${sent} browser client(s)`);
       }
 
       // Handle response from browser
