@@ -799,6 +799,17 @@
           "openingWidth": 4,
           "openingHeight": 4,
           "sillHeight": 4
+        },
+        {
+          "id": "obama",
+          "wallId": "mercury_perimeter",
+          "x": 286,
+          "y": 100,
+          "type": "bay",
+          "orientation": "horizontal",
+          "facing": "north",
+          "openingWidth": 16,
+          "openingHeight": 12
         }
       ],
       "cameras": [
