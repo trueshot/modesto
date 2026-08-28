@@ -476,7 +476,9 @@ function generateWalls(wallStructure) {
     }
   }
 
-  return wallsSVG;
+  // Wrap in a group only to carry data-source when the wall geometry is an estimate (§5.4.2).
+  const src = sourceAttr(wallStructure);
+  return src ? `\n  <g${src}>${wallsSVG}\n  </g>` : wallsSVG;
 }
 
 // Generate slab path from corners
@@ -492,6 +494,14 @@ function generateSlab(corners) {
 }
 
 // Generate door overlay
+// Source provenance (§5.4.2, ruled 2026-08-28): any element whose geometry was estimated
+// carries `source: "estimate:..."`. Surface that as data-source so consumers can style
+// estimated geometry; measured/observed sources are not marked.
+function sourceAttr(el) {
+  return (el && typeof el.source === 'string' && el.source.startsWith('estimate:'))
+    ? ` data-source="${el.source}"` : '';
+}
+
 // Bird's-eye door geometry — MODELT_SPECIFICATION §5.4.4 + §5.4.7 (normative, 2026-08-27).
 // Canonical frame = a door facing NORTH (out = -y, interior = +y, left = +x). Each part
 // from the §5.4.7 tables becomes an axis-aligned rect placed at (q along +left, p perp
@@ -634,7 +644,7 @@ function generateDoor(door, index, isPartition = false) {
   }
 
   const sillAttr = (type === 'conveyor' && door.sillHeight !== undefined) ? ` data-sill="${door.sillHeight}"` : '';
-  const dataAttrs = `data-type="${type}" data-facing="${facing}" data-hardware-side="${hardwareSide}"${sillAttr}`;
+  const dataAttrs = `data-type="${type}" data-facing="${facing}" data-hardware-side="${hardwareSide}"${sillAttr}${sourceAttr(door)}`;
   return `
   <g id="door_${doorId}" transform="translate(${Cx},${Cy}) rotate(${bearing})" ${dataAttrs}>${parts.join('')}
   </g>`;
@@ -696,7 +706,7 @@ function generateCamera(camera) {
   const largeArcFlag = viewingAngle > 180 ? 1 : 0;
 
   let cameraSVG = `
-  <g id="${cameraId}" class="camera">
+  <g id="${cameraId}" class="camera"${sourceAttr(camera)}>
     <!-- Camera position circle -->
     <circle cx="${x}" cy="${y}" r="0.5" fill="#ff0000" stroke="#000" stroke-width="0.1"/>
 
@@ -750,7 +760,7 @@ function generateColumn(column) {
   const crossbarY = 0;
 
   let columnSVG = `
-  <g id="${columnId}" class="column">
+  <g id="${columnId}" class="column"${sourceAttr(column)}>
     <!-- H-beam structural column -->
     <g transform="translate(${x},${y})">
       <!-- Left vertical bar -->
@@ -845,7 +855,7 @@ function generatePartitionWalls(partitionWalls) {
     const wallName = partition.id || 'unnamed';
     const nSeg = points.length - 1;
     wallsSVG += `
-  <g id="partition_${wallName}">`;
+  <g id="partition_${wallName}"${sourceAttr(partition)}>`;
 
     // Interior corner pieces: a 1x1 piece centered on the vertex, type from the turn.
     for (let i = 1; i < points.length - 1; i++) {
@@ -1284,6 +1294,32 @@ function validateWarehouseSpec(spec) {
       });
     }
   });
+
+  // Overlapping openings (§8.3, ruled 2026-08-28): two openings on the same wall side must
+  // not overlap. Group by wallId + orientation + fixed axis coordinate (same side), then
+  // check the along-wall extents (center ± openingWidth/2) are disjoint; name both doors.
+  const doorGroups = {};
+  doors.forEach(d => {
+    if (d.openingWidth === undefined || d.x === undefined || d.y === undefined) return;
+    const vertical = d.orientation === 'vertical';
+    const key = `${d.wallId}|${vertical ? 'V' + d.x : 'H' + d.y}`;
+    const c = vertical ? d.y : d.x, half = d.openingWidth / 2;
+    (doorGroups[key] || (doorGroups[key] = [])).push({ id: d.id, lo: c - half, hi: c + half, _slab: d._slab });
+  });
+  for (const key of Object.keys(doorGroups)) {
+    const g = doorGroups[key].sort((a, b) => a.lo - b.lo);
+    let maxHi = -Infinity, maxId = null;
+    for (const d of g) {
+      if (d.lo < maxHi - 1e-9) {
+        violations.push({
+          type: 'door',
+          id: d.id,
+          message: `Overlapping openings on the same wall: "${maxId}" and "${d.id}"${where(d)} - door extents must be disjoint`
+        });
+      }
+      if (d.hi > maxHi) { maxHi = d.hi; maxId = d.id; }
+    }
+  }
 
   // Outward-extent check (§5.4.7): when property.boundary is explicit, a door's outward
   // parts (dock seal reaches ~1.5 ft beyond the stored outward-face (x,y)) must not exceed

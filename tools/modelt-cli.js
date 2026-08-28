@@ -78,6 +78,15 @@ function output(result) {
  * Main command handler
  */
 async function main() {
+  // Tooling rule (spec §5.1): slab/wall `corners` are regenerated from `segments` on every
+  // run, so a direct corner edit is silently undone. Refuse it and point the user at segments.
+  if (options.corners !== undefined) {
+    output({
+      success: false,
+      error: 'Refusing to edit `corners` directly (spec §5.1): slab/wall corners are regenerated from `segments` on every run, so a corner edit is silently undone. Edit `segments` instead.'
+    });
+    process.exit(1);
+  }
   try {
     const editor = new ModelTEditor(warehousePath);
     let result = null;
