@@ -533,6 +533,13 @@ function generateDoor(door, index, isPartition = false) {
   const L = (leafWidth !== undefined) ? leafWidth : (leafDefault[type] !== undefined ? leafDefault[type] : W - 1);
   const openingFill = (type === 'interior') ? '#ffffff' : '#8888aa';
 
+  // Live state (§5.4.2 + §5.4.7 amendment 2026-08-28): the plan RENDERS state.open (0..1).
+  // Absent state = closed. openAngle (personnel) defaults to 90.
+  const openFrac = (door.state && typeof door.state.open === 'number')
+    ? Math.max(0, Math.min(1, door.state.open))
+    : (door.state === 'open' ? 1 : 0);
+  const openAngle = (door.openAngle !== undefined) ? door.openAngle : 90;
+
   // Canonical part: q along +left, p perp +outward, `along` extent over left, `depth` over out.
   const R = (q, p, along, depth, attrs) =>
     `\n    <rect x="${round(q - along / 2)}" y="${round(-p - depth / 2)}" width="${round(along)}" height="${round(depth)}" ${attrs}/>`;
@@ -553,7 +560,8 @@ function generateDoor(door, index, isPartition = false) {
     parts.push(R(0, -(T2 + 1.0), L + 1, dia, 'fill="#666" fill-opacity="0.9"'));                 // roll housing
     parts.push(R(+(L / 2 + 0.25), -(T2 + 0.15), 0.5, 0.3, 'fill="#555"'));                        // guide track (left)
     parts.push(R(-(L / 2 + 0.25), -(T2 + 0.15), 0.5, 0.3, 'fill="#555"'));                        // guide track (right)
-    parts.push(R(0, -(T2 + 0.10), L, isRollup ? 0.10 : 0.15, 'fill="#999"'));                     // curtain
+    const curtainAlong = L * (1 - openFrac);                                                       // state: open=1 -> clear
+    if (curtainAlong > 0.001) parts.push(R(0, -(T2 + 0.10), curtainAlong, isRollup ? 0.10 : 0.15, 'fill="#999"')); // curtain (closed fraction)
     parts.push(R(0, 0, W, T, `fill="${openingFill}"`));                                           // opening cut
     if (jAlong > 0.001) {                                                                          // jambs x2 (in wall)
       parts.push(R(+jQ, 0, jAlong, T, 'fill="#00449e"'));
@@ -574,33 +582,41 @@ function generateDoor(door, index, isPartition = false) {
     parts.push(R(0, -(T2 + 0.04), W + 0.67, 0.083, 'fill="#00449e"'));                            // frame (interior face)
     if (slide === 'left' || slide === 'right') {
       const s = slide === 'left' ? 1 : -1;
+      const slid = s * openFrac * PW;                                                             // state: panel slides along rail
       hardwareSide = slide;
-      parts.push(R(s * PW / 2, pPanel, 2 * PW + 0.5, 0.25, 'fill="#444"'));                       // track/rail
-      parts.push(R(0, pPanel, PW, t, 'fill="#8888aa"'));                                          // panel (closed)
-      parts.push(R(+PW / 4, pPanel, 0.2, 0.2, 'fill="#444"'));                                    // hangers x2
-      parts.push(R(-PW / 4, pPanel, 0.2, 0.2, 'fill="#444"'));
+      parts.push(R(s * PW / 2, pPanel, 2 * PW + 0.5, 0.25, 'fill="#444"'));                       // track/rail (fixed)
+      parts.push(R(slid, pPanel, PW, t, 'fill="#8888aa"'));                                       // panel (shifted by state.open)
+      parts.push(R(slid + PW / 4, pPanel, 0.2, 0.2, 'fill="#444"'));                              // hangers x2
+      parts.push(R(slid - PW / 4, pPanel, 0.2, 0.2, 'fill="#444"'));
     } else {
       hardwareSide = 'unknown';  // never guess a side (§5.4.7): rail spanning the opening only
       parts.push(R(0, pPanel, W, 0.25, 'fill="#444"'));
     }
   } else if (type === 'personnel') {
-    const hinge = door.hingePosition, swing = door.swingDirection;
+    // §5.4.7 (2026-08-28): hingePosition REQUIRED (as seen from facing side); swing is always
+    // toward the interior (swingDirection deprecated/derived). Leaf is a LINE of length L=W-0.2
+    // from the hinge jamb point, rotated a = state.open*openAngle toward the interior, plus the
+    // architect's quarter-circle swing arc (radius L) on the interior side.
+    const hinge = door.hingePosition;
+    const Lp = W - 0.2;
     parts.push(R(0, 0, W, T, `fill="${openingFill}"`));                                           // opening
     parts.push(R(+(W / 2 + 0.125), 0, 0.25, 0.25, 'fill="#00449e"'));                             // frame (side jamb)
     parts.push(R(-(W / 2 + 0.125), 0, 0.25, 0.25, 'fill="#00449e"'));                             // frame (side jamb)
-    if ((hinge === 'left' || hinge === 'right') && (swing === 'inward' || swing === 'outward')) {
-      const h = hinge === 'left' ? 1 : -1, w = swing === 'outward' ? 1 : -1;
-      hardwareSide = `${hinge}/${swing}`;
-      const pLeaf = w * (T2 + 0.075);
-      parts.push(R(0, pLeaf, W - 0.2, 0.15, 'fill="#999"'));                                      // leaf (closed)
-      // swing arc: quarter circle radius W-0.2 centered on the hinge jamb, on the swing side.
-      const Rr = W - 0.2;
-      const Cx = round(-h * (W / 2 - 0.1)), Cy = round(-(w * (T2 + 0.075)));   // closed free end
-      const Ox = round(h * (W / 2 - 0.1)), Oy = round(-(w * Rr));             // open free end
-      const sweep = (h * w > 0) ? 1 : 0;
-      parts.push(`\n    <path d="M ${Cx},${Cy} A ${round(Rr)},${round(Rr)} 0 0,${sweep} ${Ox},${Oy}" fill="none" stroke="#999" stroke-width="0.05" stroke-dasharray="0.2,0.2"/>`);
+    if (hinge === 'left' || hinge === 'right') {
+      const h = hinge === 'left' ? 1 : -1;
+      hardwareSide = `${hinge}/interior`;
+      const hx = h * (W / 2 - 0.1), hy = T2;                   // hinge jamb point (interior face; canonical y = -p = +T2)
+      const a = (openFrac * openAngle) * Math.PI / 180;        // current swing angle from the wall
+      const tipX = round(hx - h * Lp * Math.cos(a));
+      const tipY = round(hy + Lp * Math.sin(a));               // +y is interior
+      parts.push(`\n    <line x1="${round(hx)}" y1="${round(hy)}" x2="${tipX}" y2="${tipY}" stroke="#999" stroke-width="0.15"/>`); // leaf
+      const cX = round(hx - h * Lp), cY = round(hy);           // closed tip (along wall)
+      const oX = round(hx), oY = round(hy + Lp);               // open-90 tip (into interior)
+      const sweep = (h > 0) ? 0 : 1;
+      parts.push(`\n    <path d="M ${cX},${cY} A ${round(Lp)},${round(Lp)} 0 0,${sweep} ${oX},${oY}" fill="none" stroke="#999" stroke-width="0.05" stroke-dasharray="0.2,0.2"/>`); // swing arc
     } else {
-      hardwareSide = 'unknown';  // missing hingePosition/swingDirection: opening + frame only
+      hardwareSide = 'unknown';  // missing hingePosition: leaf centered in the opening, no swing
+      parts.push(R(0, -T2, Lp, 0.15, 'fill="#999"'));
     }
   } else {
     // interior / opening: opening only, no hardware
@@ -1224,10 +1240,10 @@ function validateWarehouseSpec(spec) {
         message: `Cooler door "${door.id}"${where(door)} leafWidth ${door.leafWidth} <= openingWidth ${door.openingWidth} - the sliding panel must be wider than the hole (default W+1)`
       });
     }
-    // Instance-side fields (v0.5 §5.4 ruling, modestocat 2026-08-27): the hardware
-    // SIDE must never be defaulted. Absent -> warn; 2D draws a neutral opening with
+    // Instance-side fields (§5.4 ruling 2026-08-27, amended 2026-08-28): the hardware SIDE
+    // must never be defaulted. Absent -> warn; 2D draws a neutral opening with
     // data-hardware-side='unknown'. cooler needs slideDirection; personnel needs
-    // hingePosition + swingDirection.
+    // hingePosition (swingDirection DEPRECATED — swing is derived, always toward interior).
     if (door.type === 'cooler' && door.slideDirection === undefined) {
       violations.push({
         type: 'door',
@@ -1235,21 +1251,19 @@ function validateWarehouseSpec(spec) {
         message: `Cooler door "${door.id}"${where(door)} missing slideDirection (left|right) - required; hardware side must not be defaulted`
       });
     }
-    if (door.type === 'personnel') {
-      if (door.hingePosition === undefined) {
-        violations.push({
-          type: 'door',
-          id: door.id,
-          message: `Personnel door "${door.id}"${where(door)} missing hingePosition (left|right) - required; hinge side must not be defaulted`
-        });
-      }
-      if (door.swingDirection === undefined) {
-        violations.push({
-          type: 'door',
-          id: door.id,
-          message: `Personnel door "${door.id}"${where(door)} missing swingDirection (inward|outward) - required; swing side must not be defaulted`
-        });
-      }
+    if (door.type === 'personnel' && door.hingePosition === undefined) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Personnel door "${door.id}"${where(door)} missing hingePosition (left|right) - required; hinge side must not be defaulted`
+      });
+    }
+    if (door.swingDirection !== undefined) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Door "${door.id}"${where(door)} has deprecated swingDirection - the swing is derived (always toward interior); remove it`
+      });
     }
   });
 
