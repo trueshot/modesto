@@ -764,6 +764,30 @@
           "facing": "west",
           "openingWidth": 8,
           "openingHeight": 12
+        },
+        {
+          "id": "roosevelt",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 283,
+          "type": "personnel",
+          "orientation": "vertical",
+          "facing": "east",
+          "openingWidth": 3,
+          "openingHeight": 7,
+          "hingePosition": "right"
+        },
+        {
+          "id": "taft",
+          "wallId": "mercury_perimeter",
+          "x": 329,
+          "y": 293,
+          "type": "personnel",
+          "orientation": "vertical",
+          "facing": "east",
+          "openingWidth": 3,
+          "openingHeight": 7,
+          "hingePosition": "left"
         }
       ],
       "cameras": [
