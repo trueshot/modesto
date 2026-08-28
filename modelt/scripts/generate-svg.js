@@ -618,12 +618,23 @@ function generateDoor(door, index, isPartition = false) {
       hardwareSide = 'unknown';  // missing hingePosition: leaf centered in the opening, no swing
       parts.push(R(0, -T2, Lp, 0.15, 'fill="#999"'));
     }
+  } else if (type === 'conveyor') {
+    // Conveyor penetration (§5.4.7): a distinct-fill opening (so it can't read as a doorway)
+    // plus a SYMBOL — a dashed centerline through the wall extending 3 ft each side, with a
+    // small arrowhead on the facing (outward) side. No hardware; the belt's geometry is
+    // unspecified (§5.4.3), so draw nothing that asserts extent/direction/height.
+    hardwareSide = 'n/a';
+    parts.push(R(0, 0, W, T, 'fill="#ccaa44" fill-opacity="0.5"'));                                // opening (distinct fill)
+    const ext = T2 + 3;                                                                            // reach: T/2 + 3 ft each side
+    parts.push(`\n    <line x1="0" y1="${round(-ext)}" x2="0" y2="${round(ext)}" stroke="#666" stroke-width="0.1" stroke-dasharray="0.4,0.3"/>`); // centerline (q=0, through the wall)
+    parts.push(`\n    <path d="M -0.3,${round(-ext + 0.5)} L 0,${round(-ext)} L 0.3,${round(-ext + 0.5)}" fill="none" stroke="#666" stroke-width="0.1"/>`); // arrowhead on the facing (outward = -y) side
   } else {
     // interior / opening: opening only, no hardware
     parts.push(R(0, 0, W, T, `fill="${openingFill}"`));
   }
 
-  const dataAttrs = `data-type="${type}" data-facing="${facing}" data-hardware-side="${hardwareSide}"`;
+  const sillAttr = (type === 'conveyor' && door.sillHeight !== undefined) ? ` data-sill="${door.sillHeight}"` : '';
+  const dataAttrs = `data-type="${type}" data-facing="${facing}" data-hardware-side="${hardwareSide}"${sillAttr}`;
   return `
   <g id="door_${doorId}" transform="translate(${Cx},${Cy}) rotate(${bearing})" ${dataAttrs}>${parts.join('')}
   </g>`;
@@ -1256,6 +1267,13 @@ function validateWarehouseSpec(spec) {
         type: 'door',
         id: door.id,
         message: `Personnel door "${door.id}"${where(door)} missing hingePosition (left|right) - required; hinge side must not be defaulted`
+      });
+    }
+    if (door.type === 'conveyor' && door.sillHeight === undefined) {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Conveyor door "${door.id}"${where(door)} missing sillHeight (ft) - required (§5.4.3)`
       });
     }
     if (door.swingDirection !== undefined) {
