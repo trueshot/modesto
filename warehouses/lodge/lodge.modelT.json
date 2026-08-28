@@ -343,56 +343,56 @@
         {
           "id": "oak",
           "name": "Oak",
-          "x": 229,
+          "x": 271,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 58ft W / 16ft N"
+          "location": "Packing Line 1, 58ft from East wall / 16ft N"
         },
         {
           "id": "maple",
           "name": "Maple",
-          "x": 257,
+          "x": 243,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 86ft W / 16ft N"
+          "location": "Packing Line 1, 86ft from East wall / 16ft N"
         },
         {
           "id": "pine",
           "name": "Pine",
-          "x": 287,
+          "x": 213,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 116ft W / 16ft N"
+          "location": "Packing Line 1, 116ft from East wall / 16ft N"
         },
         {
           "id": "birch",
           "name": "Birch",
-          "x": 229,
+          "x": 271,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 58ft W / 75ft N"
+          "location": "Packing Line 1, 58ft from East wall / 75ft N"
         },
         {
           "id": "cedar",
           "name": "Cedar",
-          "x": 257,
+          "x": 243,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 86ft W / 75ft N"
+          "location": "Packing Line 1, 86ft from East wall / 75ft N"
         },
         {
           "id": "elm",
           "name": "Elm",
-          "x": 287,
+          "x": 213,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 116ft W / 75ft N"
+          "location": "Packing Line 1, 116ft from East wall / 75ft N"
         }
       ],
       "doors": [
