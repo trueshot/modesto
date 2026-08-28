@@ -747,7 +747,7 @@
           "openingWidth": 3,
           "openingHeight": 7,
           "swingDirection": "inward",
-          "hingePosition": "left",
+          "hingePosition": "right",
           "state": {
             "open": 1,
             "updatedAt": "2026-08-28T09:30:00Z",
