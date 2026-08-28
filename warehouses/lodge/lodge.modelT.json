@@ -570,81 +570,54 @@
           "leafWidth": 8.667
         },
         {
-          "id": "roosevelt",
-          "wallId": "mercury_perimeter",
-          "x": 157,
-          "y": 400,
-          "type": "bay",
-          "orientation": "horizontal",
-          "facing": "south",
-          "openingWidth": 10,
-          "leafWidth": 8.667
-        },
-        {
-          "id": "taft",
-          "wallId": "mercury_perimeter",
-          "x": 170,
-          "y": 400,
-          "type": "bay",
-          "orientation": "horizontal",
-          "facing": "south",
-          "openingWidth": 10,
-          "leafWidth": 8.667
-        },
-        {
           "id": "wilson",
           "wallId": "mercury_perimeter",
           "x": 150,
-          "y": 382,
+          "y": 388,
           "type": "bay",
           "orientation": "vertical",
           "facing": "west",
-          "openingWidth": 10,
-          "leafWidth": 8.667
+          "openingWidth": 8
         },
         {
           "id": "harding",
           "wallId": "mercury_perimeter",
           "x": 150,
-          "y": 362,
+          "y": 363,
           "type": "bay",
           "orientation": "vertical",
           "facing": "west",
-          "openingWidth": 10,
-          "leafWidth": 8.667
+          "openingWidth": 8
         },
         {
           "id": "coolidge",
           "wallId": "mercury_perimeter",
           "x": 150,
-          "y": 342,
+          "y": 336,
           "type": "bay",
           "orientation": "vertical",
           "facing": "west",
-          "openingWidth": 10,
-          "leafWidth": 8.667
+          "openingWidth": 8
         },
         {
           "id": "hoover",
           "wallId": "mercury_perimeter",
           "x": 150,
-          "y": 322,
+          "y": 318,
           "type": "bay",
           "orientation": "vertical",
           "facing": "west",
-          "openingWidth": 10,
-          "leafWidth": 8.667
+          "openingWidth": 8
         },
         {
           "id": "truman",
           "wallId": "mercury_perimeter",
           "x": 150,
-          "y": 302,
+          "y": 300,
           "type": "bay",
           "orientation": "vertical",
           "facing": "west",
-          "openingWidth": 10,
-          "leafWidth": 8.667
+          "openingWidth": 8
         },
         {
           "id": "carter",
@@ -766,6 +739,17 @@
           "openingHeight": 8,
           "insulation": 4,
           "slideDirection": "left"
+        },
+        {
+          "id": "bush",
+          "wallId": "mercury_perimeter",
+          "x": 150,
+          "y": 288,
+          "type": "bay",
+          "orientation": "vertical",
+          "facing": "west",
+          "openingWidth": 8,
+          "openingHeight": 12
         }
       ],
       "cameras": [
