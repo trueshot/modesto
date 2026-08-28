@@ -764,6 +764,7 @@ class ModelTBuilder {
         panel.metadata.open = false;
         panel.metadata.twinDoor = true;
         panel.metadata.sideKnown = sideKnown;
+        this.applyInitialState(door);
     }
 
     /**
@@ -950,6 +951,19 @@ class ModelTBuilder {
         const ease = new BABYLON.CubicEase();
         ease.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
 
+        if (d.kind === 'swing') {
+            // Hinged leaf: rotate the hinge pivot from closed (0) to openAngle (90° into the interior).
+            const target = d.openAngle * fraction;
+            if (animate) {
+                BABYLON.Animation.CreateAndStartAnimation(`swing_${doorId}`, d.pivot, 'rotation.y', 60, 60,
+                    d.pivot.rotation.y, target, BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT, ease);
+            } else {
+                d.pivot.rotation.y = target;
+            }
+            d.panel.metadata.open = d.open;
+            return d;
+        }
+
         if (d.kind === 'roll') {
             // Curtain rolls up into the housing: shrink from the bottom, top edge pinned.
             const visible = Math.max(0.03, 1 - fraction);
@@ -1014,6 +1028,7 @@ class ModelTBuilder {
         };
         panel.metadata = Object.assign(panel.metadata || {}, { twinDoor: true, part: 'panel', open: false });
         panel.isPickable = true;   // click to toggle
+        this.applyInitialState(door);
     }
 
     /**
@@ -1443,19 +1458,38 @@ class ModelTBuilder {
         rightFrame.isPickable = false;
         this.meshes.doors.push(rightFrame);
 
-        // Door panel
+        // Door leaf — HINGED (modeltbabylon gen-12, 2026-08-28, George: "open into the main room").
+        // hingePosition = left|right AS SEEN FROM THE FACING SIDE (same rule as slideDirection).
+        // The leaf swings AWAY from the facing side (spec 5.4.4: facing = the swing-away face),
+        // i.e. toward the interior = -facing. No hingePosition => leaf drawn centered, cannot animate.
         const panelMaterial = new BABYLON.StandardMaterial(`personnelPanelMat_${slabId}_${door.id}`, this.scene);
         panelMaterial.diffuseColor = new BABYLON.Color3(0.5, 0.4, 0.3); // Wood brown
 
+        const leafW = door.leafWidth || (openingWidth - 0.2);   // spec 5.4.7: personnel L = W-0.2
+        const hingeSign = this.getSlideSign({ facing: door.facing, slideDirection: door.hingePosition });
+        const sideKnown = hingeSign !== 0;
+        if (!sideKnown) console.warn(`Door ${door.id}: hingePosition missing — leaf drawn centered, cannot swing`);
+        const axis = door.orientation === 'vertical' ? { x: 0, y: 1 } : { x: 1, y: 0 };   // along the wall (svg)
+        // Hinge sits on the hinge-side jamb, on the wall centerline.
+        const hingeSvg = sideKnown
+            ? { x: door.x + axis.x * hingeSign * openingWidth / 2, y: door.y + axis.y * hingeSign * openingWidth / 2 }
+            : { x: door.x, y: door.y };
+        const pivot = new BABYLON.TransformNode(`${slabId}_${door.id}_hinge`, this.scene);
+        pivot.position = this.svgToBabylon(hingeSvg.x, hingeSvg.y, doorCenterY);
+
         const panel = BABYLON.MeshBuilder.CreateBox(
             `${slabId}_${door.id}_panel`,
-            { width: openingWidth - 0.2, height: openingHeight - 0.2, depth: 0.15 },
+            { width: leafW, height: openingHeight - 0.2, depth: 0.15 },
             this.scene
         );
-        panel.position = this.svgToBabylon(door.x, door.y, doorCenterY);
-        if (door.orientation === 'vertical') panel.rotation.y = Math.PI / 2;
+        panel.parent = pivot;
+        // Closed: leaf lies in the wall plane, extending from the hinge toward the latch side.
+        const closedSvg = sideKnown ? { x: -axis.x * hingeSign, y: -axis.y * hingeSign } : axis;
+        const closedDir = new BABYLON.Vector3(closedSvg.x, 0, -closedSvg.y);          // svg y -> babylon -z
+        panel.position = closedDir.scale(sideKnown ? leafW / 2 : 0);
+        panel.rotation.y = Math.atan2(closedDir.x, closedDir.z) - Math.PI / 2;        // box width along closedDir
         panel.material = panelMaterial;
-        panel.isPickable = false;
+        panel.isPickable = sideKnown;   // click to toggle
         this.meshes.doors.push(panel);
 
         panel.metadata = {
@@ -1463,8 +1497,36 @@ class ModelTBuilder {
             facing: door.facing,
             openingWidth: openingWidth,
             slabId: slabId,
-            doorId: door.id
+            doorId: door.id,
+            twinDoor: sideKnown,
+            sideKnown: sideKnown,
+            open: false
         };
+
+        // Open: leaf points into the interior (-facing). Signed angle from closed to open about +Y.
+        const inSvg = this.getFacingOffset(door.facing, -1);
+        const openDir = new BABYLON.Vector3(inSvg.x, 0, -inSvg.y);
+        const openAngle = sideKnown
+            ? Math.atan2(BABYLON.Vector3.Cross(closedDir, openDir).y, BABYLON.Vector3.Dot(closedDir, openDir))
+            : 0;
+
+        this.twinDoors = this.twinDoors || {};
+        this.twinDoors[door.id] = {
+            doorId: door.id, slabId: slabId, kind: 'swing',
+            pivot: pivot, panel: panel, openAngle: openAngle,
+            sideKnown: sideKnown, open: false, fraction: 0
+        };
+        this.applyInitialState(door);
+    }
+
+    /**
+     * Apply a door's recorded ModelT state ({open: 0..1}) when the scene is built.
+     * Spec 5.4.2 (ruled 2026-08-28): doors[].state = {open, updatedAt, source}.
+     * — modeltbabylon gen-12
+     */
+    applyInitialState(door) {
+        if (!door.state || door.state.open === undefined || door.state.open === null) return;
+        this.setDoorState(door.id, Number(door.state.open), false);
     }
 
     /**

@@ -743,11 +743,16 @@
           "y": 292,
           "type": "personnel",
           "orientation": "vertical",
-          "facing": "east",
+          "facing": "west",
           "openingWidth": 3,
           "openingHeight": 7,
           "swingDirection": "inward",
-          "hingePosition": "left"
+          "hingePosition": "left",
+          "state": {
+            "open": 1,
+            "updatedAt": "2026-08-28T09:30:00Z",
+            "source": "george:ch12-frame"
+          }
         },
         {
           "id": "reagan",
