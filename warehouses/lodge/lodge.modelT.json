@@ -809,14 +809,15 @@
         {
           "id": "clinton",
           "wallId": "mercury_perimeter",
-          "x": 170,
-          "y": 229,
+          "x": 233,
+          "y": 100,
           "type": "conveyor",
-          "orientation": "vertical",
-          "facing": "west",
+          "orientation": "horizontal",
+          "facing": "north",
           "openingWidth": 4,
           "openingHeight": 4,
-          "sillHeight": 4
+          "sillHeight": 4,
+          "source": "george:ch05 frame, 5 ft east of lincoln"
         },
         {
           "id": "obama",
