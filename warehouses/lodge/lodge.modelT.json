@@ -323,6 +323,20 @@
               "length": 104
             }
           ]
+        },
+        {
+          "id": "charlotte",
+          "type": "partition",
+          "start": {
+            "x": 330,
+            "y": 330
+          },
+          "segments": [
+            {
+              "direction": "north",
+              "length": 52
+            }
+          ]
         }
       ],
       "columns": [
