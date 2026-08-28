@@ -152,7 +152,7 @@
         },
         {
           "direction": "north",
-          "length": 122
+          "length": 126
         },
         {
           "direction": "east",
@@ -160,7 +160,7 @@
         },
         {
           "direction": "north",
-          "length": 178
+          "length": 174
         }
       ],
       "walls": [
