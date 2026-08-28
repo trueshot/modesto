@@ -329,7 +329,7 @@
           "type": "partition",
           "start": {
             "x": 180,
-            "y": 308
+            "y": 305
           },
           "segments": [
             {
@@ -343,12 +343,12 @@
           "type": "partition",
           "start": {
             "x": 224.8,
-            "y": 308
+            "y": 305
           },
           "segments": [
             {
               "direction": "south",
-              "length": 92
+              "length": 95
             }
           ]
         },
@@ -357,12 +357,12 @@
           "type": "partition",
           "start": {
             "x": 287.25,
-            "y": 308
+            "y": 305
           },
           "segments": [
             {
               "direction": "south",
-              "length": 92
+              "length": 95
             }
           ]
         }
@@ -745,7 +745,7 @@
           "id": "quincy",
           "wallId": "beatrice",
           "x": 198,
-          "y": 308,
+          "y": 305,
           "type": "cooler",
           "orientation": "horizontal",
           "facing": "north",
@@ -758,7 +758,7 @@
           "id": "fillmore",
           "wallId": "beatrice",
           "x": 268,
-          "y": 308,
+          "y": 305,
           "type": "cooler",
           "orientation": "horizontal",
           "facing": "north",
@@ -795,7 +795,7 @@
           "id": "reagan",
           "wallId": "beatrice",
           "x": 298,
-          "y": 308,
+          "y": 305,
           "type": "cooler",
           "orientation": "horizontal",
           "facing": "north",
