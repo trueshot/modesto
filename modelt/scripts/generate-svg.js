@@ -498,21 +498,24 @@ function generateSlab(corners) {
 // +outward): canonical x = q, y = -p. The whole door is then rotated by `facing` so the
 // four cardinal orientations reduce to one transform. (x,y) is the door CENTER on the wall
 // centerline (§5.4.5). Static plan draws every door CLOSED + the personnel swing arc.
-function generateDoor(door, index) {
+function generateDoor(door, index, isPartition = false) {
   const { id, x, y, openingWidth, leafWidth, type = 'opening', facing = 'north' } = door;
   const doorId = id || `${type}_${index}`;
   const round = v => Math.round(v * 1000) / 1000;
   const bearing = { north: 0, east: 90, south: 180, west: 270 }[facing] ?? 0;
 
-  // Frame origin (§5.4.5, ruled 2026-08-27): the stored (x,y) is the opening center on the
-  // OUTWARD face; the §5.4.7 canonical frame is centered on the wall CENTERLINE point
-  // C = (x,y) + in*(T/2), where in = interior normal (opposite `facing`). This keeps
-  // whole-foot door coords (§3.1) while aligning the drawing with the wall band.
+  // Frame origin (§5.4.5, ruled 2026-08-27):
+  //  - PERIMETER wall sits flush-inward from the boundary, so its stored (x,y) is on the
+  //    OUTWARD face and the §5.4.7 canonical frame is centered on the wall CENTERLINE
+  //    C = (x,y) + in*(T/2), in = interior normal (opposite `facing`).
+  //  - PARTITION band is CENTERED on the turtle line (§5.2/5.3 correction 2026-08-27), so a
+  //    partition door's (x,y) is already the centerline: C = (x,y), no offset.
   const T = 1;          // wall thickness (walls[].thickness default 1 ft, §3.1) = the band 2D draws
   const T2 = T / 2;     // 0.5
   const inNormal = { north: [0, 1], south: [0, -1], east: [-1, 0], west: [1, 0] }[facing] ?? [0, 1];
-  const Cx = round(x + inNormal[0] * T2);
-  const Cy = round(y + inNormal[1] * T2);
+  const off = isPartition ? 0 : T2;
+  const Cx = round(x + inNormal[0] * off);
+  const Cy = round(y + inNormal[1] * off);
 
   // Invalid door: openingWidth is required (§5.4.2). Draw a valid, loud error marker rather
   // than NaN geometry (which can make strict SVG consumers reject the whole file). (§8)
@@ -611,10 +614,11 @@ function generateDoor(door, index) {
 }
 
 // Generate all doors
-function generateDoors(doors) {
+function generateDoors(doors, partitionIds) {
   if (!doors || doors.length === 0) return '';
 
-  return doors.map((door, index) => generateDoor(door, index)).join('');
+  return doors.map((door, index) =>
+    generateDoor(door, index, !!(partitionIds && partitionIds.has(door.wallId)))).join('');
 }
 
 // Generate camera overlay
@@ -796,167 +800,49 @@ function getCornerTypeFromDirections(fromDir, toDir) {
   return cornerMap[key] || 'NW';
 }
 
-// Generate partition walls (not closed loops)
+// Generate partition walls (open polylines). Bands are CENTERED on the turtle line
+// (±T/2) per the §5.2/5.3 correction (2026-08-27): the turtle line is the reference
+// line, so a partition door's (x,y) is the centerline (C = (x,y), no offset — see
+// generateDoor). Each segment is one rect centered on its line, T wide, extended by
+// T/2 into interior corners so adjacent segments overlap cleanly; free ends stop flush
+// at the turtle endpoint. Fill (#00449e) is inherited from the enclosing walls group.
 function generatePartitionWalls(partitionWalls) {
   if (!partitionWalls || partitionWalls.length === 0) return '';
-
+  const T = 1, H = T / 2;
   let wallsSVG = '';
 
   for (const partition of partitionWalls) {
     const points = convertTurtleToPoints(partition);
     const wallName = partition.id || 'unnamed';
-    let segmentIndex = 0;
+    wallsSVG += `
+  <g id="partition_${wallName}">`;
 
-    // Generate components for each point
-    for (let i = 0; i < points.length; i++) {
-      const point = points[i];
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = points[i], b = points[i + 1];
+      const aExt = (i > 0) ? H : 0;                   // interior corner at a -> extend to fill
+      const bExt = (i < points.length - 2) ? H : 0;   // interior corner at b -> extend
 
-      if (i === 0) {
-        // Start point: endcap faces OPPOSITE to first segment direction
-        const dir = partition.segments[0].direction;
-        const oppositeDir = { north: 'south', south: 'north', east: 'west', west: 'east' }[dir];
-
-        // South and East endcaps need offset at start point
-        if (oppositeDir === 'north') wallsSVG += generateNorthEndcap(`${wallName}_start`, point.x, point.y);
-        else if (oppositeDir === 'south') wallsSVG += generateSouthEndcap(`${wallName}_start`, point.x, point.y - 0.5);
-        else if (oppositeDir === 'east') wallsSVG += generateEastEndcap(`${wallName}_start`, point.x - 0.5, point.y);
-        else if (oppositeDir === 'west') wallsSVG += generateWestEndcap(`${wallName}_start`, point.x, point.y);
-      } else if (i === points.length - 1) {
-        // End point: endcap faces SAME as last segment direction
-        const dir = partition.segments[partition.segments.length - 1].direction;
-        const isMultiSegment = partition.segments.length > 1;
-        const prevDir = isMultiSegment ? partition.segments[partition.segments.length - 2].direction : null;
-
-        let endcapX = point.x;
-        let endcapY = point.y;
-
-        // Adjust position based on previous segment direction
-        if (isMultiSegment) {
-          if (dir === 'north' && prevDir === 'east') {
-            endcapY += 1;
-            endcapX -= 1;
-          } else if (dir === 'north') {
-            endcapY += 1;
-          } else if (dir === 'south' && prevDir === 'east') {
-            endcapX -= 1;
-          } else if (dir === 'west' && prevDir === 'north') {
-            endcapX += 1;
-          } else if (dir === 'east' && prevDir === 'south') {
-            endcapY -= 1;
-          } else if (dir === 'west' && prevDir === 'south') {
-            endcapY -= 1;
-            endcapX += 1;
-          }
-        }
-
-        if (dir === 'north') wallsSVG += generateNorthEndcap(`${wallName}_end`, endcapX, endcapY);
-        else if (dir === 'south') wallsSVG += generateSouthEndcap(`${wallName}_end`, endcapX, endcapY - 0.5);
-        else if (dir === 'east') wallsSVG += generateEastEndcap(`${wallName}_end`, endcapX - 0.5, endcapY);
-        else if (dir === 'west') wallsSVG += generateWestEndcap(`${wallName}_end`, endcapX, endcapY);
-      } else {
-        // Middle point: corner
-        const prevDir = partition.segments[i - 1].direction;
-        const nextDir = partition.segments[i].direction;
-        const cornerType = getCornerTypeFromDirections(prevDir, nextDir);
-
-        // Adjust corner position so it fits within the segment length
-        let cornerX = point.x;
-        let cornerY = point.y;
-
-        if (prevDir === 'east' || prevDir === 'west') {
-          cornerX = prevDir === 'east' ? point.x - 1 : point.x;
-        }
-        if (prevDir === 'north' || prevDir === 'south') {
-          cornerY = prevDir === 'south' ? point.y - 1 : point.y;
-        }
-
-        wallsSVG += cornerTemplates[cornerType](cornerX, cornerY, `${wallName}_corner${i - 1}`);
-      }
-
-      // Generate wall segment to next point
-      if (i < points.length - 1) {
-        const current = point;
-        const next = points[i + 1];
-        const isFirstSegment = (i === 0);
-        const isLastSegment = (i === points.length - 2);
-        const isSingleSegment = isFirstSegment && isLastSegment;
-
-        // Adjust current position if it's at a corner (middle point)
-        let currentX = current.x;
-        let currentY = current.y;
-
-        if (i > 0) {
-          // This is not the first segment, so there's a corner at current position
-          const prevDir = partition.segments[i - 1].direction;
-          if (prevDir === 'east') currentX = current.x - 1;
-          else if (prevDir === 'south') currentY = current.y - 1;
-        }
-
-        if (current.y === next.y) {
-          // Horizontal wall
-          const leftX = Math.min(currentX, next.x);
-          const rightX = Math.max(currentX, next.x);
-          const goingEast = next.x > currentX;
-
-          let wallStart, wallEnd;
-
-          if (isSingleSegment) {
-            // Single segment: endcaps take 0.5' at both ends
-            wallStart = leftX + 0.5;
-            wallEnd = rightX - 0.5;
-          } else if (isFirstSegment) {
-            // First segment: endcap takes 0.5' at start, corner takes 1' at end
-            wallStart = goingEast ? leftX + 0.5 : leftX + 1;
-            wallEnd = goingEast ? rightX - 1 : rightX - 0.5;
-          } else if (isLastSegment) {
-            // Last segment: corner at start (connects), endcap takes 0.5' at end
-            wallStart = goingEast ? leftX + 1 : leftX + 1.5;
-            wallEnd = goingEast ? rightX - 0.5 : rightX;
-          } else {
-            // Middle segment: corners at both ends (connect)
-            wallStart = leftX + 1;
-            wallEnd = rightX;
-          }
-
-          const wallLength = wallEnd - wallStart;
-
-          if (wallLength > 0) {
-            wallsSVG += generateHorizontalWall(`wall_h_${wallName}_seg${segmentIndex++}`, wallStart, currentY, wallLength);
-          }
-        } else if (current.x === next.x) {
-          // Vertical wall
-          const topY = Math.min(currentY, next.y);
-          const bottomY = Math.max(currentY, next.y);
-          const goingSouth = next.y > currentY;
-
-          let wallStart, wallEnd;
-
-          if (isSingleSegment) {
-            // Single segment: endcaps take 0.5' at both ends
-            wallStart = topY + 0.5;
-            wallEnd = bottomY - 0.5;
-          } else if (isFirstSegment) {
-            // First segment: endcap takes 0.5' at start, corner takes 1' at end
-            wallStart = goingSouth ? topY + 0.5 : topY + 1;
-            wallEnd = goingSouth ? bottomY - 1 : bottomY - 0.5;
-          } else if (isLastSegment) {
-            // Last segment: corner at start (connects), endcap takes 0.5' at end
-            wallStart = goingSouth ? topY + 1 : topY + 1.5;
-            wallEnd = goingSouth ? bottomY - 0.5 : bottomY;
-          } else {
-            // Middle segment: corners at both ends (connect)
-            wallStart = topY + 1;
-            wallEnd = bottomY;
-          }
-
-          const wallLength = wallEnd - wallStart;
-
-          if (wallLength > 0) {
-            wallsSVG += generateVerticalWall(`wall_v_${wallName}_seg${segmentIndex++}`, currentX, wallStart, wallLength);
-          }
-        }
+      if (a.y === b.y) {
+        // Horizontal segment, band centered on y = a.y
+        const goingEast = b.x > a.x;
+        const p0 = goingEast ? a.x - aExt : a.x + aExt;
+        const p1 = goingEast ? b.x + bExt : b.x - bExt;
+        const left = Math.min(p0, p1), right = Math.max(p0, p1);
+        wallsSVG += `
+    <rect id="wall_h_${wallName}_seg${i}" x="${left}" y="${a.y - H}" width="${right - left}" height="${T}"/>`;
+      } else if (a.x === b.x) {
+        // Vertical segment, band centered on x = a.x
+        const goingSouth = b.y > a.y;
+        const p0 = goingSouth ? a.y - aExt : a.y + aExt;
+        const p1 = goingSouth ? b.y + bExt : b.y - bExt;
+        const top = Math.min(p0, p1), bottom = Math.max(p0, p1);
+        wallsSVG += `
+    <rect id="wall_v_${wallName}_seg${i}" x="${a.x - H}" y="${top}" width="${T}" height="${bottom - top}"/>`;
       }
     }
+
+    wallsSVG += `
+  </g>`;
 
     // Add label if provided
     if (partition.label) {
@@ -1050,8 +936,9 @@ function generateSlabSVG(slab) {
   const partitionSVG = generatePartitionWalls(partitionWalls);
 
   // Generate other components
+  const partitionIds = new Set(partitionWalls.map(w => w.id));
   const columnsSVG = generateColumns(columns);
-  const doorsSVG = generateDoors(doors);
+  const doorsSVG = generateDoors(doors, partitionIds);
   const camerasSVG = generateCameras(cameras);
 
   return `
@@ -1124,7 +1011,8 @@ function generateModelTSVG_V1(warehouseSpec) {
   const hasWalls = (Array.isArray(walls) && walls.length > 0) || (walls && walls.corners);
   const wallsSVG = hasWalls ? generateWalls(walls) : '';
   const partitionWallsSVG = generatePartitionWalls(partitionWalls);
-  const doorsSVG = generateDoors(doors);
+  const partitionIds = new Set((partitionWalls || []).map(w => w.id));
+  const doorsSVG = generateDoors(doors, partitionIds);
   const camerasSVG = generateCameras(cameras);
   const columnsSVG = generateColumns(columns);
 
