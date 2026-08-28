@@ -343,63 +343,81 @@
         {
           "id": "oak",
           "name": "Oak",
-          "x": 271,
+          "x": 227,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 58ft from East wall / 16ft N"
+          "location": "Packing Line 1, 56ft from West wall / 17ft N"
         },
         {
           "id": "maple",
           "name": "Maple",
-          "x": 243,
+          "x": 273,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 86ft from East wall / 16ft N"
+          "location": "Packing Line 1, 102ft from West wall / 17ft N"
         },
         {
           "id": "pine",
           "name": "Pine",
-          "x": 213,
+          "x": 299,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 116ft from East wall / 16ft N"
+          "location": "Packing Line 1, 128ft from West wall / 17ft N"
         },
         {
           "id": "birch",
           "name": "Birch",
-          "x": 271,
+          "x": 227,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 58ft from East wall / 75ft N"
+          "location": "Packing Line 1, 56ft from West wall / 76ft N"
         },
         {
           "id": "cedar",
           "name": "Cedar",
-          "x": 243,
+          "x": 273,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 86ft from East wall / 75ft N"
+          "location": "Packing Line 1, 102ft from West wall / 76ft N"
         },
         {
           "id": "elm",
           "name": "Elm",
-          "x": 213,
+          "x": 299,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 116ft from East wall / 75ft N"
+          "location": "Packing Line 1, 128ft from West wall / 76ft N"
+        },
+        {
+          "id": "ash",
+          "name": "Ash",
+          "x": 201,
+          "y": 117,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 30ft from West wall / 17ft N"
+        },
+        {
+          "id": "willow",
+          "name": "Willow",
+          "x": 201,
+          "y": 176,
+          "height": 15,
+          "size": 1,
+          "location": "Packing Line 1, 30ft from West wall / 76ft N"
         }
       ],
       "doors": [
         {
           "id": "lincoln",
           "wallId": "mercury_perimeter",
-          "x": 220,
+          "x": 214,
           "y": 100,
           "type": "bay",
           "orientation": "horizontal",
