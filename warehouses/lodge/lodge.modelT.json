@@ -417,7 +417,7 @@
         {
           "id": "lincoln",
           "wallId": "mercury_perimeter",
-          "x": 214,
+          "x": 218,
           "y": 100,
           "type": "bay",
           "orientation": "horizontal",
@@ -821,7 +821,7 @@
         {
           "id": "obama",
           "wallId": "mercury_perimeter",
-          "x": 286,
+          "x": 282,
           "y": 100,
           "type": "bay",
           "orientation": "horizontal",
