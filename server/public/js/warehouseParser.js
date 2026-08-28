@@ -1595,9 +1595,30 @@ class ModelTBuilder {
         ctx.fillText(door.id.toUpperCase(), 128, 32);
         texture.update();
 
-        // Create plane for label
+        // Material with texture (shared by both plates)
+        const labelMat = new BABYLON.StandardMaterial(`doorLabelMat_${slabId}_${door.id}`, this.scene);
+        labelMat.diffuseTexture = texture;
+        labelMat.emissiveTexture = texture;
+        labelMat.opacityTexture = texture;
+        labelMat.backFaceCulling = false;
+
+        // Two plates: interior side (opposite facing) and facing side — George 2026-08-28:
+        // "door labels on both sides of the door". modeltbabylon gen-12
+        const facing0 = door.facing || (door.orientation === 'vertical' ? 'east' : 'south');
+        const opposite = { north: 'south', south: 'north', east: 'west', west: 'east' };
+        this.createDoorLabelPlate(door, slabTop, slabId, labelSize, labelMat, facing0, 'in');
+        this.createDoorLabelPlate(door, slabTop, slabId, labelSize, labelMat, opposite[facing0] || 'north', 'out');
+    }
+
+    /**
+     * One floor nameplate for a door. `facing` here is the side the plate is NOT on:
+     * the plate sits on the opposite side, text-top pointing back at the door.
+     * side: 'in' (interior nameplate, original) | 'out' (facing-side twin).
+     */
+    createDoorLabelPlate(door, slabTop, slabId, labelSize, labelMat, facing, side) {
+        const labelHeight = slabTop + 0.1; // Just above slab
         const labelPlane = BABYLON.MeshBuilder.CreatePlane(
-            `doorLabel_${slabId}_${door.id}`,
+            side === 'in' ? `doorLabel_${slabId}_${door.id}` : `doorLabel_${slabId}_${door.id}_out`,
             { width: labelSize, height: labelSize / 4 },
             this.scene
         );
@@ -1608,16 +1629,18 @@ class ModelTBuilder {
         // modeltbabylon gen-10 — George 2026-08-26: labels straddled the wall
         // line (half hovering outside) and north-wall text was upside-down
         // because rotation.y was always 0.
-        const facing = door.facing ||
-            (door.orientation === 'vertical' ? 'east' : 'south');
         // Nameplate sits just past the dock leveler when the door has one (George 2026-08-27:
         // the leveler plates were covering the nameplates). Leveler spans T/2 .. T/2 + depth
         // from the centerline point C; the label is labelSize/4 deep.
-        const hasLeveler = door.type === 'bay' && door.hasDockLeveler !== false;
+        // Facing-side twin ('out'): clear the dock seal (1.5 ft off the exterior face) instead.
+        const hasLeveler = side === 'in' && door.type === 'bay' && door.hasDockLeveler !== false;
+        const hasSeal = side === 'out' && door.type === 'bay' && door.hasDockSeal !== false;
         const levelerDepth = door.levelerDepth || 6;
         const labelInset = hasLeveler
             ? ModelTBuilder.WALL_T / 2 + levelerDepth + 0.25 + labelSize / 8
-            : 2.0; // ft from wall centerline to label center (label is 2ft deep)
+            : hasSeal
+                ? ModelTBuilder.WALL_T / 2 + 1.5 + 0.25 + labelSize / 8
+                : 2.0; // ft from wall centerline to label center (label is 2ft deep)
         // Interior offset in BABYLON space (X east; Z = -SVG Y, so NORTH is +Z):
         //   faces north -> interior is south -> -Z
         //   faces south -> interior is north -> +Z
@@ -1645,12 +1668,6 @@ class ModelTBuilder {
             west: -Math.PI / 2
         }[facing] || 0;
 
-        // Material with texture
-        const labelMat = new BABYLON.StandardMaterial(`doorLabelMat_${slabId}_${door.id}`, this.scene);
-        labelMat.diffuseTexture = texture;
-        labelMat.emissiveTexture = texture;
-        labelMat.opacityTexture = texture;
-        labelMat.backFaceCulling = false;
         labelPlane.material = labelMat;
 
         // Store door data for click handler
