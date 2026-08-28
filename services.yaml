@@ -39,3 +39,17 @@ services:
     cwd: fasttag
     port: 8003
     autostart: false
+
+  # Marshal Gateway — hosts every specialist's MEP (Marshal Explainer Page).
+  # Reboot/session-independent supervision is the Scheduled Task "MarshalGateway"
+  # (trigger=AtLogon), which runs marshalltown's canonical supervisor
+  # c:/clients/marshalltown/gateway/start.bat — a self-looping respawn on
+  # /restart's process.exit(0). Single supervisor script, owned by marshalltown.
+  # svc.js will ADOPT the already-listening instance rather than spawn a duplicate.
+  # Added by modestomulti gen-6.
+  marshal-gateway:
+    name: Marshal Gateway
+    command: node server.js
+    cwd: ../marshalltown/gateway
+    port: 3500
+    autostart: false

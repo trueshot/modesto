@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>modestomulti — ModelT Server Infrastructure</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    background: #0c0c0c; color: #d4d4d4; min-height: 100vh;
+  }
+  a { color: #4fc3f7; text-decoration: none; }
+  .header { background: #161616; border-bottom: 1px solid #2a2a2a; padding: 1.3rem 2rem; }
+  .header h1 { font-size: 1.25rem; color: #fff; font-weight: 600; }
+  .header .subtitle { color: #888; font-size: 0.82rem; margin-top: 0.3rem; }
+  .header .back { font-size: 0.78rem; color: #666; }
+  .bar { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; }
+  .filter {
+    flex: 1; min-width: 220px; max-width: 420px; background: #0c0c0c;
+    border: 1px solid #2a2a2a; border-radius: 6px; color: #d4d4d4;
+    font-family: inherit; font-size: 0.85rem; padding: 0.5rem 0.8rem; outline: none;
+  }
+  .filter:focus { border-color: #4fc3f7; }
+  .btn {
+    background: #0c0c0c; border: 1px solid #2a2a2a; border-radius: 6px; color: #c3e88d;
+    font-family: inherit; font-size: 0.8rem; padding: 0.5rem 0.9rem; cursor: pointer;
+  }
+  .btn:hover { border-color: #4fc3f7; color: #fff; }
+  .tabs { display: flex; gap: 0.3rem; padding: 0 2rem; border-bottom: 1px solid #2a2a2a; background: #111; }
+  .tab {
+    background: none; border: none; border-bottom: 2px solid transparent; color: #888;
+    font-family: inherit; font-size: 0.85rem; padding: 0.8rem 1.1rem; cursor: pointer;
+  }
+  .tab:hover { color: #d4d4d4; }
+  .tab.active { color: #4fc3f7; border-bottom-color: #4fc3f7; }
+  .panel { padding: 1.2rem 2rem 3rem; display: none; }
+  .panel.active { display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid #1e1e1e; vertical-align: top; }
+  th { color: #888; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.06em; position: sticky; top: 0; background: #0c0c0c; }
+  tr:hover td { background: #141414; }
+  code, .mono { color: #c3e88d; }
+  .method { font-weight: 600; }
+  .m-GET { color: #4fc3f7; } .m-POST { color: #c3e88d; } .m-PUT { color: #ffd54f; }
+  .m-DELETE { color: #ff8a80; } .m-PATCH { color: #ce93d8; }
+  .pill { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.7rem; border: 1px solid #2a2a2a; }
+  .up { color: #0c0c0c; background: #c3e88d; border-color: #c3e88d; }
+  .down { color: #fff; background: #5a1e1e; border-color: #7a2a2a; }
+  .na { color: #888; }
+  .muted { color: #666; }
+  .count { color: #666; font-size: 0.78rem; margin: 0.2rem 0 0.8rem; }
+  .empty { color: #555; padding: 1rem 0; }
+  .note { color: #777; font-size: 0.78rem; margin-top: 0.8rem; line-height: 1.5; }
+  .card-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.6rem; margin-bottom: 1rem; }
+  .stat { background: #161616; border: 1px solid #2a2a2a; border-radius: 8px; padding: 0.9rem 1rem; }
+  .stat .n { font-size: 1.5rem; color: #4fc3f7; font-weight: 600; }
+  .stat .l { color: #888; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="back"><a href="/">&larr; Marshal Gateway</a></div>
+    <h1>modestomulti &mdash; ModelT Server Infrastructure</h1>
+    <div class="subtitle">Billet: modestomultiServer &middot; Express :5173 + WebSocket :8080 &middot; live view of the port map, REST API, and WS protocol I own</div>
+    <div class="bar">
+      <input id="filter" class="filter" placeholder="Filter rows..." autocomplete="off">
+      <button class="btn" id="refresh">&#8635; Refresh</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="services">Services</button>
+    <button class="tab" data-tab="routes">REST Routes</button>
+    <button class="tab" data-tab="websocket">WebSocket</button>
+    <button class="tab" data-tab="health">Health</button>
+  </div>
+
+  <div class="panel active" id="panel-services"><div class="count" id="c-services"></div><div id="services"></div>
+    <div class="note">Live port probe on each load. <span class="up">&nbsp;UP&nbsp;</span> = something is LISTENING on that port right now. Persistence for <code>marshal-gateway</code> is the Scheduled Task <code>MarshalGateway</code> (respawns on /restart's exit).</div>
+  </div>
+  <div class="panel" id="panel-routes"><div class="count" id="c-routes"></div><div id="routes"></div>
+    <div class="note">Parsed live from <code>server/server.js</code> mounts + <code>server/routes/api/*.js</code>. Edit a route and it shows here on next refresh.</div>
+  </div>
+  <div class="panel" id="panel-websocket"><div id="websocket"></div>
+    <div class="note">Parsed live from the <code>data.type === '...'</code> handlers in server.js. These message types have blast radius across the crew (modeltbabylon, modestocat, modeltsvgcat, modeltcamerascat, novicat) &mdash; changing them requires a heads-up.</div>
+  </div>
+  <div class="panel" id="panel-health"><div class="card-row" id="health-stats"></div><div id="health"></div></div>
+
+<script>
+(function () {
+  var state = { services: [], routes: [], websocket: null, health: null };
+  var active = 'services';
+
+  function esc(s) { return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function q() { return (document.getElementById('filter').value || '').toLowerCase(); }
+  function match(hay) { return hay.toLowerCase().indexOf(q()) !== -1; }
+  function upPill(up) { return up === null ? '<span class="pill na">n/a</span>' : (up ? '<span class="pill up">UP</span>' : '<span class="pill down">DOWN</span>'); }
+
+  function renderServices() {
+    var rows = state.services.filter(function (s) {
+      return match([s.key, s.name, s.port, s.command, s.owner].join(' '));
+    });
+    document.getElementById('c-services').textContent = rows.length + ' / ' + state.services.length + ' services';
+    if (!rows.length) { document.getElementById('services').innerHTML = '<div class="empty">No services match.</div>'; return; }
+    var html = '<table><thead><tr><th>Status</th><th>Service</th><th>Port</th><th>Command</th><th>Autostart</th><th>Owner</th></tr></thead><tbody>';
+    rows.forEach(function (s) {
+      html += '<tr><td>' + upPill(s.up) + '</td><td class="mono">' + esc(s.name) + '<div class="muted">' + esc(s.key) + '</div></td>' +
+        '<td class="mono">' + (s.port || '<span class="muted">&mdash;</span>') + '</td>' +
+        '<td><code>' + esc(s.command) + '</code><div class="muted">cwd: ' + esc(s.cwd) + '</div></td>' +
+        '<td>' + (s.autostart ? 'yes' : '<span class="muted">no</span>') + '</td>' +
+        '<td class="muted">' + esc(s.owner) + '</td></tr>';
+    });
+    document.getElementById('services').innerHTML = html + '</tbody></table>';
+  }
+
+  function renderRoutes() {
+    var rows = state.routes.filter(function (r) { return match([r.method, r.path, r.source].join(' ')); });
+    document.getElementById('c-routes').textContent = rows.length + ' / ' + state.routes.length + ' endpoints';
+    if (!rows.length) { document.getElementById('routes').innerHTML = '<div class="empty">No routes match.</div>'; return; }
+    var html = '<table><thead><tr><th>Method</th><th>Path</th><th>Source</th></tr></thead><tbody>';
+    rows.forEach(function (r) {
+      html += '<tr><td class="method m-' + esc(r.method) + '">' + esc(r.method) + '</td>' +
+        '<td class="mono">' + esc(r.path) + '</td>' +
+        '<td class="muted">' + esc(r.source) + '</td></tr>';
+    });
+    document.getElementById('routes').innerHTML = html + '</tbody></table>';
+  }
+
+  function renderWebSocket() {
+    var w = state.websocket; if (!w) return;
+    var inbound = w.inbound.filter(function (t) { return match(t); });
+    var outbound = w.outbound.filter(function (t) { return match(t); });
+    var html = '<p class="muted" style="margin-bottom:0.8rem">ws://localhost:' + w.port + '</p>';
+    html += '<h3 style="color:#4fc3f7;font-size:0.85rem;margin:0.5rem 0">Inbound (server handles) &mdash; ' + inbound.length + '</h3>';
+    html += '<table><tbody>' + (inbound.map(function (t) { return '<tr><td class="mono">' + esc(t) + '</td></tr>'; }).join('') || '<tr><td class="empty">none</td></tr>') + '</tbody></table>';
+    html += '<h3 style="color:#c3e88d;font-size:0.85rem;margin:1rem 0 0.5rem">Outbound (server emits) &mdash; ' + outbound.length + '</h3>';
+    html += '<table><tbody>' + (outbound.map(function (t) { return '<tr><td class="mono">' + esc(t) + '</td></tr>'; }).join('') || '<tr><td class="empty">none</td></tr>') + '</tbody></table>';
+    document.getElementById('websocket').innerHTML = html;
+  }
+
+  function renderHealth() {
+    var h = state.health; if (!h) return;
+    document.getElementById('health-stats').innerHTML =
+      '<div class="stat"><div class="n">' + h.up + '</div><div class="l">Up</div></div>' +
+      '<div class="stat"><div class="n">' + h.total + '</div><div class="l">Total</div></div>' +
+      '<div class="stat"><div class="n">' + (h.total - h.up) + '</div><div class="l">Down</div></div>';
+    var rows = h.services.filter(function (s) { return match([s.key, s.name, s.port].join(' ')); });
+    var html = '<table><thead><tr><th>Status</th><th>Service</th><th>Port</th></tr></thead><tbody>';
+    rows.forEach(function (s) {
+      html += '<tr><td>' + upPill(s.up) + '</td><td class="mono">' + esc(s.name) + '</td><td class="mono">' + (s.port || '&mdash;') + '</td></tr>';
+    });
+    document.getElementById('health').innerHTML = html + '</tbody></table>' +
+      '<div class="note">Checked at ' + esc(h.checkedAt) + '</div>';
+  }
+
+  function renderActive() {
+    if (active === 'services') renderServices();
+    else if (active === 'routes') renderRoutes();
+    else if (active === 'websocket') renderWebSocket();
+    else if (active === 'health') renderHealth();
+  }
+
+  function load() {
+    Promise.all([
+      fetch('api/services').then(function (r) { return r.json(); }),
+      fetch('api/routes').then(function (r) { return r.json(); }),
+      fetch('api/websocket').then(function (r) { return r.json(); }),
+      fetch('api/health').then(function (r) { return r.json(); })
+    ]).then(function (res) {
+      state.services = res[0]; state.routes = res[1]; state.websocket = res[2]; state.health = res[3];
+      renderServices(); renderRoutes(); renderWebSocket(); renderHealth();
+    }).catch(function (e) {
+      document.getElementById('services').innerHTML = '<div class="empty">Failed to load: ' + esc(e.message) + '</div>';
+    });
+  }
+
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+      document.querySelectorAll('.panel').forEach(function (x) { x.classList.remove('active'); });
+      t.classList.add('active');
+      active = t.getAttribute('data-tab');
+      document.getElementById('panel-' + active).classList.add('active');
+      renderActive();
+    });
+  });
+  document.getElementById('filter').addEventListener('input', renderActive);
+  document.getElementById('refresh').addEventListener('click', load);
+  load();
+})();
+</script>
+</body>
+</html>
