@@ -787,6 +787,18 @@
           "openingWidth": 3,
           "openingHeight": 7,
           "hingePosition": "left"
+        },
+        {
+          "id": "clinton",
+          "wallId": "mercury_perimeter",
+          "x": 170,
+          "y": 229,
+          "type": "conveyor",
+          "orientation": "vertical",
+          "facing": "west",
+          "openingWidth": 4,
+          "openingHeight": 4,
+          "sillHeight": 4
         }
       ],
       "cameras": [

@@ -319,11 +319,27 @@ class ModelTBuilder {
             return;
         }
 
+        // Conveyor doors: rectangular holes above a sill (wall stays below and above).
+        // Profile space: X = distance along the segment from p1, Z = height above slab. gen-12
+        const holes = doors.filter(d => d.type === 'conveyor').map(d => {
+            const pos = isHorizontal ? Math.abs(d.x - p1.x) : Math.abs(d.y - p1.y);
+            const w = d.openingWidth || 4;
+            const sill = d.sillHeight || 0;
+            const top = sill + (d.openingHeight || 4);
+            return [
+                new BABYLON.Vector3(pos - w / 2, 0, sill),
+                new BABYLON.Vector3(pos - w / 2, 0, top),
+                new BABYLON.Vector3(pos + w / 2, 0, top),
+                new BABYLON.Vector3(pos + w / 2, 0, sill)
+            ];
+        });
+
         // Create the wall mesh by extruding the profile
         const wallMesh = BABYLON.MeshBuilder.ExtrudePolygon(
             `${slabId}_${wallId}_seg${segIndex}`,
             {
                 shape: profile,
+                holes: holes,
                 depth: wallThickness,
                 sideOrientation: BABYLON.Mesh.DOUBLESIDE
             },
@@ -383,8 +399,10 @@ class ModelTBuilder {
     generateWallProfileWithDoors(p1, p2, segmentLength, wallHeight, doors, isHorizontal, isVertical) {
         const profile = [];
 
-        // Sort doors by absolute position along the segment (0 to length)
-        const sortedDoors = doors.slice().sort((a, b) => {
+        // Sort doors by absolute position along the segment (0 to length).
+        // Conveyor doors have a sill (wall below them) — they are holes, not notches
+        // in the outline; createWallSegmentWithDoors cuts them separately. gen-12
+        const sortedDoors = doors.filter(d => d.type !== 'conveyor').sort((a, b) => {
             const posA = isHorizontal ? Math.abs(a.x - p1.x) : Math.abs(a.y - p1.y);
             const posB = isHorizontal ? Math.abs(b.x - p1.x) : Math.abs(b.y - p1.y);
             return posA - posB;
@@ -615,12 +633,63 @@ class ModelTBuilder {
             case 'interior':
                 // Interior openings have no physical door, just the wall cutout
                 break;
+            case 'conveyor':
+                this.buildConveyorDoor(door, slabTop, slabId);
+                break;
             default:
                 this.buildGenericDoor(door, slabTop, slabId);
         }
 
         // Create floor label for all door types
         this.createDoorLabel(door, slabTop, slabId);
+    }
+
+    /**
+     * Conveyor door: a wall penetration above a sill that carries a conveyor through
+     * the wall. Data: openingWidth/openingHeight (ft), sillHeight (ft above slab),
+     * facing = outward normal. The hole itself is cut by createWallSegmentWithDoors;
+     * this adds the steel frame and a stub of conveyor bed through the opening.
+     * George 2026-08-28 (Packing Line 1, ch05 frame). — modeltbabylon gen-12
+     */
+    buildConveyorDoor(door, slabTop, slabId) {
+        const w = door.openingWidth || 4;
+        const h = door.openingHeight || 4;
+        const sill = door.sillHeight || 0;
+        const T = ModelTBuilder.WALL_T;
+        const vertical = door.orientation === 'vertical';
+        const along = vertical ? { x: 0, y: 1 } : { x: 1, y: 0 };
+        const frameMat = new BABYLON.StandardMaterial(`conveyorFrameMat_${slabId}_${door.id}`, this.scene);
+        frameMat.diffuseColor = new BABYLON.Color3(0.35, 0.35, 0.38);   // steel
+        const bedMat = new BABYLON.StandardMaterial(`conveyorBedMat_${slabId}_${door.id}`, this.scene);
+        bedMat.diffuseColor = new BABYLON.Color3(0.25, 0.3, 0.55);      // blue roller frame
+
+        const f = 0.25;   // frame stock
+        const mk = (name, size, sx, sy, elev) => {
+            const m = BABYLON.MeshBuilder.CreateBox(`${slabId}_${door.id}_${name}`,
+                { width: size.w, height: size.h, depth: size.d }, this.scene);
+            m.position = this.svgToBabylon(door.x + sx, door.y + sy, elev);
+            if (vertical) m.rotation.y = Math.PI / 2;
+            m.material = frameMat;
+            m.isPickable = false;
+            this.meshes.doors.push(m);
+            return m;
+        };
+        // Sill and head plates, jambs — sitting in the wall thickness
+        mk('sill', { w: w + 2 * f, h: f, d: T + 0.1 }, 0, 0, slabTop + sill - f / 2);
+        mk('head', { w: w + 2 * f, h: f, d: T + 0.1 }, 0, 0, slabTop + sill + h + f / 2);
+        mk('jambA', { w: f, h: h, d: T + 0.1 }, -along.x * (w / 2 + f / 2), -along.y * (w / 2 + f / 2), slabTop + sill + h / 2);
+        mk('jambB', { w: f, h: h, d: T + 0.1 }, along.x * (w / 2 + f / 2), along.y * (w / 2 + f / 2), slabTop + sill + h / 2);
+
+        // Conveyor bed stub through the opening: 2 ft wide, 8 ft long, perpendicular to the wall
+        const bedLen = 8, bedW = Math.min(2, w - 0.5);
+        const bed = BABYLON.MeshBuilder.CreateBox(`${slabId}_${door.id}_bed`,
+            { width: bedW, height: 0.3, depth: bedLen }, this.scene);
+        bed.position = this.svgToBabylon(door.x, door.y, slabTop + sill + 0.15);
+        if (!vertical) bed.rotation.y = 0; else bed.rotation.y = Math.PI / 2;
+        bed.material = bedMat;
+        bed.isPickable = false;
+        bed.metadata = { type: door.type, facing: door.facing, openingWidth: w, slabId: slabId, doorId: door.id };
+        this.meshes.doors.push(bed);
     }
 
     /**
