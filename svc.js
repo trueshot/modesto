@@ -215,6 +215,17 @@ function draw() {
   console.log('');
 }
 
+// Non-interactive (no TTY: piped, redirected, or run from an agent's shell):
+// print a one-shot snapshot and exit. Without this guard the TUI attaches a
+// keypress listener + liveness poll and blocks forever on stdin, hanging any
+// non-terminal caller until their timeout. — modestomulti gen-6
+if (!process.stdin.isTTY) {
+  services.forEach(svc => adoptExisting(svc));
+  draw();
+  console.log('  (non-interactive snapshot — run in a real terminal for the live TUI)');
+  process.exit(0);
+}
+
 // Set up raw keyboard input
 readline.emitKeypressEvents(process.stdin);
 if (process.stdin.isTTY) {
