@@ -803,41 +803,65 @@ function getCornerTypeFromDirections(fromDir, toDir) {
 // Generate partition walls (open polylines). Bands are CENTERED on the turtle line
 // (±T/2) per the §5.2/5.3 correction (2026-08-27): the turtle line is the reference
 // line, so a partition door's (x,y) is the centerline (C = (x,y), no offset — see
-// generateDoor). Each segment is one rect centered on its line, T wide, extended by
-// T/2 into interior corners so adjacent segments overlap cleanly; free ends stop flush
-// at the turtle endpoint. Fill (#00449e) is inherited from the enclosing walls group.
+// generateDoor). Drawn HOLLOW to match the perimeter (Appendix A: two 0.2 ft rails):
+// each segment is two rails at the band edges, joined by centered 1x1 corner pieces at
+// interior bends and capped at free ends. Fill (#00449e) is inherited from the enclosing
+// walls group.
 function generatePartitionWalls(partitionWalls) {
   if (!partitionWalls || partitionWalls.length === 0) return '';
-  const T = 1, H = T / 2;
+  const T = 1, H = T / 2, RW = 0.2;   // band thickness, half, rail width
   let wallsSVG = '';
 
   for (const partition of partitionWalls) {
     const points = convertTurtleToPoints(partition);
+    const dirs = (partition.segments || []).map(s => s.direction);
     const wallName = partition.id || 'unnamed';
+    const nSeg = points.length - 1;
     wallsSVG += `
   <g id="partition_${wallName}">`;
 
-    for (let i = 0; i < points.length - 1; i++) {
+    // Interior corner pieces: a 1x1 piece centered on the vertex, type from the turn.
+    for (let i = 1; i < points.length - 1; i++) {
+      const cType = getCornerTypeFromDirections(dirs[i - 1], dirs[i]);
+      const V = points[i];
+      wallsSVG += cornerTemplates[cType](V.x - H, V.y - H, `${wallName}_corner${i}`);
+    }
+
+    // Segments: two rails at the band edges, inset H where a corner piece sits, capped
+    // (a rail bridging the two edges) at free ends.
+    for (let i = 0; i < nSeg; i++) {
       const a = points[i], b = points[i + 1];
-      const aExt = (i > 0) ? H : 0;                   // interior corner at a -> extend to fill
-      const bExt = (i < points.length - 2) ? H : 0;   // interior corner at b -> extend
+      const startCorner = i > 0, endCorner = i < nSeg - 1;
+      const sInset = startCorner ? H : 0, eInset = endCorner ? H : 0;
 
       if (a.y === b.y) {
-        // Horizontal segment, band centered on y = a.y
-        const goingEast = b.x > a.x;
-        const p0 = goingEast ? a.x - aExt : a.x + aExt;
-        const p1 = goingEast ? b.x + bExt : b.x - bExt;
-        const left = Math.min(p0, p1), right = Math.max(p0, p1);
-        wallsSVG += `
-    <rect id="wall_h_${wallName}_seg${i}" x="${left}" y="${a.y - H}" width="${right - left}" height="${T}"/>`;
+        const east = b.x > a.x;
+        const x0 = east ? a.x + sInset : a.x - sInset;
+        const x1 = east ? b.x - eInset : b.x + eInset;
+        const left = Math.min(x0, x1), right = Math.max(x0, x1), len = right - left;
+        if (len > 0) {
+          wallsSVG += `
+    <rect x="${left}" y="${a.y - H}" width="${len}" height="${RW}"/>
+    <rect x="${left}" y="${a.y + H - RW}" width="${len}" height="${RW}"/>`;
+        }
+        if (!startCorner) wallsSVG += `
+    <rect x="${east ? a.x : a.x - RW}" y="${a.y - H}" width="${RW}" height="${T}"/>`;
+        if (!endCorner) wallsSVG += `
+    <rect x="${east ? b.x - RW : b.x}" y="${a.y - H}" width="${RW}" height="${T}"/>`;
       } else if (a.x === b.x) {
-        // Vertical segment, band centered on x = a.x
-        const goingSouth = b.y > a.y;
-        const p0 = goingSouth ? a.y - aExt : a.y + aExt;
-        const p1 = goingSouth ? b.y + bExt : b.y - bExt;
-        const top = Math.min(p0, p1), bottom = Math.max(p0, p1);
-        wallsSVG += `
-    <rect id="wall_v_${wallName}_seg${i}" x="${a.x - H}" y="${top}" width="${T}" height="${bottom - top}"/>`;
+        const south = b.y > a.y;
+        const y0 = south ? a.y + sInset : a.y - sInset;
+        const y1 = south ? b.y - eInset : b.y + eInset;
+        const top = Math.min(y0, y1), bottom = Math.max(y0, y1), len = bottom - top;
+        if (len > 0) {
+          wallsSVG += `
+    <rect x="${a.x - H}" y="${top}" width="${RW}" height="${len}"/>
+    <rect x="${a.x + H - RW}" y="${top}" width="${RW}" height="${len}"/>`;
+        }
+        if (!startCorner) wallsSVG += `
+    <rect x="${a.x - H}" y="${south ? a.y : a.y - RW}" width="${T}" height="${RW}"/>`;
+        if (!endCorner) wallsSVG += `
+    <rect x="${a.x - H}" y="${south ? b.y - RW : b.y}" width="${T}" height="${RW}"/>`;
       }
     }
 
