@@ -733,7 +733,6 @@
           "facing": "west",
           "openingWidth": 3,
           "openingHeight": 7,
-          "swingDirection": "inward",
           "hingePosition": "right",
           "state": {
             "open": 1,
