@@ -343,74 +343,74 @@
         {
           "id": "oak",
           "name": "Oak",
-          "x": 227,
+          "x": 234,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 56ft from West wall / 17ft N"
+          "location": "Packing Line 1, 64ft from West wall / 17ft N (32-ft bays)"
         },
         {
           "id": "maple",
           "name": "Maple",
-          "x": 273,
+          "x": 266,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 102ft from West wall / 17ft N"
+          "location": "Packing Line 1, 96ft from West wall / 17ft N (32-ft bays)"
         },
         {
           "id": "pine",
           "name": "Pine",
-          "x": 299,
+          "x": 298,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 128ft from West wall / 17ft N"
+          "location": "Packing Line 1, 128ft from West wall / 17ft N (32-ft bays)"
         },
         {
           "id": "birch",
           "name": "Birch",
-          "x": 227,
+          "x": 234,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 56ft from West wall / 76ft N"
+          "location": "Packing Line 1, 64ft from West wall / 76ft N (32-ft bays)"
         },
         {
           "id": "cedar",
           "name": "Cedar",
-          "x": 273,
+          "x": 266,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 102ft from West wall / 76ft N"
+          "location": "Packing Line 1, 96ft from West wall / 76ft N (32-ft bays)"
         },
         {
           "id": "elm",
           "name": "Elm",
-          "x": 299,
+          "x": 298,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 128ft from West wall / 76ft N"
+          "location": "Packing Line 1, 128ft from West wall / 76ft N (32-ft bays)"
         },
         {
           "id": "ash",
           "name": "Ash",
-          "x": 201,
+          "x": 202,
           "y": 117,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 30ft from West wall / 17ft N"
+          "location": "Packing Line 1, 32ft from West wall / 17ft N (32-ft bays)"
         },
         {
           "id": "willow",
           "name": "Willow",
-          "x": 201,
+          "x": 202,
           "y": 176,
           "height": 15,
           "size": 1,
-          "location": "Packing Line 1, 30ft from West wall / 76ft N"
+          "location": "Packing Line 1, 32ft from West wall / 76ft N (32-ft bays)"
         }
       ],
       "doors": [
