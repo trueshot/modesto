@@ -8,7 +8,9 @@ const fs = require('fs');
 const path = require('path');
 
 class NameManager {
-  constructor(skillPath = 'C:\\Users\\wpssh\\.claude\\skills\\modelt-warehouse-builder') {
+  // Default was a dead ~/.claude/skills path; the lists live in the repo's modelt/ folder.
+  // modeltbabylon gen-12, 2026-08-28
+  constructor(skillPath = path.join(__dirname, '..', 'modelt')) {
     this.skillPath = skillPath;
     this.cameraNames = this.loadList('CAMERA_NAMES.txt');
     this.doorNames = this.loadList('DOOR_NAMES.txt');
