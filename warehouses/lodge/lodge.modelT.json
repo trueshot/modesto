@@ -261,7 +261,7 @@
           "type": "partition",
           "start": {
             "x": 170,
-            "y": 237
+            "y": 236
           },
           "segments": [
             {
@@ -703,7 +703,7 @@
           "id": "eisenhower",
           "wallId": "abigail",
           "x": 179,
-          "y": 237,
+          "y": 236,
           "type": "rollup",
           "orientation": "horizontal",
           "facing": "north",
@@ -714,7 +714,7 @@
           "id": "kennedy",
           "wallId": "abigail",
           "x": 200,
-          "y": 237,
+          "y": 236,
           "type": "rollup",
           "orientation": "horizontal",
           "facing": "north",
@@ -725,7 +725,7 @@
           "id": "johnson",
           "wallId": "abigail",
           "x": 254,
-          "y": 237,
+          "y": 236,
           "type": "rollup",
           "orientation": "horizontal",
           "facing": "north",
@@ -735,7 +735,7 @@
           "id": "nixon",
           "wallId": "abigail",
           "x": 284,
-          "y": 237,
+          "y": 236,
           "type": "rollup",
           "orientation": "horizontal",
           "facing": "north",
