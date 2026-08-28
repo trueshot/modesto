@@ -702,7 +702,7 @@
         {
           "id": "fillmore",
           "wallId": "beatrice",
-          "x": 268,
+          "x": 275,
           "y": 296,
           "type": "cooler",
           "orientation": "horizontal",
@@ -743,7 +743,7 @@
         {
           "id": "reagan",
           "wallId": "beatrice",
-          "x": 298,
+          "x": 305,
           "y": 296,
           "type": "cooler",
           "orientation": "horizontal",
@@ -780,7 +780,7 @@
           "id": "taft",
           "wallId": "mercury_perimeter",
           "x": 329,
-          "y": 293,
+          "y": 292,
           "type": "personnel",
           "orientation": "vertical",
           "facing": "east",
