@@ -824,7 +824,7 @@ function generateLine(line) {
           const lx = uy, ly = -ux, sgn = (el.shelf.side === 'left') ? 1 : -1;
           const deg = Math.atan2(dy, dx) * 180 / Math.PI;
           const mx = (a.x + b.x) / 2 + sgn * lx * off, my = (a.y + b.y) / 2 + sgn * ly * off;
-          svg += `\n      <g transform="translate(${round(mx)},${round(my)}) rotate(${round(deg)})"><rect x="${round(-len / 2)}" y="${round(-sw / 2)}" width="${round(len)}" height="${round(sw)}" fill="#d8d8d8" fill-opacity="0.5" stroke="#aaa" stroke-width="0.08"/></g>`;
+          svg += `\n      <g transform="translate(${round(mx)},${round(my)}) rotate(${round(deg)})"><rect x="${round(-len / 2)}" y="${round(-sw / 2)}" width="${round(len)}" height="${round(sw)}" fill="#b8b8b8" fill-opacity="0.4" stroke="#aaa" stroke-width="0.08"/></g>`;
         }
       }
       let acc = pitch / 2;
@@ -881,6 +881,112 @@ function generateLine(line) {
 function generateLines(lines) {
   if (!lines || lines.length === 0) return '';
   return lines.map(l => generateLine(l)).join('');
+}
+
+// Derive a truck well's footprint from the dock doors it serves (§5.12): centered on the
+// doors, extending `width` past the outer jambs each side, out `padLength + rampLength` on
+// the doors' outward (`facing`) side. Returns axis-aligned bounds + frame info, or null.
+const FACING_VEC = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
+function wellRect(well, doorsById) {
+  const dl = (well.doors || []).map(id => doorsById[id]).filter(Boolean);
+  if (dl.length === 0) return null;
+  const facing = dl[0].facing || 'north';
+  const out = FACING_VEC[facing] || [0, -1];
+  const alongIsX = (facing === 'north' || facing === 'south');   // wall runs E-W -> along = x
+  const coord = d => (alongIsX ? d.x : d.y);
+  const extLo = Math.min(...dl.map(d => coord(d) - (d.openingWidth || 0) / 2));
+  const extHi = Math.max(...dl.map(d => coord(d) + (d.openingWidth || 0) / 2));
+  const width = well.width !== undefined ? well.width : 4;
+  const alongMin = extLo - width, alongMax = extHi + width;
+  const wallCoord = alongIsX ? dl[0].y : dl[0].x;                 // outward-face coord on the perp axis
+  const padLength = well.padLength !== undefined ? well.padLength : 0;
+  const depth = padLength + (well.rampLength !== undefined ? well.rampLength : 55);
+  const outSign = alongIsX ? out[1] : out[0];
+  const outer = wallCoord + outSign * depth;
+  return { alongIsX, alongMin, alongMax, wallCoord, outer, padLength, out, centres: dl.map(coord).sort((a, b) => a - b) };
+}
+
+// Generate truck wells (§5.12): hatched ramp band out padLength+rampLength with a single
+// slope arrow pointing down toward the wall; a hatched pad rect at the wall only if padLength>0.
+function generateWell(well, doorsById) {
+  const round = v => Math.round(v * 1000) / 1000;
+  const r = wellRect(well, doorsById);
+  if (!r) return '';
+  const rect = (x0, y0, x1, y1, attrs) =>
+    `\n      <rect x="${round(Math.min(x0, x1))}" y="${round(Math.min(y0, y1))}" width="${round(Math.abs(x1 - x0))}" height="${round(Math.abs(y1 - y0))}" ${attrs}/>`;
+  let svg = `\n    <g id="well_${well.id}"${sourceAttr(well)}>`;
+  // ramp band (hatched)
+  if (r.alongIsX) svg += rect(r.alongMin, r.wallCoord, r.alongMax, r.outer, 'fill="url(#wellHatch)" stroke="#a89060" stroke-width="0.1"');
+  else svg += rect(r.wallCoord, r.alongMin, r.outer, r.alongMax, 'fill="url(#wellHatch)" stroke="#a89060" stroke-width="0.1"');
+  // slope arrow: down the ramp toward the wall, centered along
+  const mid = (r.alongMin + r.alongMax) / 2;
+  const outerPt = r.outer, wallPt = r.wallCoord;
+  const nearWall = wallPt + (outerPt - wallPt) * 0.15;   // arrowhead sits ~15% from the wall
+  let ax0, ay0, ax1, ay1;
+  if (r.alongIsX) { ax0 = mid; ay0 = outerPt; ax1 = mid; ay1 = nearWall; }
+  else { ax0 = outerPt; ay0 = mid; ax1 = nearWall; ay1 = mid; }
+  const adeg = Math.atan2(ay1 - ay0, ax1 - ax0) * 180 / Math.PI;
+  svg += `\n      <line x1="${round(ax0)}" y1="${round(ay0)}" x2="${round(ax1)}" y2="${round(ay1)}" stroke="#666" stroke-width="0.2"/>`;
+  svg += `\n      <g transform="translate(${round(ax1)},${round(ay1)}) rotate(${round(adeg)})"><path d="M -0.9,-0.5 L 0,0 L -0.9,0.5" fill="none" stroke="#666" stroke-width="0.2"/></g>`;
+  // pad hatch at the wall if padLength>0
+  if (r.padLength > 0) {
+    const padOuter = r.wallCoord + (r.out[r.alongIsX ? 1 : 0]) * r.padLength;
+    if (r.alongIsX) svg += rect(r.alongMin, r.wallCoord, r.alongMax, padOuter, 'fill="url(#wellHatch)" stroke="#a89060" stroke-width="0.15"');
+    else svg += rect(r.wallCoord, r.alongMin, padOuter, r.alongMax, 'fill="url(#wellHatch)" stroke="#a89060" stroke-width="0.15"');
+  }
+  svg += `\n    </g>`;
+  return svg;
+}
+
+function generateWells(wells, doorsById) {
+  if (!wells || wells.length === 0) return '';
+  return wells.map(w => generateWell(w, doorsById)).join('');
+}
+
+// Generate markings (§5.13): truckBay = derived stripes across the well slope at each bay
+// boundary; free-form = paint along a path (polyline) or a rect. `<g id=marking_{id}>`.
+function generateMarking(mk, i, wellsById, doorsById) {
+  const round = v => Math.round(v * 1000) / 1000;
+  const id = mk.id || `${mk.kind}_${i}`;
+  const color = mk.color || 'yellow';
+  const width = mk.width !== undefined ? mk.width : 0.33;
+  let svg = `\n    <g id="marking_${id}" data-kind="${mk.kind}"${sourceAttr(mk)}>`;
+
+  if (mk.kind === 'truckBay') {
+    const well = wellsById[mk.well];
+    const r = well && wellRect(well, doorsById);
+    if (r) {
+      const c = r.centres;
+      const boundaries = [];
+      for (let k = 1; k < c.length; k++) boundaries.push((c[k - 1] + c[k]) / 2);
+      const pitch = c.length > 1 ? (c[c.length - 1] - c[0]) / (c.length - 1) : 10;
+      boundaries.unshift(Math.max(r.alongMin, c[0] - pitch / 2));
+      boundaries.push(Math.min(r.alongMax, c[c.length - 1] + pitch / 2));
+      for (const b of boundaries) {
+        if (r.alongIsX) svg += `\n      <line x1="${round(b)}" y1="${round(r.wallCoord)}" x2="${round(b)}" y2="${round(r.outer)}" stroke="${color}" stroke-width="${round(width)}"/>`;
+        else svg += `\n      <line x1="${round(r.wallCoord)}" y1="${round(b)}" x2="${round(r.outer)}" y2="${round(b)}" stroke="${color}" stroke-width="${round(width)}"/>`;
+      }
+    }
+  } else if (Array.isArray(mk.path)) {
+    const pts = mk.path.map(p => `${round(p.x)},${round(p.y)}`).join(' ');
+    svg += `\n      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="${round(width)}"/>`;
+    if (mk.kind === 'sign' && mk.label) {
+      const p0 = mk.path[0];
+      svg += `\n      <text x="${round(p0.x)}" y="${round(p0.y)}" font-size="1" fill="${color}">${mk.label}</text>`;
+    }
+  } else if (mk.path && mk.path.w !== undefined) {
+    const p = mk.path;
+    svg += `\n      <rect x="${round(p.x - p.w / 2)}" y="${round(p.y - p.d / 2)}" width="${round(p.w)}" height="${round(p.d)}" fill="none" stroke="${color}" stroke-width="${round(width)}"/>`;
+    if (mk.kind === 'sign' && mk.label) svg += `\n      <text x="${round(p.x)}" y="${round(p.y)}" font-size="1" text-anchor="middle" fill="${color}">${mk.label}</text>`;
+  }
+
+  svg += `\n    </g>`;
+  return svg;
+}
+
+function generateMarkings(markings, wellsById, doorsById) {
+  if (!markings || markings.length === 0) return '';
+  return markings.map((mk, i) => generateMarking(mk, i, wellsById, doorsById)).join('');
 }
 
 // Convert turtle graphics segments to points
@@ -1059,6 +1165,12 @@ function generateModelTSVG(spec) {
   const embeddedJSON = JSON.stringify(spec, null, 2);
 
   return `<svg width="${width}" height="${height}" viewBox="${minX} ${minY} ${viewBoxWidth} ${viewBoxHeight}" version="1.1" id="facility-svg" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="wellHatch" width="1.5" height="1.5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="1.5" height="1.5" fill="#e8dcc0" fill-opacity="0.5"/>
+      <line x1="0" y1="0" x2="0" y2="1.5" stroke="#a89060" stroke-width="0.15"/>
+    </pattern>
+  </defs>
   <g id="layer1">
     <!-- Property boundary -->
     <rect id="land" width="${viewBoxWidth}" height="${viewBoxHeight}" x="${minX}" y="${minY}" style="fill:#e0e0e0;fill-opacity:0.3;stroke:none"/>
@@ -1077,7 +1189,7 @@ ${embeddedJSON}
  * Generate SVG for a single slab (v2 format)
  */
 function generateSlabSVG(slab) {
-  const { id, name, corners, walls = [], columns = [], doors = [], cameras = [], packingLines = [] } = slab;
+  const { id, name, corners, walls = [], columns = [], doors = [], cameras = [], packingLines = [], truckWells = [], markings = [] } = slab;
 
   // Generate slab footprint
   const slabSVG = generateSlab(corners);
@@ -1098,6 +1210,10 @@ function generateSlabSVG(slab) {
   const doorsSVG = generateDoors(doors, partitionIds);
   const camerasSVG = generateCameras(cameras);
   const linesSVG = generateLines(packingLines);
+  const doorsById = {}; doors.forEach(d => { doorsById[d.id] = d; });
+  const wellsById = {}; truckWells.forEach(w => { wellsById[w.id] = w; });
+  const wellsSVG = generateWells(truckWells, doorsById);
+  const markingsSVG = generateMarkings(markings, wellsById, doorsById);
 
   return `
     <!-- Slab: ${id} (${name}) -->
@@ -1125,6 +1241,16 @@ function generateSlabSVG(slab) {
       <!-- Cameras -->
       <g id="${id}_cameras" style="display:inline">
         ${camerasSVG}
+      </g>
+
+      <!-- Truck Wells -->
+      <g id="${id}_wells" style="display:inline">
+        ${wellsSVG}
+      </g>
+
+      <!-- Markings -->
+      <g id="${id}_markings" style="display:inline">
+        ${markingsSVG}
       </g>
 
       <!-- Packing Lines -->
@@ -1564,6 +1690,22 @@ function validateWarehouseSpec(spec) {
           message: `Truck well "${well.id}"${where(well)} serves door "${did}" which is a grade door - grade doors get no well (§5.12)` });
       }
     });
+    // Well-vs-boundary (§8.3, 2026-08-29): when property.boundary is explicit, a well whose
+    // footprint (out padLength+rampLength) exceeds it is a measurement error — the ramp runs
+    // off the property.
+    const bnd = spec.property && spec.property.boundary;
+    if (bnd) {
+      const r = wellRect(well, doorsBySlab[well._slab] || {});
+      if (r) {
+        const perp = [Math.min(r.wallCoord, r.outer), Math.max(r.wallCoord, r.outer)];
+        const xs = r.alongIsX ? [r.alongMin, r.alongMax] : perp;
+        const ys = r.alongIsX ? perp : [r.alongMin, r.alongMax];
+        if (xs[0] < bnd.x || xs[1] > bnd.x + bnd.width || ys[0] < bnd.y || ys[1] > bnd.y + bnd.height) {
+          violations.push({ type: 'truckWell', id: well.id,
+            message: `Truck well "${well.id}"${where(well)} extent exceeds property.boundary - the ramp runs off the property (§8.3)` });
+        }
+      }
+    }
   });
 
   // Validate markings (§5.13, reconciled 2026-08-29): two forms — (a) truckBay DERIVED from
