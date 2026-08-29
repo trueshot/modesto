@@ -780,8 +780,11 @@ class ModelTBuilder {
         const facing = served[0].facing;
         if (served.some(d => d.facing !== facing)) { console.warn(`truck well ${well.id}: doors face different ways`); return; }
         const depth = well.depth || 4;
-        const rampLen = well.rampLength || 40;
-        const padLen = well.padLength || 60;
+        // George 2026-08-29: "The wells tilt down for 55 ft (length of the truck) and then
+        // beyond that it is flat." The trailer sits ON the slope; there is no level pit, and
+        // the flat area beyond is where trucks manoeuvre — nothing built out there.
+        const rampLen = well.rampLength || 55;
+        const padLen = well.padLength || 0;
         const extra = well.width !== undefined ? well.width : 4;
         const T = ModelTBuilder.WALL_T;
         const out = { north: { x: 0, y: -1 }, south: { x: 0, y: 1 }, east: { x: 1, y: 0 }, west: { x: -1, y: 0 } }[facing];
@@ -823,10 +826,12 @@ class ModelTBuilder {
             return m;
         };
         const th = 0.3, wt = 0.5;
-        // Level pad at -depth, from the wall face out to padLen
-        const pad = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_pad`, { width: padLen, height: th, depth: alongLen }, this.scene);
-        pad.position.set(padLen / 2, -depth - th / 2, 0);
-        reg(pad, 'pad');
+        // Optional level pad at -depth (padLength > 0 only; lodge has none)
+        if (padLen > 0) {
+            const pad = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_pad`, { width: padLen, height: th, depth: alongLen }, this.scene);
+            pad.position.set(padLen / 2, -depth - th / 2, 0);
+            reg(pad, 'pad');
+        }
         // Ramp from (padLen, -depth) up to (padLen + rampLen, 0)
         const hyp = Math.hypot(rampLen, depth);
         const ramp = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_ramp`, { width: hyp, height: th, depth: alongLen }, this.scene);
@@ -836,9 +841,11 @@ class ModelTBuilder {
         // Retaining walls on both sides: a box along the pad, a wedge along the ramp
         [-1, 1].forEach((sgn, k) => {
             const z = sgn * (alongLen / 2 + wt / 2);
-            const side = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_side${k}`, { width: padLen, height: depth, depth: wt }, this.scene);
-            side.position.set(padLen / 2, -depth / 2, z);
-            reg(side, 'wall');
+            if (padLen > 0) {
+                const side = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_side${k}`, { width: padLen, height: depth, depth: wt }, this.scene);
+                side.position.set(padLen / 2, -depth / 2, z);
+                reg(side, 'wall');
+            }
             const shape = [new BABYLON.Vector3(0, -depth, 0), new BABYLON.Vector3(rampLen, 0, 0), new BABYLON.Vector3(0, 0, 0)];
             const wedge = BABYLON.MeshBuilder.ExtrudeShape(`${slabId}_well_${well.id}_wedge${k}`,
                 { shape: shape, path: [new BABYLON.Vector3(0, 0, -wt / 2), new BABYLON.Vector3(0, 0, wt / 2)], cap: BABYLON.Mesh.CAP_ALL, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, this.scene);

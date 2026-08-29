@@ -1191,10 +1191,10 @@
             "jefferson"
           ],
           "depth": 4,
-          "rampLength": 40,
-          "padLength": 60,
+          "rampLength": 55,
+          "padLength": 0,
           "width": 4,
-          "source": "george:2026-08-29 (well on this wall, these doors); estimate:modeltbabylon (depth 4, rampLength 40, padLength 60, width 4) — seg1 east wall"
+          "source": "george:2026-08-29 (well on this wall, these doors); george:2026-08-29 (tilts down for 55 ft = truck length, then flat); estimate:modeltbabylon (depth 4, width 4) — seg1 east wall"
         },
         {
           "id": "huron",
@@ -1207,10 +1207,10 @@
             "bush"
           ],
           "depth": 4,
-          "rampLength": 40,
-          "padLength": 60,
+          "rampLength": 55,
+          "padLength": 0,
           "width": 4,
-          "source": "george:2026-08-29 (well on this wall, these doors); estimate:modeltbabylon (depth 4, rampLength 40, padLength 60, width 4) — seg7 PL2 west wall"
+          "source": "george:2026-08-29 (well on this wall, these doors); george:2026-08-29 (tilts down for 55 ft = truck length, then flat); estimate:modeltbabylon (depth 4, width 4) — seg7 PL2 west wall"
         },
         {
           "id": "michigan",
@@ -1223,10 +1223,10 @@
             "grant"
           ],
           "depth": 4,
-          "rampLength": 40,
-          "padLength": 60,
+          "rampLength": 55,
+          "padLength": 0,
           "width": 4,
-          "source": "george:2026-08-29 (well on this wall, these doors); estimate:modeltbabylon (depth 4, rampLength 40, padLength 60, width 4) — seg9 PL1 west wall"
+          "source": "george:2026-08-29 (well on this wall, these doors); george:2026-08-29 (tilts down for 55 ft = truck length, then flat); estimate:modeltbabylon (depth 4, width 4) — seg9 PL1 west wall"
         }
       ]
     }
