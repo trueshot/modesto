@@ -425,7 +425,7 @@
           "openingWidth": 16,
           "leafWidth": 16,
           "approach": "grade",
-          "source": "george:2026-08-29 drive-in (vehicles and forklifts)"
+          "source": "george:2026-08-29 drive-in (vehicles and forklifts); george:2026-08-29 width 16 confirmed by tape at the warehouse"
         },
         {
           "id": "jefferson",
@@ -1327,7 +1327,8 @@
           "color": "yellow",
           "source": "george:2026-08-29 (stripes for the bays); estimate:modeltbabylon (4-in lines at the bay boundaries, full slope length)"
         }
-      ]
+      ],
+      "source": "estimate: 160 ft E-W is a Google Maps ROOF measurement (george 2026-08-29); roof overhang unknown, interior may be less. Not a tape."
     }
   ]
 }
