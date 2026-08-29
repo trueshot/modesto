@@ -60,8 +60,11 @@ class ModelTBuilder {
             cameras: [],
             boxes: [],
             packingLines: [],
-            truckWells: []
+            truckWells: [],
+            markings: []
         };
+        // Truck-well frames by id (node + geometry) so markings can paint on the slope
+        this.wellFrames = {};
         // Footprints (SVG coords) the ground plane must leave open — truck wells. index.html reads this.
         this.groundHoles = [];
     }
@@ -95,7 +98,7 @@ class ModelTBuilder {
      * Build a single slab (v2 format)
      */
     buildSlabV2(slab) {
-        const { id, name, elevation = 4, corners, variant, walls = [], columns = [], doors = [], cameras = [], boxes = [], packingLines = [], truckWells = [] } = slab;
+        const { id, name, elevation = 4, corners, variant, walls = [], columns = [], doors = [], cameras = [], boxes = [], packingLines = [], truckWells = [], markings = [] } = slab;
 
         // Build slab footprint
         if (corners && corners.length > 0) {
@@ -142,6 +145,11 @@ class ModelTBuilder {
         // Build truck wells (lakes) — grade dug out in front of dock doors. George 2026-08-29
         truckWells.forEach(well => {
             this.buildTruckWell(well, elevation, id, doors);
+        });
+
+        // Build markings (pavement / floor paint) — after wells so lane stripes can sit on the slope
+        markings.forEach(mark => {
+            this.buildMarking(mark, elevation, id, doors);
         });
     }
 
@@ -852,11 +860,95 @@ class ModelTBuilder {
             wedge.position.set(padLen, 0, z);
             reg(wedge, 'wall');
         });
+        this.wellFrames[well.id] = { node: node, depth: depth, rampLen: rampLen, padLen: padLen, th: th,
+            vertical: vertical, out: out, faceX: faceX, faceY: faceY, aMin: aMin, aMax: aMax, served: served, cs: cs };
+
         // Ground hole (SVG coords): face -> face + out*(pad+ramp), along aMin-wt .. aMax+wt
         const L = padLen + rampLen;
         const a0 = aMin - wt, a1 = aMax + wt;
         const pt = (a, o) => vertical ? { x: faceX + out.x * o, y: a } : { x: a, y: faceY + out.y * o };
         this.groundHoles.push({ wellId: well.id, points: [pt(a0, 0), pt(a1, 0), pt(a1, L), pt(a0, L)] });
+    }
+
+    /**
+     * Markings — paint on pavement or floor. George 2026-08-29: "stripes for the bays
+     * (markings on the pavement so the trucks know where their lane is)".
+     *   { id, kind: 'truckBay', well, width (ft, default 0.33), color }  -> lane lines derived
+     *       from the well's doors: one at each boundary between neighbouring bays and one past
+     *       each end bay, painted ON the slope for its full length (+ the pad if any).
+     *   { id, kind: 'line'|'lane'|'parking'|'hatch'|'sign', path:[{x,y}...], width, color, label }
+     *       -> flat paint at floor/grade along the path (whole site is at floor level).
+     * Mesh names {slab}_mark_{id}_{k}; metadata {type:'marking', markId, kind}. — modeltbabylon gen-13
+     */
+    buildMarking(mark, slabTop, slabId, doors) {
+        const width = mark.width || 0.33;
+        const colors = { yellow: [0.95, 0.8, 0.1], white: [0.95, 0.95, 0.95], red: [0.85, 0.15, 0.1], blue: [0.2, 0.4, 0.8] };
+        const c = colors[mark.color] || colors.yellow;
+        const mat = new BABYLON.StandardMaterial(`markMat_${slabId}_${mark.id}`, this.scene);
+        mat.diffuseColor = new BABYLON.Color3(c[0], c[1], c[2]);
+        mat.emissiveColor = new BABYLON.Color3(c[0] * 0.35, c[1] * 0.35, c[2] * 0.35);
+        mat.specularColor = new BABYLON.Color3(0, 0, 0);
+        const reg = (m, k) => {
+            m.material = mat; m.isPickable = false;
+            m.metadata = { type: 'marking', markId: mark.id, kind: mark.kind, slabId: slabId };
+            this.meshes.markings.push(m);
+            return m;
+        };
+
+        if (mark.kind === 'truckBay') {
+            const f = this.wellFrames[mark.well];
+            if (!f) { console.warn(`marking ${mark.id}: well ${mark.well} not built`); return; }
+            // Bay boundaries along the wall, from the served doors' centres (sorted)
+            const alongOf = cc => f.vertical ? cc.y : cc.x;
+            const centers = f.cs.map(alongOf).sort((p, q) => p - q);
+            const stripes = [];
+            if (centers.length === 1) {
+                const hw = (f.served[0].openingWidth || 10) / 2 + 1;
+                stripes.push(centers[0] - hw, centers[0] + hw);
+            } else {
+                stripes.push(centers[0] - (centers[1] - centers[0]) / 2);
+                for (let i = 0; i < centers.length - 1; i++) stripes.push((centers[i] + centers[i + 1]) / 2);
+                stripes.push(centers[centers.length - 1] + (centers[centers.length - 1] - centers[centers.length - 2]) / 2);
+            }
+            // Keep stripes inside the well's along extent
+            const inv = f.node.getWorldMatrix().clone().invert();
+            const hyp = Math.hypot(f.rampLen, f.depth);
+            stripes.forEach((a, k) => {
+                // End stripes may fall past the well edge (half a bay pitch); clamp them to it
+                if (a < f.aMin) a = f.aMin + width / 2;
+                if (a > f.aMax) a = f.aMax - width / 2;
+                const world = this.svgToBabylon(f.vertical ? f.faceX : a, f.vertical ? a : f.faceY, slabTop);
+                const local = BABYLON.Vector3.TransformCoordinates(world, inv);
+                // On the slope: a thin box concentric with the ramp box, tilted with it
+                const st = BABYLON.MeshBuilder.CreateBox(`${slabId}_mark_${mark.id}_${k}`, { width: hyp, height: f.th + 0.04, depth: width }, this.scene);
+                st.parent = f.node;
+                st.position.set(f.padLen + f.rampLen / 2, -f.depth / 2 - f.th / 2, local.z);
+                st.rotation.z = Math.atan2(f.depth, f.rampLen);
+                reg(st, k);
+                if (f.padLen > 0) {
+                    const pd = BABYLON.MeshBuilder.CreateBox(`${slabId}_mark_${mark.id}_${k}_pad`, { width: f.padLen, height: f.th + 0.04, depth: width }, this.scene);
+                    pd.parent = f.node;
+                    pd.position.set(f.padLen / 2, -f.depth - f.th / 2, local.z);
+                    reg(pd, k);
+                }
+            });
+            return;
+        }
+
+        if (mark.path && mark.path.length >= 2) {
+            for (let k = 0; k < mark.path.length - 1; k++) {
+                const p0 = mark.path[k], p1 = mark.path[k + 1];
+                const dx = p1.x - p0.x, dy = p1.y - p0.y;
+                const len = Math.hypot(dx, dy);
+                if (len === 0) continue;
+                const m = BABYLON.MeshBuilder.CreateBox(`${slabId}_mark_${mark.id}_${k}`, { width: width, height: 0.04, depth: len }, this.scene);
+                m.position = this.svgToBabylon(p0.x + dx / 2, p0.y + dy / 2, slabTop + 0.02);
+                m.rotation.y = Math.atan2(dx, -dy);
+                reg(m, k);
+            }
+            return;
+        }
+        console.warn(`marking ${mark.id}: nothing to draw (kind ${mark.kind})`);
     }
 
     /**

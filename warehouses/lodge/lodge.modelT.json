@@ -1301,6 +1301,32 @@
           "width": 4,
           "source": "george:2026-08-29 (well on this wall, these doors); george:2026-08-29 (tilts down for 55 ft = truck length, then flat); estimate:modeltbabylon (depth 4, width 4) — seg9 PL1 west wall"
         }
+      ],
+      "markings": [
+        {
+          "id": "erie-lanes",
+          "kind": "truckBay",
+          "well": "erie",
+          "width": 0.33,
+          "color": "yellow",
+          "source": "george:2026-08-29 (stripes for the bays); estimate:modeltbabylon (4-in lines at the bay boundaries, full slope length)"
+        },
+        {
+          "id": "huron-lanes",
+          "kind": "truckBay",
+          "well": "huron",
+          "width": 0.33,
+          "color": "yellow",
+          "source": "george:2026-08-29 (stripes for the bays); estimate:modeltbabylon (4-in lines at the bay boundaries, full slope length)"
+        },
+        {
+          "id": "michigan-lanes",
+          "kind": "truckBay",
+          "well": "michigan",
+          "width": 0.33,
+          "color": "yellow",
+          "source": "george:2026-08-29 (stripes for the bays); estimate:modeltbabylon (4-in lines at the bay boundaries, full slope length)"
+        }
       ]
     }
   ]
