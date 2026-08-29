@@ -1882,7 +1882,11 @@
                 scene
             );
             ground.position.x = groundCenterX;
-            ground.position.y = 0;
+            // GRADE = FLOOR LEVEL (George 2026-08-29): the slab sits at grade (maybe 4 in
+            // proud, unruled). Only truck wells in front of dock doors are dug below it —
+            // those will be modeled as their own component. Ground plane sits a hair under
+            // the slab top so the slab reads flush, not as a 4-ft plinth. — modeltbabylon gen-13
+            ground.position.y = SLAB_TOP - 0.02;
             ground.position.z = groundCenterZ;
 
             const groundMaterial = new BABYLON.StandardMaterial("groundMat", scene);
