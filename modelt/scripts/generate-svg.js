@@ -787,6 +787,102 @@ function generateColumns(columns) {
   return columns.map((column) => generateColumn(column)).join('');
 }
 
+// Generate a packing line (§5.11): elements in FLOW ORDER — RUNs (conveyor segments) and
+// STATIONs (machines). Run = a band of `width` along the path with downstream chevrons
+// ~every 8 ft; station = its footprint (rect or disc) lettered by kind with inlet/outlet
+// arrows. Colors (Appendix A row pending): run #b8b8b8@0.6 / chevrons #555; station
+// #d8c4a0 / letter + arrows #333. Whole-foot positions; sizes may be decimals.
+function generateLine(line) {
+  const round = v => Math.round(v * 1000) / 1000;
+  const id = line.id || 'unnamed';
+  const elements = line.elements || [];
+  const arrowDir = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
+  let svg = `\n    <g id="line_${id}"${sourceAttr(line)}>`;
+
+  for (const el of elements) {
+    if (Array.isArray(el.path) && el.path.length >= 2) {
+      // RUN — band (one rotated rect per segment) + downstream chevrons every ~8 ft
+      const w = (el.width !== undefined) ? el.width : 3;
+      const pitch = 8;
+      for (let i = 0; i < el.path.length - 1; i++) {
+        const a = el.path[i], b = el.path[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+        if (len < 1e-6) continue;
+        const deg = Math.atan2(dy, dx) * 180 / Math.PI, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        svg += `\n      <g transform="translate(${round(mx)},${round(my)}) rotate(${round(deg)})"><rect x="${round(-len / 2)}" y="${round(-w / 2)}" width="${round(len)}" height="${round(w)}" fill="#b8b8b8" fill-opacity="0.6" stroke="#888" stroke-width="0.1"/></g>`;
+      }
+      // Shelf (§5.11): a lighter parallel band of shelf.width on the given flow-relative side.
+      if (el.shelf && (el.shelf.side === 'left' || el.shelf.side === 'right')) {
+        const sw = (el.shelf.width !== undefined) ? el.shelf.width : 1;
+        const off = w / 2 + sw / 2;  // offset from the run centerline
+        for (let i = 0; i < el.path.length - 1; i++) {
+          const a = el.path[i], b = el.path[i + 1];
+          const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+          if (len < 1e-6) continue;
+          const ux = dx / len, uy = dy / len;
+          // left-of-flow unit (screen y-down): (uy, -ux); right = negated
+          const lx = uy, ly = -ux, sgn = (el.shelf.side === 'left') ? 1 : -1;
+          const deg = Math.atan2(dy, dx) * 180 / Math.PI;
+          const mx = (a.x + b.x) / 2 + sgn * lx * off, my = (a.y + b.y) / 2 + sgn * ly * off;
+          svg += `\n      <g transform="translate(${round(mx)},${round(my)}) rotate(${round(deg)})"><rect x="${round(-len / 2)}" y="${round(-sw / 2)}" width="${round(len)}" height="${round(sw)}" fill="#d8d8d8" fill-opacity="0.5" stroke="#aaa" stroke-width="0.08"/></g>`;
+        }
+      }
+      let acc = pitch / 2;
+      for (let i = 0; i < el.path.length - 1; i++) {
+        const a = el.path[i], b = el.path[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y, segLen = Math.hypot(dx, dy);
+        if (segLen < 1e-6) continue;
+        const ux = dx / segLen, uy = dy / segLen, deg = Math.atan2(dy, dx) * 180 / Math.PI;
+        const s = Math.min(w, 2) / 2;
+        while (acc <= segLen) {
+          const px = a.x + ux * acc, py = a.y + uy * acc;
+          svg += `\n      <g transform="translate(${round(px)},${round(py)}) rotate(${round(deg)})"><path d="M ${round(-s * 0.6)},${round(-s)} L ${round(s * 0.6)},0 L ${round(-s * 0.6)},${round(s)}" fill="none" stroke="#555" stroke-width="0.15"/></g>`;
+          acc += pitch;
+        }
+        acc -= segLen;
+      }
+    } else if (el.footprint) {
+      // STATION — footprint (rect or disc), lettered by kind, with inlet/outlet arrows
+      const fp = el.footprint;
+      const letter = (el.kind || '?').charAt(0).toUpperCase();
+      if (fp.r !== undefined) {
+        svg += `\n      <circle cx="${round(fp.x)}" cy="${round(fp.y)}" r="${round(fp.r)}" fill="#d8c4a0" stroke="#333" stroke-width="0.15"/>`;
+        svg += `\n      <text x="${round(fp.x)}" y="${round(fp.y + Math.min(fp.r, 2) / 3)}" font-size="${round(Math.min(fp.r, 2))}" text-anchor="middle" fill="#333" font-weight="bold">${letter}</text>`;
+      } else {
+        const w = fp.w || 2, d = fp.d || 2, rot = fp.rotation || 0;
+        svg += `\n      <g transform="translate(${round(fp.x)},${round(fp.y)}) rotate(${round(rot)})"><rect x="${round(-w / 2)}" y="${round(-d / 2)}" width="${round(w)}" height="${round(d)}" fill="#d8c4a0" stroke="#333" stroke-width="0.15"/><text x="0" y="${round(Math.min(w, d, 3) / 3)}" font-size="${round(Math.min(w, d, 3) / 1.5)}" text-anchor="middle" fill="#333" font-weight="bold">${letter}</text></g>`;
+      }
+      const cx = fp.x, cy = fp.y;
+      const reach = (fp.r !== undefined ? fp.r : Math.max(fp.w || 2, fp.d || 2) / 2) + 1;
+      const drawArrow = (side, into) => {
+        const v = arrowDir[side]; if (!v) return;
+        const dir = into ? [-v[0], -v[1]] : v;
+        const tipX = cx + v[0] * reach, tipY = cy + v[1] * reach;
+        const baseX = tipX - dir[0] * 0.9, baseY = tipY - dir[1] * 0.9;
+        const pdeg = Math.atan2(dir[1], dir[0]) * 180 / Math.PI;
+        svg += `\n      <line x1="${round(baseX)}" y1="${round(baseY)}" x2="${round(tipX)}" y2="${round(tipY)}" stroke="#333" stroke-width="0.12"/><g transform="translate(${round(tipX)},${round(tipY)}) rotate(${round(pdeg)})"><path d="M -0.4,-0.25 L 0,0 L -0.4,0.25" fill="none" stroke="#333" stroke-width="0.12"/></g>`;
+      };
+      if (el.inlet) drawArrow(el.inlet, true);
+      (el.outlets || []).forEach(o => drawArrow(o, false));
+    }
+  }
+
+  if (line.name) {
+    const f = elements[0];
+    const ax = f ? (f.path ? f.path[0].x : (f.footprint ? f.footprint.x : 0)) : 0;
+    const ay = f ? (f.path ? f.path[0].y : (f.footprint ? f.footprint.y : 0)) : 0;
+    svg += `\n      <text x="${round(ax)}" y="${round(ay - 2)}" font-size="1.2" text-anchor="middle" fill="#333">${line.name}</text>`;
+  }
+
+  svg += `\n    </g>`;
+  return svg;
+}
+
+function generateLines(lines) {
+  if (!lines || lines.length === 0) return '';
+  return lines.map(l => generateLine(l)).join('');
+}
+
 // Convert turtle graphics segments to points
 function convertTurtleToPoints(partitionWall) {
   const { start, segments } = partitionWall;
@@ -981,7 +1077,7 @@ ${embeddedJSON}
  * Generate SVG for a single slab (v2 format)
  */
 function generateSlabSVG(slab) {
-  const { id, name, corners, walls = [], columns = [], doors = [], cameras = [] } = slab;
+  const { id, name, corners, walls = [], columns = [], doors = [], cameras = [], packingLines = [] } = slab;
 
   // Generate slab footprint
   const slabSVG = generateSlab(corners);
@@ -1001,6 +1097,7 @@ function generateSlabSVG(slab) {
   const columnsSVG = generateColumns(columns);
   const doorsSVG = generateDoors(doors, partitionIds);
   const camerasSVG = generateCameras(cameras);
+  const linesSVG = generateLines(packingLines);
 
   return `
     <!-- Slab: ${id} (${name}) -->
@@ -1028,6 +1125,11 @@ function generateSlabSVG(slab) {
       <!-- Cameras -->
       <g id="${id}_cameras" style="display:inline">
         ${camerasSVG}
+      </g>
+
+      <!-- Packing Lines -->
+      <g id="${id}_lines" style="display:inline">
+        ${linesSVG}
       </g>
     </g>`;
 }
@@ -1136,17 +1238,28 @@ function validateWarehouseSpec(spec) {
   const cameras = [];
   const columns = [];
   const partitionWalls = [];
+  const packingLines = [];
+  const truckWells = [];
+  const markings = [];
+  const doorsBySlab = {};  // slabId -> { doorId -> door }, for truck-well door cross-reference
+  const wellsBySlab = {};  // slabId -> Set(wellId), for truckBay-marking well cross-reference
 
   slabs.forEach(s => {
-    (s.doors || []).forEach(d => doors.push({ ...d, _slab: s.id }));
+    doorsBySlab[s.id] = {};
+    wellsBySlab[s.id] = new Set();
+    (s.doors || []).forEach(d => { doors.push({ ...d, _slab: s.id }); doorsBySlab[s.id][d.id] = d; });
     (s.cameras || []).forEach(c => cameras.push({ ...c, _slab: s.id }));
     (s.columns || []).forEach(c => columns.push({ ...c, _slab: s.id }));
     (s.walls || []).forEach(w => { if (w.type === 'partition') partitionWalls.push({ ...w, _slab: s.id }); });
+    (s.packingLines || []).forEach(pl => packingLines.push({ ...pl, _slab: s.id }));
+    (s.truckWells || []).forEach(tw => { truckWells.push({ ...tw, _slab: s.id }); wellsBySlab[s.id].add(tw.id); });
+    (s.markings || []).forEach((mk, i) => markings.push({ ...mk, _slab: s.id, _index: i }));
   });
   (spec.doors || []).forEach(d => doors.push(d));
   (spec.cameras || []).forEach(c => cameras.push(c));
   (spec.columns || []).forEach(c => columns.push(c));
   (spec.partitionWalls || []).forEach(w => partitionWalls.push(w));
+  (spec.packingLines || []).forEach(pl => packingLines.push(pl));
 
   const where = e => (e && e._slab) ? ` (slab ${e._slab})` : '';
 
@@ -1286,6 +1399,13 @@ function validateWarehouseSpec(spec) {
         message: `Conveyor door "${door.id}"${where(door)} missing sillHeight (ft) - required (§5.4.3)`
       });
     }
+    if (door.approach !== undefined && door.approach !== 'dock' && door.approach !== 'grade') {
+      violations.push({
+        type: 'door',
+        id: door.id,
+        message: `Door "${door.id}"${where(door)} approach "${door.approach}" invalid - must be "dock" or "grade" (§5.4.2)`
+      });
+    }
     if (door.swingDirection !== undefined) {
       violations.push({
         type: 'door',
@@ -1381,6 +1501,95 @@ function validateWarehouseSpec(spec) {
         message: `Invalid column name "${column.id}"${where(column)} - must use tree name from naming conventions`,
         validNames: validNames.columns
       });
+    }
+  });
+
+  // Validate packing lines (§5.11, 2026-08-29): river-name id; each element is a RUN
+  // (path) or STATION (footprint). Packing-line coords may be DECIMAL — equipment is off
+  // the foot grid (§5.11 amendment 2026-08-29), so the whole-foot rule does NOT apply here.
+  // A RUN `shelf` needs a side (no default — no-guessed-side rule, like slideDirection).
+  // Station kind is an OPEN list — only warn when kind='other' with no label.
+  packingLines.forEach(line => {
+    if (validNames.packingLines && !validNames.packingLines.includes(line.id)) {
+      violations.push({
+        type: 'packingLine',
+        id: line.id,
+        message: `Invalid packing-line name "${line.id}"${where(line)} - must use river name from naming conventions`,
+        validNames: validNames.packingLines
+      });
+    }
+    (line.elements || []).forEach((el, i) => {
+      const isRun = Array.isArray(el.path);
+      const isStation = el.footprint !== undefined;
+      if (isRun) {
+        if (el.path.length < 2) {
+          violations.push({ type: 'packingLine', id: line.id,
+            message: `Packing line "${line.id}"${where(line)} run element[${i}] needs a path of >=2 vertices` });
+        }
+        if (el.shelf && el.shelf.side !== 'left' && el.shelf.side !== 'right') {
+          violations.push({ type: 'packingLine', id: line.id,
+            message: `Packing line "${line.id}"${where(line)} run element[${i}] shelf needs side (left|right) - no default (§5.11)` });
+        }
+      } else if (isStation) {
+        if (el.kind === 'other' && !el.label) {
+          violations.push({ type: 'packingLine', id: line.id,
+            message: `Packing line "${line.id}"${where(line)} station element[${i}] kind 'other' requires a label` });
+        }
+      } else {
+        violations.push({ type: 'packingLine', id: line.id,
+          message: `Packing line "${line.id}"${where(line)} element[${i}] is neither a run (needs path) nor a station (needs footprint)` });
+      }
+    });
+  });
+
+  // Validate truck wells (§5.12, 2026-08-29): lake-name id; served doors must exist on the
+  // same slab and must be DOCK doors (a grade door gets no well, §5.4.2 approach).
+  truckWells.forEach(well => {
+    if (validNames.truckWells && !validNames.truckWells.includes(well.id)) {
+      violations.push({
+        type: 'truckWell',
+        id: well.id,
+        message: `Invalid truck-well name "${well.id}"${where(well)} - must use lake name from naming conventions`,
+        validNames: validNames.truckWells
+      });
+    }
+    const slabDoors = doorsBySlab[well._slab] || {};
+    (well.doors || []).forEach(did => {
+      const d = slabDoors[did];
+      if (!d) {
+        violations.push({ type: 'truckWell', id: well.id,
+          message: `Truck well "${well.id}"${where(well)} references door "${did}" which does not exist on this slab` });
+      } else if (d.approach === 'grade') {
+        violations.push({ type: 'truckWell', id: well.id,
+          message: `Truck well "${well.id}"${where(well)} serves door "${did}" which is a grade door - grade doors get no well (§5.12)` });
+      }
+    });
+  });
+
+  // Validate markings (§5.13, reconciled 2026-08-29): two forms — (a) truckBay DERIVED from
+  // a well ({well, width, color}, id '<well>-lanes'); (b) free-form line|lane|parking|hatch|
+  // sign with a path/rect. Colors limited to yellow|white|red|blue. No name pool.
+  const MARKING_KINDS = ['truckBay', 'line', 'lane', 'parking', 'hatch', 'sign'];
+  const MARKING_COLORS = ['yellow', 'white', 'red', 'blue'];
+  markings.forEach(mk => {
+    const mid = mk.id || `${mk.kind}_${mk._index}`;
+    if (!MARKING_KINDS.includes(mk.kind)) {
+      violations.push({ type: 'marking', id: mid,
+        message: `Marking "${mid}"${where(mk)} kind "${mk.kind}" invalid - must be one of ${MARKING_KINDS.join('/')} (§5.13)` });
+    }
+    if (mk.color !== undefined && !MARKING_COLORS.includes(mk.color)) {
+      violations.push({ type: 'marking', id: mid,
+        message: `Marking "${mid}"${where(mk)} color "${mk.color}" invalid - must be ${MARKING_COLORS.join('/')} (§5.13)` });
+    }
+    if (mk.kind === 'truckBay') {
+      const wells = wellsBySlab[mk._slab] || new Set();
+      if (!mk.well) {
+        violations.push({ type: 'marking', id: mid,
+          message: `truckBay marking "${mid}"${where(mk)} needs a "well" - stripes are derived from a well (§5.13)` });
+      } else if (!wells.has(mk.well)) {
+        violations.push({ type: 'marking', id: mid,
+          message: `truckBay marking "${mid}"${where(mk)} references well "${mk.well}" which does not exist on this slab` });
+      }
     }
   });
 

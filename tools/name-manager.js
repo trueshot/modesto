@@ -16,6 +16,24 @@ class NameManager {
     this.doorNames = this.loadList('DOOR_NAMES.txt');
     this.partitionNames = this.loadList('PARTITION_WALL_NAMES.txt');
     this.columnNames = this.loadList('COLUMN_NAMES.txt');
+    // Packing lines (river pool) + truck wells (lake pool), §6.2: no .txt files — load from
+    // the authoritative NAMING_CONVENTIONS.json so each pool has a single source of truth.
+    this.packingLineNames = this.loadConventionPool('packingLines');
+    this.truckWellNames = this.loadConventionPool('truckWells');
+  }
+
+  /**
+   * Load a naming pool from NAMING_CONVENTIONS.json (the authoritative source).
+   */
+  loadConventionPool(category) {
+    try {
+      const p = path.join(this.skillPath, 'NAMING_CONVENTIONS.json');
+      const conv = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      return (conv.namingConventions && conv.namingConventions[category]) || [];
+    } catch (error) {
+      console.warn(`Warning: Could not load pool "${category}" from NAMING_CONVENTIONS.json`);
+      return [];
+    }
   }
 
   /**
@@ -94,6 +112,34 @@ class NameManager {
 
     if (!availableName) {
       throw new Error('No available column names remaining in COLUMN_NAMES.txt');
+    }
+
+    return availableName;
+  }
+
+  /**
+   * Get the next available packing-line name (river pool)
+   */
+  getNextPackingLineName(existingLines) {
+    const usedNames = new Set(existingLines.map(l => l.id));
+    const availableName = this.packingLineNames.find(name => !usedNames.has(name));
+
+    if (!availableName) {
+      throw new Error('No available packing-line names remaining in the packingLines pool');
+    }
+
+    return availableName;
+  }
+
+  /**
+   * Get the next available truck-well name (lake pool)
+   */
+  getNextTruckWellName(existingWells) {
+    const usedNames = new Set(existingWells.map(w => w.id));
+    const availableName = this.truckWellNames.find(name => !usedNames.has(name));
+
+    if (!availableName) {
+      throw new Error('No available truck-well names remaining in the truckWells pool');
     }
 
     return availableName;
