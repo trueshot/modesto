@@ -47,6 +47,10 @@ class ModelTBuilder {
     // Wall thickness, feet. RULED 2026-08-27 (George): data is whole feet; default wall = 1 ft
     // (= what the 2D plan draws). A per-wall walls[].thickness (integer ft) may override later.
     static WALL_T = 1.0;
+    // Grade (grass/pavement) sits this far BELOW the slab top. George 2026-08-29: the slab is
+    // "some distance above ground (4 inches maybe or maybe at grade)". 4 in also keeps the
+    // ground plane and slab top from z-fighting at distance. Wells and stripes end at grade.
+    static GRADE_LIP = 0.33;
 
     constructor(scene, spec) {
         this.scene = scene;
@@ -834,6 +838,8 @@ class ModelTBuilder {
             return m;
         };
         const th = 0.3, wt = 0.5;
+        const lip = ModelTBuilder.GRADE_LIP;
+        const rise = depth - lip;                             // slope climbs from -depth to grade (-lip)
         // Optional level pad at -depth (padLength > 0 only; lodge has none)
         if (padLen > 0) {
             const pad = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_pad`, { width: padLen, height: th, depth: alongLen }, this.scene);
@@ -841,26 +847,26 @@ class ModelTBuilder {
             reg(pad, 'pad');
         }
         // Ramp from (padLen, -depth) up to (padLen + rampLen, 0)
-        const hyp = Math.hypot(rampLen, depth);
+        const hyp = Math.hypot(rampLen, rise);
         const ramp = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_ramp`, { width: hyp, height: th, depth: alongLen }, this.scene);
-        ramp.position.set(padLen + rampLen / 2, -depth / 2 - th / 2, 0);
-        ramp.rotation.z = Math.atan2(depth, rampLen);       // +X end rises
+        ramp.position.set(padLen + rampLen / 2, -(depth + lip) / 2 - th / 2, 0);
+        ramp.rotation.z = Math.atan2(rise, rampLen);        // +X end rises to grade
         reg(ramp, 'ramp');
         // Retaining walls on both sides: a box along the pad, a wedge along the ramp
         [-1, 1].forEach((sgn, k) => {
             const z = sgn * (alongLen / 2 + wt / 2);
             if (padLen > 0) {
-                const side = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_side${k}`, { width: padLen, height: depth, depth: wt }, this.scene);
-                side.position.set(padLen / 2, -depth / 2, z);
+                const side = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_side${k}`, { width: padLen, height: rise, depth: wt }, this.scene);
+                side.position.set(padLen / 2, -(depth + lip) / 2, z);
                 reg(side, 'wall');
             }
-            const shape = [new BABYLON.Vector3(0, -depth, 0), new BABYLON.Vector3(rampLen, 0, 0), new BABYLON.Vector3(0, 0, 0)];
+            const shape = [new BABYLON.Vector3(0, -depth, 0), new BABYLON.Vector3(rampLen, -lip, 0), new BABYLON.Vector3(0, -lip, 0)];
             const wedge = BABYLON.MeshBuilder.ExtrudeShape(`${slabId}_well_${well.id}_wedge${k}`,
                 { shape: shape, path: [new BABYLON.Vector3(0, 0, -wt / 2), new BABYLON.Vector3(0, 0, wt / 2)], cap: BABYLON.Mesh.CAP_ALL, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, this.scene);
             wedge.position.set(padLen, 0, z);
             reg(wedge, 'wall');
         });
-        this.wellFrames[well.id] = { node: node, depth: depth, rampLen: rampLen, padLen: padLen, th: th,
+        this.wellFrames[well.id] = { node: node, depth: depth, rampLen: rampLen, padLen: padLen, th: th, lip: lip, rise: rise,
             vertical: vertical, out: out, faceX: faceX, faceY: faceY, aMin: aMin, aMax: aMax, served: served, cs: cs };
 
         // Ground hole (SVG coords): face -> face + out*(pad+ramp), along aMin-wt .. aMax+wt
@@ -912,7 +918,7 @@ class ModelTBuilder {
             }
             // Keep stripes inside the well's along extent
             const inv = f.node.getWorldMatrix().clone().invert();
-            const hyp = Math.hypot(f.rampLen, f.depth);
+            const hyp = Math.hypot(f.rampLen, f.rise);
             stripes.forEach((a, k) => {
                 // End stripes may fall past the well edge (half a bay pitch); clamp them to it
                 if (a < f.aMin) a = f.aMin + width / 2;
@@ -922,8 +928,8 @@ class ModelTBuilder {
                 // On the slope: a thin box concentric with the ramp box, tilted with it
                 const st = BABYLON.MeshBuilder.CreateBox(`${slabId}_mark_${mark.id}_${k}`, { width: hyp, height: f.th + 0.04, depth: width }, this.scene);
                 st.parent = f.node;
-                st.position.set(f.padLen + f.rampLen / 2, -f.depth / 2 - f.th / 2, local.z);
-                st.rotation.z = Math.atan2(f.depth, f.rampLen);
+                st.position.set(f.padLen + f.rampLen / 2, -(f.depth + f.lip) / 2 - f.th / 2, local.z);
+                st.rotation.z = Math.atan2(f.rise, f.rampLen);
                 reg(st, k);
                 if (f.padLen > 0) {
                     const pd = BABYLON.MeshBuilder.CreateBox(`${slabId}_mark_${mark.id}_${k}_pad`, { width: f.padLen, height: f.th + 0.04, depth: width }, this.scene);
