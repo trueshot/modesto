@@ -1593,9 +1593,12 @@ function validateWarehouseSpec(spec) {
     }
   });
 
-  // Write violations back to JSON
-  conventions.violations = violations;
-  fs.writeFileSync(conventionsPath, JSON.stringify(conventions, null, 2));
+  // Write violations to a SEPARATE file (Section 12 ruling 2026-08-29). NAMING_CONVENTIONS.json
+  // is PURE pool content and is never rewritten by the generator — previously the violations
+  // array was written back into it, so a `git checkout` to reset violations silently reverted
+  // uncommitted pool additions. Violations now live in NAMING_VIOLATIONS.json.
+  const violationsPath = path.join(skillDir, 'NAMING_VIOLATIONS.json');
+  fs.writeFileSync(violationsPath, JSON.stringify({ generatedAt: new Date().toISOString(), violations }, null, 2));
 
   // Output violations to console
   if (violations.length > 0) {
@@ -1603,7 +1606,7 @@ function validateWarehouseSpec(spec) {
     violations.forEach(v => {
       console.error(`  - ${v.message}`);
     });
-    console.error(`\n${violations.length} violation(s) found. Details written to NAMING_CONVENTIONS.json`);
+    console.error(`\n${violations.length} violation(s) found. Details written to NAMING_VIOLATIONS.json`);
     console.error('Generation will continue, but please review and fix violations.\n');
   }
 

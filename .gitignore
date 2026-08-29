@@ -13,3 +13,4 @@ tmpclaude-*-cwd
 /test-output/
 /logs/
 .env
+modelt/NAMING_VIOLATIONS.json
