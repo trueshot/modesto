@@ -59,8 +59,11 @@ class ModelTBuilder {
             doors: [],
             cameras: [],
             boxes: [],
-            packingLines: []
+            packingLines: [],
+            truckWells: []
         };
+        // Footprints (SVG coords) the ground plane must leave open — truck wells. index.html reads this.
+        this.groundHoles = [];
     }
 
     /**
@@ -92,7 +95,7 @@ class ModelTBuilder {
      * Build a single slab (v2 format)
      */
     buildSlabV2(slab) {
-        const { id, name, elevation = 4, corners, variant, walls = [], columns = [], doors = [], cameras = [], boxes = [], packingLines = [] } = slab;
+        const { id, name, elevation = 4, corners, variant, walls = [], columns = [], doors = [], cameras = [], boxes = [], packingLines = [], truckWells = [] } = slab;
 
         // Build slab footprint
         if (corners && corners.length > 0) {
@@ -134,6 +137,11 @@ class ModelTBuilder {
         // Build packing lines (runs + stations) — ruled by George 2026-08-29
         packingLines.forEach(line => {
             this.buildPackingLine(line, elevation, id);
+        });
+
+        // Build truck wells (lakes) — grade dug out in front of dock doors. George 2026-08-29
+        truckWells.forEach(well => {
+            this.buildTruckWell(well, elevation, id, doors);
         });
     }
 
@@ -756,6 +764,95 @@ class ModelTBuilder {
     }
 
     /**
+     * Truck well (a "lake"): the grade dug out in front of dock doors so a trailer bed
+     * meets the floor. George 2026-08-29: "The truck bays have a gradient that descends
+     * to the base of the slab from some distance away... only the areas around the truck
+     * doors have that grade dug out." Data: { id, doors:[...], depth (ft at the wall,
+     * default 4), rampLength, padLength, width (ft past the outer jambs) }. Position is
+     * DERIVED from the doors served (all on one wall, same facing). Local frame under a
+     * TransformNode: X = outward from the wall face, Y = up, Z = along the wall.
+     * Registers the footprint in this.groundHoles so the ground plane leaves it open.
+     * — modeltbabylon gen-13
+     */
+    buildTruckWell(well, slabTop, slabId, doors) {
+        const served = (well.doors || []).map(id => doors.find(d => d.id === id)).filter(Boolean);
+        if (served.length === 0) { console.warn(`truck well ${well.id}: no doors found`); return; }
+        const facing = served[0].facing;
+        if (served.some(d => d.facing !== facing)) { console.warn(`truck well ${well.id}: doors face different ways`); return; }
+        const depth = well.depth || 4;
+        const rampLen = well.rampLength || 40;
+        const padLen = well.padLength || 60;
+        const extra = well.width !== undefined ? well.width : 4;
+        const T = ModelTBuilder.WALL_T;
+        const out = { north: { x: 0, y: -1 }, south: { x: 0, y: 1 }, east: { x: 1, y: 0 }, west: { x: -1, y: 0 } }[facing];
+        if (!out) { console.warn(`truck well ${well.id}: bad facing ${facing}`); return; }
+        const vertical = out.x !== 0;                        // wall runs north-south
+        // Along-wall extent from the served doors' jambs (+ width past the outer jambs)
+        const cs = served.map(d => this.doorAtCenterline(d, slabId));
+        const alongOf = c => vertical ? c.y : c.x;
+        const halfW = d => (d.openingWidth || 10) / 2;
+        let aMin = Infinity, aMax = -Infinity, perp = 0;
+        served.forEach((d, i) => {
+            aMin = Math.min(aMin, alongOf(cs[i]) - halfW(d));
+            aMax = Math.max(aMax, alongOf(cs[i]) + halfW(d));
+            perp += vertical ? cs[i].x : cs[i].y;
+        });
+        perp /= served.length;                               // wall centerline
+        aMin -= extra; aMax += extra;
+        const alongLen = aMax - aMin;
+        const aMid = (aMin + aMax) / 2;
+        // Outward face midpoint (SVG)
+        const faceX = vertical ? perp + out.x * T / 2 : aMid;
+        const faceY = vertical ? aMid : perp + out.y * T / 2;
+
+        const node = new BABYLON.TransformNode(`${slabId}_well_${well.id}`, this.scene);
+        node.position = this.svgToBabylon(faceX, faceY, slabTop);
+        // local +X -> outward. rotation.y turns +X toward -Z.  east: 0, west: PI, north(+Z): -PI/2, south(-Z): +PI/2
+        node.rotation.y = { east: 0, west: Math.PI, north: -Math.PI / 2, south: Math.PI / 2 }[facing];
+
+        const concrete = new BABYLON.StandardMaterial(`wellMat_${slabId}_${well.id}`, this.scene);
+        concrete.diffuseColor = new BABYLON.Color3(0.45, 0.45, 0.48);
+        concrete.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        const wallMat = new BABYLON.StandardMaterial(`wellWallMat_${slabId}_${well.id}`, this.scene);
+        wallMat.diffuseColor = new BABYLON.Color3(0.38, 0.38, 0.4);
+        const reg = (m, part) => {
+            m.parent = node; m.material = part === 'pad' || part === 'ramp' ? concrete : wallMat;
+            m.isPickable = false;
+            m.metadata = { type: 'truckWell', wellId: well.id, slabId: slabId, part: part, doors: well.doors };
+            this.meshes.truckWells.push(m);
+            return m;
+        };
+        const th = 0.3, wt = 0.5;
+        // Level pad at -depth, from the wall face out to padLen
+        const pad = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_pad`, { width: padLen, height: th, depth: alongLen }, this.scene);
+        pad.position.set(padLen / 2, -depth - th / 2, 0);
+        reg(pad, 'pad');
+        // Ramp from (padLen, -depth) up to (padLen + rampLen, 0)
+        const hyp = Math.hypot(rampLen, depth);
+        const ramp = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_ramp`, { width: hyp, height: th, depth: alongLen }, this.scene);
+        ramp.position.set(padLen + rampLen / 2, -depth / 2 - th / 2, 0);
+        ramp.rotation.z = Math.atan2(depth, rampLen);       // +X end rises
+        reg(ramp, 'ramp');
+        // Retaining walls on both sides: a box along the pad, a wedge along the ramp
+        [-1, 1].forEach((sgn, k) => {
+            const z = sgn * (alongLen / 2 + wt / 2);
+            const side = BABYLON.MeshBuilder.CreateBox(`${slabId}_well_${well.id}_side${k}`, { width: padLen, height: depth, depth: wt }, this.scene);
+            side.position.set(padLen / 2, -depth / 2, z);
+            reg(side, 'wall');
+            const shape = [new BABYLON.Vector3(0, -depth, 0), new BABYLON.Vector3(rampLen, 0, 0), new BABYLON.Vector3(0, 0, 0)];
+            const wedge = BABYLON.MeshBuilder.ExtrudeShape(`${slabId}_well_${well.id}_wedge${k}`,
+                { shape: shape, path: [new BABYLON.Vector3(0, 0, -wt / 2), new BABYLON.Vector3(0, 0, wt / 2)], cap: BABYLON.Mesh.CAP_ALL, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, this.scene);
+            wedge.position.set(padLen, 0, z);
+            reg(wedge, 'wall');
+        });
+        // Ground hole (SVG coords): face -> face + out*(pad+ramp), along aMin-wt .. aMax+wt
+        const L = padLen + rampLen;
+        const a0 = aMin - wt, a1 = aMax + wt;
+        const pt = (a, o) => vertical ? { x: faceX + out.x * o, y: a } : { x: a, y: faceY + out.y * o };
+        this.groundHoles.push({ wellId: well.id, points: [pt(a0, 0), pt(a1, 0), pt(a1, L), pt(a0, L)] });
+    }
+
+    /**
      * Conveyor door: a wall penetration above a sill that carries a conveyor through
      * the wall. Data: openingWidth/openingHeight (ft), sillHeight (ft above slab),
      * facing = outward normal. The hole itself is cut by createWallSegmentWithDoors;
@@ -1224,8 +1321,12 @@ class ModelTBuilder {
         this.buildJambs(door, slabId, openingWidth, leafWidth, openingHeight, doorBase);
         const wallHalf = ModelTBuilder.WALL_T / 2;
 
+        // approach: 'grade' = drive-in door (vehicles/forklifts drive through at floor level):
+        // no dock seal, no leveler, no well. George 2026-08-29 (obama, lincoln, carter).
+        const driveIn = door.approach === 'grade';
+
         // Dock seal (black rubber frame around door) — EXTERIOR face
-        if (door.hasDockSeal !== false) {
+        if (door.hasDockSeal !== false && !driveIn) {
             const sealMaterial = new BABYLON.StandardMaterial(`baySealMat_${slabId}_${door.id}`, this.scene);
             sealMaterial.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1); // Black rubber
 
@@ -1322,8 +1423,8 @@ class ModelTBuilder {
         bayHousing.isPickable = false;
         this.meshes.doors.push(bayHousing);
 
-        // Dock leveler (if enabled)
-        if (door.hasDockLeveler !== false) {
+        // Dock leveler (if enabled; never for drive-in doors)
+        if (door.hasDockLeveler !== false && !driveIn) {
             const levelerMaterial = new BABYLON.StandardMaterial(`bayLevelerMat_${slabId}_${door.id}`, this.scene);
             levelerMaterial.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.4); // Dark gray metal
             levelerMaterial.specularColor = new BABYLON.Color3(0.5, 0.5, 0.5);
@@ -1813,7 +1914,7 @@ class ModelTBuilder {
         // the leveler plates were covering the nameplates). Leveler spans T/2 .. T/2 + depth
         // from the centerline point C; the label is labelSize/4 deep.
         // Facing-side twin ('out'): clear the dock seal (1.5 ft off the exterior face) instead.
-        const hasLeveler = side === 'in' && door.type === 'bay' && door.hasDockLeveler !== false;
+        const hasLeveler = side === 'in' && door.type === 'bay' && door.hasDockLeveler !== false && door.approach !== 'grade';
         const hasSeal = side === 'out' && door.type === 'bay' && door.hasDockSeal !== false;
         const levelerDepth = door.levelerDepth || 6;
         const labelInset = hasLeveler

@@ -423,7 +423,9 @@
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 16,
-          "leafWidth": 16
+          "leafWidth": 16,
+          "approach": "grade",
+          "source": "george:2026-08-29 drive-in (vehicles and forklifts)"
         },
         {
           "id": "jefferson",
@@ -660,7 +662,9 @@
           "orientation": "vertical",
           "facing": "east",
           "openingWidth": 16,
-          "leafWidth": 16
+          "leafWidth": 16,
+          "approach": "grade",
+          "source": "george:2026-08-29 drive-in (vehicles and forklifts)"
         },
         {
           "id": "eisenhower",
@@ -828,7 +832,9 @@
           "orientation": "horizontal",
           "facing": "north",
           "openingWidth": 16,
-          "openingHeight": 12
+          "openingHeight": 12,
+          "approach": "grade",
+          "source": "george:2026-08-29 drive-in (vehicles and forklifts)"
         }
       ],
       "cameras": [
@@ -1167,6 +1173,60 @@
               "source": "george:2026-08-29 (belt on the wall side; shelf room side); estimate:modeltbabylon (bedHeight 3)"
             }
           ]
+        }
+      ],
+      "truckWells": [
+        {
+          "id": "erie",
+          "doors": [
+            "taylor",
+            "polk",
+            "tyler",
+            "harrison",
+            "vanburen",
+            "jackson",
+            "monroe",
+            "madison",
+            "adams",
+            "jefferson"
+          ],
+          "depth": 4,
+          "rampLength": 40,
+          "padLength": 60,
+          "width": 4,
+          "source": "george:2026-08-29 (well on this wall, these doors); estimate:modeltbabylon (depth 4, rampLength 40, padLength 60, width 4) — seg1 east wall"
+        },
+        {
+          "id": "huron",
+          "doors": [
+            "wilson",
+            "harding",
+            "coolidge",
+            "hoover",
+            "truman",
+            "bush"
+          ],
+          "depth": 4,
+          "rampLength": 40,
+          "padLength": 60,
+          "width": 4,
+          "source": "george:2026-08-29 (well on this wall, these doors); estimate:modeltbabylon (depth 4, rampLength 40, padLength 60, width 4) — seg7 PL2 west wall"
+        },
+        {
+          "id": "michigan",
+          "doors": [
+            "mckinley",
+            "cleveland",
+            "arthur",
+            "garfield",
+            "hayes",
+            "grant"
+          ],
+          "depth": 4,
+          "rampLength": 40,
+          "padLength": 60,
+          "width": 4,
+          "source": "george:2026-08-29 (well on this wall, these doors); estimate:modeltbabylon (depth 4, rampLength 40, padLength 60, width 4) — seg9 PL1 west wall"
         }
       ]
     }
