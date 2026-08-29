@@ -1106,6 +1106,68 @@
           "x": 170,
           "y": 274
         }
+      ],
+      "packingLines": [
+        {
+          "id": "hudson",
+          "name": "Packing Line 1 — melon line",
+          "source": "george:2026-08-29 (80 ft inside; 20 out + 10 in; washer 6; 64 sizer; 4 ft wide; 24 in off north wall)",
+          "elements": [
+            {
+              "kind": "belt",
+              "label": "infeed",
+              "path": [
+                {
+                  "x": 350,
+                  "y": 106
+                },
+                {
+                  "x": 320,
+                  "y": 106
+                }
+              ],
+              "width": 3,
+              "bedHeight": 4,
+              "source": "estimate:modeltbabylon (width 3, bed at clinton sill; centred on the clinton hole)"
+            },
+            {
+              "kind": "washer",
+              "footprint": {
+                "x": 317,
+                "y": 105,
+                "w": 6,
+                "d": 4,
+                "rotation": 0
+              },
+              "inlet": "east",
+              "outlets": [
+                "west"
+              ],
+              "height": 5,
+              "source": "estimate:modeltbabylon (depth 4, height 5)"
+            },
+            {
+              "kind": "sizer",
+              "path": [
+                {
+                  "x": 314,
+                  "y": 103.5
+                },
+                {
+                  "x": 250,
+                  "y": 103.5
+                }
+              ],
+              "width": 1,
+              "bedHeight": 3,
+              "shelf": {
+                "side": "left",
+                "width": 3
+              },
+              "source": "estimate:modeltbabylon (belt on the WALL side, shelf room side = left of flow; bedHeight 3) — George to confirm side"
+            }
+          ]
+        }
       ]
     }
   ]

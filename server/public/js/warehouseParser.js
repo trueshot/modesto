@@ -58,7 +58,8 @@ class ModelTBuilder {
             columns: [],
             doors: [],
             cameras: [],
-            boxes: []
+            boxes: [],
+            packingLines: []
         };
     }
 
@@ -91,7 +92,7 @@ class ModelTBuilder {
      * Build a single slab (v2 format)
      */
     buildSlabV2(slab) {
-        const { id, name, elevation = 4, corners, variant, walls = [], columns = [], doors = [], cameras = [], boxes = [] } = slab;
+        const { id, name, elevation = 4, corners, variant, walls = [], columns = [], doors = [], cameras = [], boxes = [], packingLines = [] } = slab;
 
         // Build slab footprint
         if (corners && corners.length > 0) {
@@ -128,6 +129,11 @@ class ModelTBuilder {
         // Build boxes
         boxes.forEach(box => {
             this.buildBoxMesh(box, elevation, id);
+        });
+
+        // Build packing lines (runs + stations) — ruled by George 2026-08-29
+        packingLines.forEach(line => {
+            this.buildPackingLine(line, elevation, id);
         });
     }
 
@@ -642,6 +648,111 @@ class ModelTBuilder {
 
         // Create floor label for all door types
         this.createDoorLabel(door, slabTop, slabId);
+    }
+
+    /**
+     * Packing line = ordered elements in FLOW order (spec proposal, ruled by George
+     * 2026-08-29: plant; runs + stations; decimals ok; river names; open kinds).
+     *   RUN     {kind, path:[{x,y}...], width, bedHeight, legPitch, shelf:{side,width}}
+     *           vertex order IS the flow direction. shelf.side is left|right OF FLOW.
+     *   STATION {kind, footprint:{x,y,w,d,rotation} | {x,y,r}, height, inlet, outlets}
+     * Mesh names: {slab}_line_{lineId}_{index}_{part}. — modeltbabylon gen-13
+     */
+    buildPackingLine(line, slabTop, slabId) {
+        const elements = line.elements || [];
+        const mats = this._packingLineMaterials || (this._packingLineMaterials = (() => {
+            const mk = (n, r, g, b) => {
+                const m = new BABYLON.StandardMaterial(`plMat_${n}`, this.scene);
+                m.diffuseColor = new BABYLON.Color3(r, g, b);
+                m.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+                return m;
+            };
+            return {
+                belt: mk('belt', 0.6, 0.72, 0.85),      // pale blue carrying surface (lodge line)
+                roller: mk('roller', 0.55, 0.57, 0.6),
+                frame: mk('frame', 0.25, 0.3, 0.55),    // blue steel frame (matches conveyor door bed)
+                leg: mk('leg', 0.3, 0.32, 0.35),
+                shelf: mk('shelf', 0.8, 0.82, 0.84),
+                station: mk('station', 0.62, 0.64, 0.68)
+            };
+        })());
+        const box = (name, w, h, d, cx, cy, elev, rotY, mat, meta) => {
+            const m = BABYLON.MeshBuilder.CreateBox(name, { width: w, height: h, depth: d }, this.scene);
+            m.position = this.svgToBabylon(cx, cy, elev);
+            m.rotation.y = rotY || 0;
+            m.material = mat;
+            m.isPickable = false;
+            m.metadata = Object.assign({ type: 'packingLine', lineId: line.id, slabId: slabId }, meta);
+            this.meshes.packingLines.push(m);
+            return m;
+        };
+
+        elements.forEach((el, index) => {
+            const base = `${slabId}_line_${line.id}_${index}`;
+            const meta = { index: index, kind: el.kind };
+
+            if (el.path && el.path.length >= 2) {
+                // ---- RUN ----
+                const w = el.width || 3;
+                const bedH = el.bedHeight || 3;
+                const pitch = el.legPitch || 8;
+                const frameH = 0.5;
+                const surfMat = el.kind === 'roller' ? mats.roller : mats.belt;
+                for (let k = 0; k < el.path.length - 1; k++) {
+                    const p0 = el.path[k], p1 = el.path[k + 1];
+                    const dx = p1.x - p0.x, dy = p1.y - p0.y;         // SVG (x east, y south)
+                    const len = Math.hypot(dx, dy);
+                    if (len === 0) continue;
+                    const ux = dx / len, uy = dy / len;                 // flow unit (SVG)
+                    // Babylon: X=x, Z=-y. Box depth runs along local +Z; rotation.y turns +Z toward +X.
+                    const rotY = Math.atan2(dx, -dy);
+                    const cx = p0.x + dx / 2, cy = p0.y + dy / 2;
+                    box(`${base}_seg${k}_frame`, w, frameH, len, cx, cy, slabTop + bedH - frameH / 2, rotY, mats.frame, meta);
+                    box(`${base}_seg${k}_surface`, w - 0.2, 0.06, len - 0.1, cx, cy, slabTop + bedH + 0.03, rotY, surfMat, meta);
+                    // legs: pairs every legPitch along the segment (skip if the bed is in the air outside)
+                    const legH = bedH - frameH;
+                    if (legH > 0.5) {
+                        // left of flow in SVG coords = (-uy? ) — derive via Babylon: D=(ux,-uy), left=(-Dz,Dx)=(uy, ux) in (X,Z)
+                        // convert back to SVG offset: sx = uy, sy = -ux
+                        const lx = uy, ly = -ux;
+                        for (let t = pitch / 2; t < len; t += pitch) {
+                            const ax = p0.x + ux * t, ay = p0.y + uy * t;
+                            const off = w / 2 - 0.15;
+                            box(`${base}_seg${k}_legL${Math.round(t)}`, 0.2, legH, 0.2, ax + lx * off, ay + ly * off, slabTop + legH / 2, rotY, mats.leg, meta);
+                            box(`${base}_seg${k}_legR${Math.round(t)}`, 0.2, legH, 0.2, ax - lx * off, ay - ly * off, slabTop + legH / 2, rotY, mats.leg, meta);
+                        }
+                    }
+                    // shelf beside the belt (George's "rests"): side is left|right OF FLOW, no default
+                    if (el.shelf && el.shelf.width && (el.shelf.side === 'left' || el.shelf.side === 'right')) {
+                        const sw = el.shelf.width;
+                        const sgn = el.shelf.side === 'left' ? 1 : -1;
+                        const lx = uy * sgn, ly = -ux * sgn;
+                        const off = w / 2 + sw / 2;
+                        box(`${base}_seg${k}_shelf`, sw, 0.15, len, cx + lx * off, cy + ly * off, slabTop + bedH - 0.075, rotY, mats.shelf, meta);
+                        box(`${base}_seg${k}_shelfApron`, sw - 0.2, 0.4, len - 0.1, cx + lx * off, cy + ly * off, slabTop + bedH - 0.35, rotY, mats.frame, meta);
+                    } else if (el.shelf) {
+                        console.warn(`packing line ${line.id}[${index}]: shelf.side missing or invalid — shelf not drawn`);
+                    }
+                }
+            } else if (el.footprint) {
+                // ---- STATION ----
+                const fp = el.footprint;
+                const h = el.height || 5;
+                if (fp.r) {
+                    const m = BABYLON.MeshBuilder.CreateCylinder(`${base}_disc`, { diameter: fp.r * 2, height: h }, this.scene);
+                    m.position = this.svgToBabylon(fp.x, fp.y, slabTop + h / 2);
+                    m.material = mats.station;
+                    m.isPickable = false;
+                    m.metadata = Object.assign({ type: 'packingLine', lineId: line.id, slabId: slabId }, meta);
+                    this.meshes.packingLines.push(m);
+                } else {
+                    const rotY = -(fp.rotation || 0) * Math.PI / 180;
+                    box(`${base}_body`, fp.w, h, fp.d, fp.x, fp.y, slabTop + h / 2, rotY, mats.station, meta);
+                }
+            } else {
+                console.warn(`packing line ${line.id}[${index}]: element has neither path nor footprint`);
+            }
+        });
     }
 
     /**
