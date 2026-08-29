@@ -835,6 +835,19 @@
           "openingHeight": 12,
           "approach": "grade",
           "source": "george:2026-08-29 drive-in (vehicles and forklifts)"
+        },
+        {
+          "id": "washington",
+          "wallId": "mercury_perimeter",
+          "x": 172,
+          "y": 400,
+          "type": "conveyor",
+          "orientation": "horizontal",
+          "facing": "south",
+          "openingWidth": 4,
+          "openingHeight": 4,
+          "sillHeight": 4,
+          "source": "george:2026-08-29 (PL2 line enters the south wall 20 ft from the west side); estimate:modeltbabylon (width 4, height 4, sill 4 = same as clinton)"
         }
       ],
       "cameras": [
@@ -1171,6 +1184,66 @@
                 "width": 3
               },
               "source": "george:2026-08-29 (belt on the wall side; shelf room side); estimate:modeltbabylon (bedHeight 3)"
+            }
+          ]
+        },
+        {
+          "id": "mississippi",
+          "name": "Packing Line 2 — melon line",
+          "source": "george:2026-08-29 (same as line 1; enters the south wall 20 ft from the west side, runs north)",
+          "elements": [
+            {
+              "kind": "belt",
+              "label": "infeed",
+              "path": [
+                {
+                  "x": 172,
+                  "y": 420
+                },
+                {
+                  "x": 172,
+                  "y": 390
+                }
+              ],
+              "width": 3,
+              "bedHeight": 4,
+              "source": "george (20 ft outside + 10 in); estimate:modeltbabylon (width 3, bed at the door sill, centred on door washington)"
+            },
+            {
+              "kind": "washer",
+              "footprint": {
+                "x": 172,
+                "y": 387,
+                "w": 4,
+                "d": 6,
+                "rotation": 0
+              },
+              "inlet": "south",
+              "outlets": [
+                "north"
+              ],
+              "height": 5,
+              "source": "george (6 ft); estimate:modeltbabylon (4 wide, 5 tall)"
+            },
+            {
+              "kind": "sizer",
+              "path": [
+                {
+                  "x": 170.5,
+                  "y": 384
+                },
+                {
+                  "x": 170.5,
+                  "y": 320
+                }
+              ],
+              "width": 1,
+              "bedHeight": 3,
+              "shelf": {
+                "side": "right",
+                "width": 3
+              },
+              "source": "george (64 ft, belt 1 + shelf 3, same as line 1); estimate:modeltbabylon (belt on the WEST edge at 170-171 = 20 ft from the west wall, shelf east of it = right of northward flow; bedHeight 3)"
             }
           ]
         }
