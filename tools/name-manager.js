@@ -20,6 +20,8 @@ class NameManager {
     // the authoritative NAMING_CONVENTIONS.json so each pool has a single source of truth.
     this.packingLineNames = this.loadConventionPool('packingLines');
     this.truckWellNames = this.loadConventionPool('truckWells');
+    // Site features (mountain pool, §5.14): ONE pool shared by all kinds (fence/driveway/parking).
+    this.siteFeatureNames = this.loadConventionPool('siteFeatures');
   }
 
   /**
@@ -126,6 +128,20 @@ class NameManager {
 
     if (!availableName) {
       throw new Error('No available packing-line names remaining in the packingLines pool');
+    }
+
+    return availableName;
+  }
+
+  /**
+   * Get the next available site-feature name (mountain pool, §5.14 — shared by all kinds)
+   */
+  getNextSiteFeatureName(existingFeatures) {
+    const usedNames = new Set(existingFeatures.map(f => f.id));
+    const availableName = this.siteFeatureNames.find(name => !usedNames.has(name));
+
+    if (!availableName) {
+      throw new Error('No available site-feature names remaining in the siteFeatures pool');
     }
 
     return availableName;

@@ -336,6 +336,28 @@
       "pontchartrain",
       "moosehead",
       "yellowstone"
+    ],
+    "siteFeatures": [
+      "rainier",
+      "shasta",
+      "whitney",
+      "denali",
+      "hood",
+      "baker",
+      "elbert",
+      "mitchell",
+      "katahdin",
+      "olympus",
+      "lassen",
+      "longs",
+      "evans",
+      "humphreys",
+      "wheeler",
+      "borah",
+      "gannett",
+      "kings",
+      "marcy",
+      "mansfield"
     ]
   },
   "violations": []
