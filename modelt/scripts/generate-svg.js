@@ -494,12 +494,13 @@ function generateSlab(corners) {
 }
 
 // Generate door overlay
-// Source provenance (§5.4.2, ruled 2026-08-28): any element whose geometry was estimated
-// carries `source: "estimate:..."`. Surface that as data-source so consumers can style
-// estimated geometry; measured/observed sources are not marked.
+// Source provenance (§5.4.2, ruled 2026-08-28; extended §5.14 2026-08-30): any element whose
+// geometry was estimated carries `source: "estimate:..."`, and anything laid off the aerial
+// basemap carries `source: "traced:..."` (not a guess, but not a survey either). Surface both
+// as data-source so consumers can style them; measured/observed sources are not marked.
 function sourceAttr(el) {
-  return (el && typeof el.source === 'string' && el.source.startsWith('estimate:'))
-    ? ` data-source="${el.source}"` : '';
+  const s = (el && typeof el.source === 'string') ? el.source : '';
+  return (s.startsWith('estimate:') || s.startsWith('traced:')) ? ` data-source="${s}"` : '';
 }
 
 // Bird's-eye door geometry — MODELT_SPECIFICATION §5.4.4 + §5.4.7 (normative, 2026-08-27).
@@ -989,6 +990,45 @@ function generateMarkings(markings, wellsById, doorsById) {
   return markings.map((mk, i) => generateMarking(mk, i, wellsById, doorsById)).join('');
 }
 
+// Site features (§5.14, 2026-08-30): FACILITY-level plant on the property, not slab-bound
+// (spec.siteFeatures[], a sibling of slabs/property). First kind = FENCE, drawn as the
+// architect's symbol: one 0.25-stroke line along the path with 0.5x0.5 square posts at
+// every vertex and every FENCE_POST_PITCH ft along each segment (a render constant, not
+// data). `closed` joins the last vertex back to the first; `gaps` are RESERVED and not
+// drawn. Colors (Appendix A): wooden #6b4f2a, any other material #666. driveway/parking
+// are RESERVED — nothing is invented ahead of data, so they emit an empty group only.
+const FENCE_POST_PITCH = 8;
+function generateSiteFeature(f, i) {
+  const round = v => Math.round(v * 1000) / 1000;
+  const id = f.id || `${f.kind || 'feature'}_${i}`;
+  const attrs = `data-kind="${f.kind}"` + (f.material ? ` data-material="${f.material}"` : '') + sourceAttr(f);
+  let svg = `\n    <g id="site_${id}" ${attrs}>`;
+  if (f.kind === 'fence' && Array.isArray(f.path) && f.path.length >= 2) {
+    const color = (f.material === 'wooden') ? '#6b4f2a' : '#666';
+    const pts = f.closed ? [...f.path, f.path[0]] : f.path;
+    const d = pts.map((p, k) => `${k === 0 ? 'M' : 'L'} ${round(p.x)},${round(p.y)}`).join(' ');
+    svg += `\n      <path d="${d}" fill="none" stroke="${color}" stroke-width="0.25"/>`;
+    const post = (x, y) => `\n      <rect x="${round(x - 0.25)}" y="${round(y - 0.25)}" width="0.5" height="0.5" fill="${color}"/>`;
+    f.path.forEach(p => { svg += post(p.x, p.y); });                                             // posts at vertices
+    for (let k = 0; k < pts.length - 1; k++) {                                                   // + every 8 ft per segment
+      const a = pts[k], b = pts[k + 1];
+      const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
+      if (len < 1e-6) continue;
+      for (let s = FENCE_POST_PITCH; s < len - 1e-6; s += FENCE_POST_PITCH) {
+        svg += post(a.x + dx * s / len, a.y + dy * s / len);
+      }
+    }
+  }
+  svg += `\n    </g>`;
+  return svg;
+}
+
+// Facility-level <g id="site">, drawn AFTER the slabs (on top — a fence is thin and crosses pavement).
+function generateSiteFeatures(siteFeatures) {
+  const inner = (siteFeatures || []).map((f, i) => generateSiteFeature(f, i)).join('');
+  return `\n  <g id="site">${inner}\n  </g>`;
+}
+
 // Convert turtle graphics segments to points
 function convertTurtleToPoints(partitionWall) {
   const { start, segments } = partitionWall;
@@ -1129,7 +1169,7 @@ function generateModelTSVG(spec) {
   }
 
   // V2 format - multi-slab facility
-  const { name, location, property, slabs } = spec;
+  const { name, location, property, slabs, siteFeatures = [] } = spec;
 
   // Calculate viewBox from property boundary
   let minX, minY, viewBoxWidth, viewBoxHeight;
@@ -1158,8 +1198,9 @@ function generateModelTSVG(spec) {
   const width = (viewBoxWidth * 3.78).toFixed(1);
   const height = (viewBoxHeight * 3.78).toFixed(1);
 
-  // Generate SVG for each slab
+  // Generate SVG for each slab, then the facility-level site features (§5.14, drawn on top)
   const slabsSVG = slabs.map(slab => generateSlabSVG(slab)).join('\n');
+  const siteSVG = generateSiteFeatures(siteFeatures);
 
   // Embed the source JSON
   const embeddedJSON = JSON.stringify(spec, null, 2);
@@ -1176,6 +1217,8 @@ function generateModelTSVG(spec) {
     <rect id="land" width="${viewBoxWidth}" height="${viewBoxHeight}" x="${minX}" y="${minY}" style="fill:#e0e0e0;fill-opacity:0.3;stroke:none"/>
 
     ${slabsSVG}
+
+    <!-- Site features (5.14): facility-level, drawn after the slabs -->${siteSVG}
   </g>
 
   <!-- Embedded ModelT JSON source data (non-visual, machine-readable) -->
@@ -1386,6 +1429,8 @@ function validateWarehouseSpec(spec) {
   (spec.columns || []).forEach(c => columns.push(c));
   (spec.partitionWalls || []).forEach(w => partitionWalls.push(w));
   (spec.packingLines || []).forEach(pl => packingLines.push(pl));
+  // Site features (§5.14) are FACILITY-level only — never under a slab.
+  const siteFeatures = Array.isArray(spec.siteFeatures) ? spec.siteFeatures : [];
 
   const where = e => (e && e._slab) ? ` (slab ${e._slab})` : '';
 
@@ -1732,6 +1777,72 @@ function validateWarehouseSpec(spec) {
         violations.push({ type: 'marking', id: mid,
           message: `truckBay marking "${mid}"${where(mk)} references well "${mk.well}" which does not exist on this slab` });
       }
+    }
+  });
+
+  // Validate site features (§5.14 + 8.3, 2026-08-30): facility-level; mountain-name id (one
+  // pool for all kinds); kind in fence|driveway|parking (driveway/parking RESERVED — no rules
+  // invented ahead of data, so only id/kind/source apply); a FENCE needs material (no
+  // default — a guessed material is a false fact), whole-foot height, a path of >= 2
+  // WHOLE-FOOT vertices (plant; +/-2 ft tracing precision makes decimals false), and every
+  // vertex inside property.boundary when explicit (a fence off the property is a tracing
+  // error). `source` is REQUIRED on every site feature (usually traced:aerial).
+  const SITE_KINDS = ['fence', 'driveway', 'parking'];
+  const seenSiteIds = new Set();
+  siteFeatures.forEach((f, i) => {
+    const fid = f.id || `${f.kind || 'feature'}_${i}`;
+    if (validNames.siteFeatures && !validNames.siteFeatures.includes(f.id)) {
+      violations.push({
+        type: 'siteFeature',
+        id: fid,
+        message: `Invalid site-feature name "${f.id}" - must use mountain name from naming conventions`,
+        validNames: validNames.siteFeatures
+      });
+    }
+    if (seenSiteIds.has(fid)) {
+      violations.push({ type: 'siteFeature', id: fid,
+        message: `Duplicate site-feature ID "${fid}" - each site feature must have a unique identifier` });
+    }
+    seenSiteIds.add(fid);
+    if (!SITE_KINDS.includes(f.kind)) {
+      violations.push({ type: 'siteFeature', id: fid,
+        message: `Site feature "${fid}" kind "${f.kind}" invalid - must be one of ${SITE_KINDS.join('/')} (§5.14)` });
+    }
+    if (f.source === undefined) {
+      violations.push({ type: 'siteFeature', id: fid,
+        message: `Site feature "${fid}" missing source - required (traced:aerial | george:<date> | estimate:<who>) (§5.14)` });
+    }
+    if (f.kind === 'fence') {
+      if (f.material === undefined) {
+        violations.push({ type: 'siteFeature', id: fid,
+          message: `Fence "${fid}" missing material (wooden|chainlink|wire|block|other) - required; a material must not be defaulted (§5.14)` });
+      }
+      if (f.height === undefined) {
+        violations.push({ type: 'siteFeature', id: fid,
+          message: `Fence "${fid}" missing height (whole ft above grade) - required, no default (§5.14)` });
+      } else {
+        fracWarn('fence', fid, 'height', f.height, '');
+      }
+      if (!Array.isArray(f.path) || f.path.length < 2) {
+        violations.push({ type: 'siteFeature', id: fid,
+          message: `Fence "${fid}" needs a path of >= 2 vertices (§5.14)` });
+      } else {
+        f.path.forEach((p, k) => {
+          fracWarn('fence', fid, `path[${k}].x`, p.x, '');
+          fracWarn('fence', fid, `path[${k}].y`, p.y, '');
+        });
+        const bnd = spec.property && spec.property.boundary;
+        if (bnd) {
+          const off = f.path.filter(p => p.x < bnd.x || p.x > bnd.x + bnd.width || p.y < bnd.y || p.y > bnd.y + bnd.height);
+          if (off.length) {
+            violations.push({ type: 'siteFeature', id: fid,
+              message: `Fence "${fid}" has ${off.length} vertex(es) outside property.boundary (first: ${off[0].x},${off[0].y}) - a fence off the property is a tracing error (§8.3)` });
+          }
+        }
+      }
+    } else if (SITE_KINDS.includes(f.kind)) {
+      violations.push({ type: 'siteFeature', id: fid,
+        message: `Site feature "${fid}" kind "${f.kind}" is RESERVED (§5.14) - not defined or drawn yet; nothing rendered` });
     }
   });
 
