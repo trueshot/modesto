@@ -2,9 +2,12 @@
 /**
  * nvr-lapi.js - Authenticated GET against a UNIVIEW NVR's LAPI.
  *
- * Plain `curl --digest` gets "Not Authorized" (ResponseCode 3) on most LAPI
- * endpoints: the NVR wants the 2-step Login PUT first, then requests signed
- * with the session nonce. This does that and prints the JSON response.
+ * Plain `curl --digest` works for some LAPI endpoints (System/DeviceInfo,
+ * Channels/System/ChannelDetailInfos — modeltcamerascat's census uses it) but
+ * gets "Not Authorized" (ResponseCode 3) on the record/storage ones
+ * (Record/EstimatedDays, System/RecordStatus, Storage/*, Records/DailyDistribution).
+ * Those want the 2-step Login PUT first, then requests signed with the session
+ * nonce. This tool always does the full flow, so it works for both kinds.
  *
  * Usage:
  *   node nvr-lapi.js <nvr_id> <lapi_path> [--raw]
