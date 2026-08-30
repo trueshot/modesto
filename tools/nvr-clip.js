@@ -14,6 +14,12 @@
  * Output: ~/Videos/nvr-clips/<nvr>_ch<channel>_<timestamp>_<duration>s.mp4
  * Prints measured fps (from RTP timestamps) and transfer speed vs realtime.
  *
+ * --scale: RTSP Scale header, honored by UNIVIEW. Verified 2026-08-30:
+ *   1 → realtime, full fps      4 → 4x realtime, FULL fps (recommended)
+ *   8 → 8x realtime, but the NVR thins frames to ~65% of recorded fps
+ * --time: use a Z suffix ("2026-08-30T09:50:00Z"); a bare timestamp is parsed
+ *   as this machine's local time, not the warehouse's.
+ *
  * Author: novicat gen-18 (derived from nvr-frame.js, gen-8/9)
  */
 
