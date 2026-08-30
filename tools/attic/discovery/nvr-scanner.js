@@ -19,8 +19,9 @@ const http = require('http');
 const Database = require('better-sqlite3');
 
 const DB_PATH = path.join(__dirname, '..', 'warehouses', 'lodge', 'lodge.db');
-const ONVIF_SCAN = path.join(__dirname, 'onvif-scan.py');
-const ONVIF_INFO = path.join(__dirname, 'onvif-info.py');
+// Sequestered to attic/discovery/ by modeltcamerascat gen-50 (2026-08-30) — census.py is the discovery tool now.
+const ONVIF_SCAN = path.join(__dirname, 'attic', 'discovery', 'onvif-scan.py');
+const ONVIF_INFO = path.join(__dirname, 'attic', 'discovery', 'onvif-info.py');
 
 // Common NVR ports
 const NVR_PORTS = [80, 443, 554, 8000, 8080, 37777, 9000];
