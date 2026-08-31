@@ -2450,10 +2450,49 @@
             }, 1500);
         }
 
+        // ---- Camera flight: smooth 1.5s ease-in-out between first-person views ----
+        // "The viewer owns the ride" (5.15 ruling): motion is renderer behavior.
+        // Flies position + rotation + fov; rotation takes the SHORTEST way around
+        // (350° -> 10° goes +20°, not -340°). Only flies when already in a
+        // first-person view — from Overview it's still a cut (the orbital eye
+        // isn't a comparable start pose; iterate later if wanted).
+        // George: "fly from place to place so it is not so jarring. 1.5secs?"
+        // modeltbabylon gen-16
+        const FLY_SECONDS = 1.5;
+        function flyCameraTo(targetPos, targetRot, targetFov, seconds = FLY_SECONDS) {
+            const cam = universalCamera;
+            const fps = 60, frames = Math.round(fps * seconds);
+            currentScene.stopAnimation(cam);
+            const wrap = (from, to) => {
+                const TAU = 2 * Math.PI;
+                return from + ((((to - from) % TAU) + TAU + Math.PI) % TAU - Math.PI);
+            };
+            const rotTarget = new BABYLON.Vector3(
+                targetRot.x,
+                wrap(cam.rotation.y, targetRot.y),
+                wrap(cam.rotation.z, targetRot.z)
+            );
+            const ease = new BABYLON.CubicEase();
+            ease.setEasingMode(BABYLON.EasingFunction.EASINGMODE_EASEINOUT);
+            const mk = (prop, from, to, type) => {
+                const a = new BABYLON.Animation('fly_' + prop, prop, fps, type,
+                    BABYLON.Animation.ANIMATIONLOOPMODE_CONSTANT);
+                a.setKeys([{ frame: 0, value: from }, { frame: frames, value: to }]);
+                a.setEasingFunction(ease);
+                return a;
+            };
+            cam.animations = [
+                mk('position', cam.position.clone(), targetPos, BABYLON.Animation.ANIMATIONTYPE_VECTOR3),
+                mk('rotation', cam.rotation.clone(), rotTarget, BABYLON.Animation.ANIMATIONTYPE_VECTOR3),
+                mk('fov', cam.fov, targetFov, BABYLON.Animation.ANIMATIONTYPE_FLOAT)
+            ];
+            currentScene.beginAnimation(cam, 0, frames, false);
+        }
+
         // ---- Vantages (5.15): virtual viewpoints — jump-to + pose capture ----
         // A vantage is data (id/x/y/elevation/direction/tilt/fov); how the camera
         // GETS there is renderer behavior (spec: "the viewer owns the ride").
-        // v1: instant jump. Pose is above the DATUM (slab-top plane, y=SLAB_TOP).
+        // Pose is above the DATUM (slab-top plane, y=SLAB_TOP).
         // modeltbabylon gen-16
         function setVantageView(v, buttonElement) {
             if (!currentScene || !universalCamera) return;
@@ -2467,21 +2506,31 @@
             document.getElementById('mapCameraBtn').disabled = true;
             currentCameraData = null;
 
-            if (currentScene.activeCamera !== universalCamera) {
+            const wasFirstPerson = currentScene.activeCamera === universalCamera;
+            if (!wasFirstPerson) {
                 currentCamera.detachControl();
                 currentScene.activeCamera = universalCamera;
                 universalCamera.attachControl(canvas, true);
                 currentCamera = universalCamera;
             }
 
-            universalCamera.position = new BABYLON.Vector3(v.x, SLAB_TOP + v.elevation, -v.y);
-            universalCamera.rotation.y = v.direction * Math.PI / 180;   // 0=N(+Z), cw (unified 2026-08-26)
-            universalCamera.rotation.x = v.tilt * Math.PI / 180;        // down-positive
-            universalCamera.rotation.z = 0;                             // vantages have no roll
-
+            const targetPos = new BABYLON.Vector3(v.x, SLAB_TOP + v.elevation, -v.y);
+            const targetRot = new BABYLON.Vector3(
+                v.tilt * Math.PI / 180,        // down-positive
+                v.direction * Math.PI / 180,   // 0=N(+Z), cw (unified 2026-08-26)
+                0                              // vantages have no roll
+            );
             const hFovRad = (v.fov || 60) * Math.PI / 180;              // spec default 60
             const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
-            universalCamera.fov = 2 * Math.atan(Math.tan(hFovRad / 2) / aspectRatio);
+            const targetFov = 2 * Math.atan(Math.tan(hFovRad / 2) / aspectRatio);
+
+            if (wasFirstPerson) {
+                flyCameraTo(targetPos, targetRot, targetFov);   // smooth 1.5s ride
+            } else {
+                universalCamera.position = targetPos;
+                universalCamera.rotation.copyFrom(targetRot);
+                universalCamera.fov = targetFov;
+            }
             console.log(`👁 vantage ${v.id}: (${v.x}, ${v.y}) +${v.elevation}ft, dir ${v.direction}°, tilt ${v.tilt}°, fov ${v.fov || 60}°`);
         }
 
@@ -2606,7 +2655,8 @@
 
             updateCameraInfoPanel(cam);
 
-            if (currentScene.activeCamera !== universalCamera) {
+            const wasFirstPerson = currentScene.activeCamera === universalCamera;
+            if (!wasFirstPerson) {
                 currentCamera.detachControl();
                 currentScene.activeCamera = universalCamera;
                 universalCamera.attachControl(canvas, true);
@@ -2616,19 +2666,26 @@
             const camPosX = cam.x;
             const camPosY = cam.slabElevation + (cam.elevation || 12);
             const camPosZ = -cam.y;
+            const targetPos = new BABYLON.Vector3(camPosX, camPosY, camPosZ);
 
-            universalCamera.position = new BABYLON.Vector3(camPosX, camPosY, camPosZ);
-
-            const directionRad = cam.direction * Math.PI / 180;
             // DIRECTION CONVENTION (unified 2026-08-26): 0=N(+Z) 90=E(+X).
             // Babylon +rotation.y turns +Z toward +X, so the sign is +.
-            universalCamera.rotation.y = directionRad;
-
+            const directionRad = cam.direction * Math.PI / 180;
             const tiltRad = cam.tilt * Math.PI / 180;
-            universalCamera.rotation.x = tiltRad;
-
             const rollRad = (cam.roll || 0) * Math.PI / 180;
-            universalCamera.rotation.z = rollRad;
+            const targetRot = new BABYLON.Vector3(tiltRad, directionRad, rollRad);
+
+            const targetHFovRad = (cam.viewingAngle || 90) * Math.PI / 180;
+            const targetVFov = 2 * Math.atan(Math.tan(targetHFovRad / 2) /
+                (engine.getRenderWidth() / engine.getRenderHeight()));
+
+            if (wasFirstPerson) {
+                flyCameraTo(targetPos, targetRot, targetVFov);   // smooth 1.5s ride
+            } else {
+                universalCamera.position = targetPos;
+                universalCamera.rotation.copyFrom(targetRot);
+                universalCamera.fov = targetVFov;
+            }
             console.log(`Camera ${cam.id} roll: ${cam.roll || 0}° -> ${rollRad} rad`);
 
             // Create floating view marker sphere
@@ -2706,13 +2763,7 @@
                 );
             }
 
-            const viewingAngleDeg = cam.viewingAngle || 90;
-            const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
-
-            const hFovRad = viewingAngleDeg * Math.PI / 180;
-            const vFovRad = 2 * Math.atan(Math.tan(hFovRad / 2) / aspectRatio);
-
-            universalCamera.fov = vFovRad;
+            // fov is applied above (instant) or animated by flyCameraTo — no snap here.
         }
 
         function setSvgZoom(zoomLevel) {
