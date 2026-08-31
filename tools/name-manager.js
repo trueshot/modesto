@@ -22,6 +22,8 @@ class NameManager {
     this.truckWellNames = this.loadConventionPool('truckWells');
     // Site features (mountain pool, §5.14): ONE pool shared by all kinds (fence/driveway/parking).
     this.siteFeatureNames = this.loadConventionPool('siteFeatures');
+    // Vantages (bird pool, §5.15): virtual viewpoints, NOT cameras.
+    this.vantageNames = this.loadConventionPool('vantages');
   }
 
   /**
@@ -128,6 +130,20 @@ class NameManager {
 
     if (!availableName) {
       throw new Error('No available packing-line names remaining in the packingLines pool');
+    }
+
+    return availableName;
+  }
+
+  /**
+   * Get the next available vantage name (bird pool, §5.15)
+   */
+  getNextVantageName(existingVantages) {
+    const usedNames = new Set(existingVantages.map(v => v.id));
+    const availableName = this.vantageNames.find(name => !usedNames.has(name));
+
+    if (!availableName) {
+      throw new Error('No available vantage names remaining in the vantages pool');
     }
 
     return availableName;

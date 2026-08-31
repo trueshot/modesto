@@ -358,6 +358,28 @@
       "kings",
       "marcy",
       "mansfield"
+    ],
+    "vantages": [
+      "hawk",
+      "eagle",
+      "owl",
+      "falcon",
+      "osprey",
+      "raven",
+      "heron",
+      "condor",
+      "kestrel",
+      "swift",
+      "crane",
+      "pelican",
+      "albatross",
+      "harrier",
+      "kite",
+      "merlin",
+      "swallow",
+      "tern",
+      "egret",
+      "ibis"
     ]
   },
   "violations": []

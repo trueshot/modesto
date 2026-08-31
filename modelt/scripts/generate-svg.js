@@ -1054,6 +1054,36 @@ function generateSiteGround(siteFeatures) {
   return `\n    <g id="site_ground">${inner}\n    </g>`;
 }
 
+// Vantages (§5.15, 2026-08-31): VIRTUAL viewpoints, NOT cameras — facility-level
+// spec.vantages[], never in cameras[] (a vantage is nothing physical and never gets a
+// lodge.db row). 2D = a small MUTED marker that must never read as hardware (App. A):
+// 0.5 ft circle + a 3 ft direction tick in #7a5fa0, NO cone, id label. Heading uses the
+// §3.3 convention (degrees clockwise from North). A missing direction draws NO tick —
+// a north tick would assert a guessed heading (the no-guessed-side rule). elevation,
+// tilt and fov are 3D-only (jump-to view aim); the plan draws none of them.
+function generateVantage(v) {
+  const round = r => Math.round(r * 1000) / 1000;
+  const { id, x, y, direction } = v;
+  let svg = `
+    <g id="vantage_${id}"${sourceAttr(v)}>
+      <circle cx="${round(x)}" cy="${round(y)}" r="0.25" fill="#7a5fa0"/>`;
+  if (typeof direction === 'number') {
+    const dirRad = (direction - 90) * Math.PI / 180;
+    svg += `
+      <line x1="${round(x)}" y1="${round(y)}" x2="${round(x + 3 * Math.cos(dirRad))}" y2="${round(y + 3 * Math.sin(dirRad))}" stroke="#7a5fa0" stroke-width="0.15"/>`;
+  }
+  svg += `
+      <text x="${round(x)}" y="${round(y - 1)}" font-size="1" text-anchor="middle" fill="#7a5fa0">${id}</text>
+    </g>`;
+  return svg;
+}
+
+// Facility-level <g id="vantages">, drawn last (markers sit on top of everything).
+function generateVantages(vantages) {
+  const inner = (vantages || []).map(v => generateVantage(v)).join('');
+  return `\n  <g id="vantages">${inner}\n  </g>`;
+}
+
 // Convert turtle graphics segments to points
 function convertTurtleToPoints(partitionWall) {
   const { start, segments } = partitionWall;
@@ -1194,7 +1224,7 @@ function generateModelTSVG(spec) {
   }
 
   // V2 format - multi-slab facility
-  const { name, location, property, slabs, siteFeatures = [] } = spec;
+  const { name, location, property, slabs, siteFeatures = [], vantages = [] } = spec;
 
   // Calculate viewBox from property boundary
   let minX, minY, viewBoxWidth, viewBoxHeight;
@@ -1228,6 +1258,7 @@ function generateModelTSVG(spec) {
   const slabsSVG = slabs.map(slab => generateSlabSVG(slab)).join('\n');
   const siteGroundSVG = generateSiteGround(siteFeatures);
   const siteSVG = generateSiteFeatures(siteFeatures);
+  const vantagesSVG = generateVantages(vantages);
 
   // Embed the source JSON
   const embeddedJSON = JSON.stringify(spec, null, 2);
@@ -1248,6 +1279,8 @@ function generateModelTSVG(spec) {
     ${slabsSVG}
 
     <!-- Site features (5.14): facility-level, drawn after the slabs -->${siteSVG}
+
+    <!-- Vantages (5.15): virtual viewpoints, drawn on top -->${vantagesSVG}
   </g>
 
   <!-- Embedded ModelT JSON source data (non-visual, machine-readable) -->
@@ -1458,8 +1491,9 @@ function validateWarehouseSpec(spec) {
   (spec.columns || []).forEach(c => columns.push(c));
   (spec.partitionWalls || []).forEach(w => partitionWalls.push(w));
   (spec.packingLines || []).forEach(pl => packingLines.push(pl));
-  // Site features (§5.14) are FACILITY-level only — never under a slab.
+  // Site features (§5.14) and vantages (§5.15) are FACILITY-level only — never under a slab.
   const siteFeatures = Array.isArray(spec.siteFeatures) ? spec.siteFeatures : [];
+  const vantages = Array.isArray(spec.vantages) ? spec.vantages : [];
 
   const where = e => (e && e._slab) ? ` (slab ${e._slab})` : '';
 
@@ -1901,6 +1935,43 @@ function validateWarehouseSpec(spec) {
         message: `Site feature "${fid}" kind "parking" is RESERVED (§5.14) - not defined or drawn yet; nothing rendered` });
     }
   });
+
+  // Validate vantages (§5.15 + 8.3, 2026-08-31): virtual viewpoints, NOT cameras — facility-
+  // level vantages[] only. Bird-name id, unique; direction [0,360) and tilt [0,90] (the §3.3/
+  // §5.9 conventions); whole-foot x/y/elevation. A `tours` key is RESERVED (data-vs-behavior
+  // ruling: a tour is declarative data, defined when the first real one exists; transition
+  // motion is renderer behavior, out of the standard).
+  const seenVantageIds = new Set();
+  vantages.forEach(v => {
+    if (validNames.vantages && !validNames.vantages.includes(v.id)) {
+      violations.push({
+        type: 'vantage',
+        id: v.id,
+        message: `Invalid vantage name "${v.id}" - must use bird name from naming conventions`,
+        validNames: validNames.vantages
+      });
+    }
+    if (seenVantageIds.has(v.id)) {
+      violations.push({ type: 'vantage', id: v.id,
+        message: `Duplicate vantage ID "${v.id}" - each vantage must have a unique identifier` });
+    }
+    seenVantageIds.add(v.id);
+    if (v.direction !== undefined &&
+        (typeof v.direction !== 'number' || v.direction < 0 || v.direction >= 360)) {
+      violations.push({ type: 'vantage', id: v.id,
+        message: `Vantage "${v.id}" direction ${v.direction} out of range - must be in [0, 360)` });
+    }
+    if (v.tilt !== undefined &&
+        (typeof v.tilt !== 'number' || v.tilt < 0 || v.tilt > 90)) {
+      violations.push({ type: 'vantage', id: v.id,
+        message: `Vantage "${v.id}" tilt ${v.tilt} out of range - must be in [0, 90]` });
+    }
+    ['x', 'y', 'elevation'].forEach(f => fracWarn('vantage', v.id, f, v[f], ''));
+  });
+  if (spec.tours !== undefined) {
+    violations.push({ type: 'vantage', id: 'tours',
+      message: `Facility "tours" key is RESERVED (§5.15) - not defined yet; a tour will be an ordered list of vantage/mount view references` });
+  }
 
   // Write violations to a SEPARATE file (Section 12 ruling 2026-08-29). NAMING_CONVENTIONS.json
   // is PURE pool content and is never rewritten by the generator — previously the violations
