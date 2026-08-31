@@ -1054,35 +1054,10 @@ function generateSiteGround(siteFeatures) {
   return `\n    <g id="site_ground">${inner}\n    </g>`;
 }
 
-// Vantages (§5.15, 2026-08-31): VIRTUAL viewpoints, NOT cameras — facility-level
-// spec.vantages[], never in cameras[] (a vantage is nothing physical and never gets a
-// lodge.db row). 2D = a small MUTED marker that must never read as hardware (App. A):
-// 0.5 ft circle + a 3 ft direction tick in #7a5fa0, NO cone, id label. Heading uses the
-// §3.3 convention (degrees clockwise from North). A missing direction draws NO tick —
-// a north tick would assert a guessed heading (the no-guessed-side rule). elevation,
-// tilt and fov are 3D-only (jump-to view aim); the plan draws none of them.
-function generateVantage(v) {
-  const round = r => Math.round(r * 1000) / 1000;
-  const { id, x, y, direction } = v;
-  let svg = `
-    <g id="vantage_${id}"${sourceAttr(v)}>
-      <circle cx="${round(x)}" cy="${round(y)}" r="0.25" fill="#7a5fa0"/>`;
-  if (typeof direction === 'number') {
-    const dirRad = (direction - 90) * Math.PI / 180;
-    svg += `
-      <line x1="${round(x)}" y1="${round(y)}" x2="${round(x + 3 * Math.cos(dirRad))}" y2="${round(y + 3 * Math.sin(dirRad))}" stroke="#7a5fa0" stroke-width="0.15"/>`;
-  }
-  svg += `
-      <text x="${round(x)}" y="${round(y - 1)}" font-size="1" text-anchor="middle" fill="#7a5fa0">${id}</text>
-    </g>`;
-  return svg;
-}
-
-// Facility-level <g id="vantages">, drawn last (markers sit on top of everything).
-function generateVantages(vantages) {
-  const inner = (vantages || []).map(v => generateVantage(v)).join('');
-  return `\n  <g id="vantages">${inner}\n  </g>`;
-}
+// Vantages (§5.15): NOT rendered in the plan. Withdrawn 2026-08-31 with the companion-file
+// move — the plan is the facility; viewpoints are viewer chrome. Vantages live in
+// warehouses/<facility>/vantages.json (provisional; the coming operating layer later).
+// The bird pool stays in NAMING_CONVENTIONS.json — it names companion entries.
 
 // Convert turtle graphics segments to points
 function convertTurtleToPoints(partitionWall) {
@@ -1224,7 +1199,7 @@ function generateModelTSVG(spec) {
   }
 
   // V2 format - multi-slab facility
-  const { name, location, property, slabs, siteFeatures = [], vantages = [] } = spec;
+  const { name, location, property, slabs, siteFeatures = [] } = spec;
 
   // Calculate viewBox from property boundary
   let minX, minY, viewBoxWidth, viewBoxHeight;
@@ -1258,7 +1233,6 @@ function generateModelTSVG(spec) {
   const slabsSVG = slabs.map(slab => generateSlabSVG(slab)).join('\n');
   const siteGroundSVG = generateSiteGround(siteFeatures);
   const siteSVG = generateSiteFeatures(siteFeatures);
-  const vantagesSVG = generateVantages(vantages);
 
   // Embed the source JSON
   const embeddedJSON = JSON.stringify(spec, null, 2);
@@ -1279,8 +1253,6 @@ function generateModelTSVG(spec) {
     ${slabsSVG}
 
     <!-- Site features (5.14): facility-level, drawn after the slabs -->${siteSVG}
-
-    <!-- Vantages (5.15): virtual viewpoints, drawn on top -->${vantagesSVG}
   </g>
 
   <!-- Embedded ModelT JSON source data (non-visual, machine-readable) -->
@@ -1491,9 +1463,8 @@ function validateWarehouseSpec(spec) {
   (spec.columns || []).forEach(c => columns.push(c));
   (spec.partitionWalls || []).forEach(w => partitionWalls.push(w));
   (spec.packingLines || []).forEach(pl => packingLines.push(pl));
-  // Site features (§5.14) and vantages (§5.15) are FACILITY-level only — never under a slab.
+  // Site features (§5.14) are FACILITY-level only — never under a slab.
   const siteFeatures = Array.isArray(spec.siteFeatures) ? spec.siteFeatures : [];
-  const vantages = Array.isArray(spec.vantages) ? spec.vantages : [];
 
   const where = e => (e && e._slab) ? ` (slab ${e._slab})` : '';
 
@@ -1936,45 +1907,18 @@ function validateWarehouseSpec(spec) {
     }
   });
 
-  // Validate vantages (§5.15 + 8.3, 2026-08-31): virtual viewpoints, NOT cameras — facility-
-  // level vantages[] only. Bird-name id, unique; direction [0,360) and tilt [0,90] (the §3.3/
-  // §5.9 conventions); whole-foot x/y/elevation. A `tours` key is RESERVED (data-vs-behavior
-  // ruling: a tour is declarative data, defined when the first real one exists; transition
-  // motion is renderer behavior, out of the standard).
-  const seenVantageIds = new Set();
-  vantages.forEach(v => {
-    if (validNames.vantages && !validNames.vantages.includes(v.id)) {
-      violations.push({
-        type: 'vantage',
-        id: v.id,
-        message: `Invalid vantage name "${v.id}" - must use bird name from naming conventions`,
-        validNames: validNames.vantages
-      });
-    }
-    if (seenVantageIds.has(v.id)) {
-      violations.push({ type: 'vantage', id: v.id,
-        message: `Duplicate vantage ID "${v.id}" - each vantage must have a unique identifier` });
-    }
-    seenVantageIds.add(v.id);
-    // direction REQUIRED (§5.15 amendment 2026-08-31: a viewpoint without a heading is not
-    // a view). 2D still draws dot-only when absent — warn, never guess a heading.
-    if (v.direction === undefined) {
-      violations.push({ type: 'vantage', id: v.id,
-        message: `Vantage "${v.id}" missing direction (degrees cw from North) - required; a viewpoint without a heading is not a view (§5.15)` });
-    } else if (typeof v.direction !== 'number' || v.direction < 0 || v.direction >= 360) {
-      violations.push({ type: 'vantage', id: v.id,
-        message: `Vantage "${v.id}" direction ${v.direction} out of range - must be in [0, 360)` });
-    }
-    if (v.tilt !== undefined &&
-        (typeof v.tilt !== 'number' || v.tilt < 0 || v.tilt > 90)) {
-      violations.push({ type: 'vantage', id: v.id,
-        message: `Vantage "${v.id}" tilt ${v.tilt} out of range - must be in [0, 90]` });
-    }
-    ['x', 'y', 'elevation'].forEach(f => fracWarn('vantage', v.id, f, v[f], ''));
-  });
+  // Vantages moved to the companion file (§5.15 amendment 2026-08-31): the normative
+  // .modelT.json holds facility FACTS and changes only when the facility changes; a vantage
+  // is a view preference, written at will. They live in warehouses/<facility>/vantages.json
+  // (provisional; the coming operating layer ultimately). A vantages or tours key inside
+  // this file warns; field enforcement lives with the companion's writer, not here.
+  if (spec.vantages !== undefined) {
+    violations.push({ type: 'vantage', id: 'vantages',
+      message: `Facility "vantages" key found inside .modelT.json - vantages moved to the companion file (warehouses/<facility>/vantages.json, §5.15)` });
+  }
   if (spec.tours !== undefined) {
     violations.push({ type: 'vantage', id: 'tours',
-      message: `Facility "tours" key is RESERVED (§5.15) - not defined yet; a tour will be an ordered list of vantage/mount view references` });
+      message: `Facility "tours" key found inside .modelT.json - moved to the companion file with vantages (§5.15)` });
   }
 
   // Write violations to a SEPARATE file (Section 12 ruling 2026-08-29). NAMING_CONVENTIONS.json
