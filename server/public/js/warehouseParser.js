@@ -2276,10 +2276,12 @@ class ModelTBuilder {
         // Create viewing frustum with tilt
         const tiltRad = tilt * Math.PI / 180;
 
-        // Direction conversion - match the camera view direction
-        // Direction: 0=North(-Z), 90=East(+X), 180=South(+Z), 270=West(-X)
-        // We need to convert to SVG coordinate deltas
-        const dirRad = -direction * Math.PI / 180;  // Negative to match camera rotation
+        // DIRECTION CONVENTION (unified 2026-08-26): 0=N, 90=E, cw. In SVG
+        // coords north is -y, east is +x, so deltas are sin(d), -cos(d) with
+        // the angle POSITIVE. The old negation here mirrored the line across
+        // the N-S axis — George 2026-08-31: "shooting out of the back of the
+        // camera". Fixed. — modeltbabylon gen-16
+        const dirRad = direction * Math.PI / 180;
 
         // SIMPLE: Just use tilt directly to calculate end point
         // Start at camera position (camera.x, camera.y, cameraY)
@@ -2310,9 +2312,11 @@ class ModelTBuilder {
         frustumLine.color = new BABYLON.Color3(1, 0, 0);
         this.meshes.cameras.push(frustumLine);
 
-        // Perform raycasting to find intersection point
+        // Perform raycasting to find intersection point (same unified
+        // convention as the frustum line and index.html's getCameraIntersection:
+        // positive angle, +Z = north in Babylon)
         const cameraPos = this.svgToBabylon(camera.x, camera.y, cameraY);
-        const directionRad = -direction * Math.PI / 180;  // NEGATIVE to match frustum line!
+        const directionRad = direction * Math.PI / 180;
         const tiltRadians = tilt * Math.PI / 180;
 
         // Calculate direction vector (accounting for tilt)
