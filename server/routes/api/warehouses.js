@@ -264,4 +264,53 @@ router.get('/:id/views/:ip', (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Vantages companion — warehouses/<id>/vantages.json (5.15, George ruling
+// 2026-08-31: a vantage is a drone view, NOT plant; lives OUTSIDE the
+// normative .modelT.json, writes ungated + self-service — the viewer's Save
+// Vantage posts here directly, nobody in the loop). Validation lives in
+// tools/vantages-store.js (the single writer). — modeltbabylon gen-16
+// ---------------------------------------------------------------------------
+const vantagesStore = require('../../../tools/vantages-store');
+
+router.get('/:id/vantages', (req, res) => {
+  const { id } = req.params;
+  if (badId(id, res)) return;
+  try {
+    const dir = path.join(config.warehousesPath, id);
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'warehouse not found' });
+    res.set('Cache-Control', 'no-store');
+    res.json(vantagesStore.load(dir));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/:id/vantages', (req, res) => {
+  const { id } = req.params;
+  if (badId(id, res)) return;
+  try {
+    const dir = path.join(config.warehousesPath, id);
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'warehouse not found' });
+    const vantage = vantagesStore.add(dir, req.body || {});
+    console.log(`👁 vantage saved: ${id}/${vantage.id}`, vantage);
+    res.status(201).json({ success: true, vantage });
+  } catch (e) {
+    res.status(400).json({ error: e.message });   // validation message, human-readable
+  }
+});
+
+router.delete('/:id/vantages/:vid', (req, res) => {
+  const { id, vid } = req.params;
+  if (badId(id, res)) return;
+  if (!VALID_ID.test(vid)) return res.status(400).json({ error: 'invalid vantage id' });
+  try {
+    const dir = path.join(config.warehousesPath, id);
+    const gone = vantagesStore.remove(dir, vid);
+    res.json({ success: true, removed: gone });
+  } catch (e) {
+    res.status(404).json({ error: e.message });
+  }
+});
+
 module.exports = router;

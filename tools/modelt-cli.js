@@ -151,12 +151,15 @@ async function main() {
         break;
       }
 
-      // Add a vantage (§5.15) — a virtual viewpoint, NOT a camera. Pose:
+      // Add a vantage (§5.15) — a virtual viewpoint (drone view), NOT plant.
+      // Writes the COMPANION warehouses/<name>/vantages.json (George ruling
+      // 2026-08-31: not in the normative file; ungated, no SVG regen). Pose:
       // --x --y --elevation (whole ft above the DATUM) --direction (0=N cw,
       // [0,360)) --tilt ([0,90] down); optional --fov --name --source --id.
       // modeltbabylon gen-16
       case 'add-vantage': {
-        const vantage = editor.addVantage({
+        const vantagesStore = require('./vantages-store');
+        const vantage = vantagesStore.add(path.dirname(warehousePath), {
           id: options.id,
           name: options.name,
           x: options.x,
@@ -167,11 +170,21 @@ async function main() {
           fov: options.fov,
           source: options.source
         });
-        editor.commit();
         result = {
           success: true,
           action: 'add-vantage',
           component: vantage
+        };
+        break;
+      }
+
+      case 'delete-vantage': {
+        const vantagesStore = require('./vantages-store');
+        const gone = vantagesStore.remove(path.dirname(warehousePath), options._positional[0]);
+        result = {
+          success: true,
+          action: 'delete-vantage',
+          component: gone
         };
         break;
       }

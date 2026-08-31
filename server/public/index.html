@@ -2111,17 +2111,10 @@
                 controlsDiv.appendChild(btn);
             });
 
-            // Vantages (5.15) — virtual viewpoints, facility-level, NOT cameras.
-            // Muted purple so they never read as hardware. modeltbabylon gen-16
-            controlsDiv.querySelectorAll('.vantageBtn:not(#saveVantageBtn)').forEach(b => b.remove());
-            (warehouseData.vantages || []).forEach(v => {
-                const btn = document.createElement('button');
-                btn.className = 'vantageBtn';
-                btn.textContent = v.name ? `${v.id} — ${v.name}` : v.id;
-                btn.title = `vantage ${v.id}: (${v.x}, ${v.y}) +${v.elevation}ft, dir ${v.direction}°, tilt ${v.tilt}°`;
-                btn.onclick = (e) => setVantageView(v, e.target);
-                controlsDiv.appendChild(btn);
-            });
+            // Vantages (5.15) — drone views from the COMPANION vantages.json
+            // (George ruling 2026-08-31: not in the normative model; ungated,
+            // self-service). Muted purple so they never read as hardware.
+            loadVantageButtons();
 
             // Select overview button by default
             const overviewBtn = document.querySelector('.overviewBtn');
@@ -2492,13 +2485,31 @@
             console.log(`👁 vantage ${v.id}: (${v.x}, ${v.y}) +${v.elevation}ft, dir ${v.direction}°, tilt ${v.tilt}°, fov ${v.fov || 60}°`);
         }
 
-        // Capture the CURRENT free-fly pose as a vantage. Same pipeline as site
-        // features: the viewer never writes the model — the pose is logged as an
-        // exact modelt-cli command + stored in pendingVantages_<wh>; modeltbabylon
-        // runs the CLI (George supplies the name), the SVG regens, the button
-        // appears on reload. Out-of-range tilt (looking UP) is refused with the
-        // true value shown — never silently clamped.
-        function saveVantagePose() {
+        // Rebuild the vantage jump-to buttons from the companion file.
+        async function loadVantageButtons() {
+            const controlsDiv = document.getElementById('cameraControls');
+            controlsDiv.querySelectorAll('.vantageBtn:not(#saveVantageBtn)').forEach(b => b.remove());
+            try {
+                const resp = await fetch(`/api/warehouses/${currentWarehouseId || 'lodge'}/vantages`);
+                if (!resp.ok) return;
+                const data = await resp.json();
+                (data.vantages || []).forEach(v => {
+                    const btn = document.createElement('button');
+                    btn.className = 'vantageBtn';
+                    btn.textContent = v.name ? `${v.id} — ${v.name}` : v.id;
+                    btn.title = `vantage ${v.id}: (${v.x}, ${v.y}) +${v.elevation}ft, dir ${v.direction}°, tilt ${v.tilt}°`;
+                    btn.onclick = (e) => setVantageView(v, e.target);
+                    controlsDiv.appendChild(btn);
+                });
+            } catch (e) { console.error('vantages load failed:', e); }
+        }
+
+        // Save the CURRENT free-fly pose as a vantage — self-service (George
+        // ruling 2026-08-31): POSTs straight to the companion vantages.json,
+        // no gate, nobody in the loop; the new button appears immediately.
+        // Out-of-range tilt (looking UP) is refused with the true value shown —
+        // never silently clamped (server enforces the same rules).
+        async function saveVantagePose() {
             const statusEl = document.getElementById('status');
             if (!universalCamera || currentScene.activeCamera !== universalCamera) {
                 statusEl.textContent = 'Save Vantage: fly to the view first (pick a camera or vantage, then move)';
@@ -2516,17 +2527,23 @@
             }
             const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
             const fov = Math.round(2 * Math.atan(Math.tan(universalCamera.fov / 2) * aspectRatio) * 180 / Math.PI);
-            const wh = currentWarehouseId || 'lodge';
-            const pending = { x, y, elevation, direction, tilt, fov, capturedAt: new Date().toISOString() };
             try {
-                const key = 'pendingVantages_' + wh;
-                const list = JSON.parse(localStorage.getItem(key) || '[]');
-                list.push(pending);
-                localStorage.setItem(key, JSON.stringify(list));
-            } catch (e) {}
-            const cmd = `node tools/modelt-cli.js ${wh} add-vantage --x ${x} --y ${y} --elevation ${elevation} --direction ${direction} --tilt ${tilt} --fov ${fov} --name "<what is this view for?>"`;
-            console.log(`[CAPTURE] vantage pose saved (pending). Write it into the model with:\n${cmd}`);
-            statusEl.textContent = `Vantage pose captured: (${x}, ${y}) +${elevation}ft, dir ${direction}°, tilt ${tilt}° — tell modeltbabylon the name`;
+                const resp = await fetch(`/api/warehouses/${currentWarehouseId || 'lodge'}/vantages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x, y, elevation, direction, tilt, fov, source: 'viewer:save-vantage' })
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    statusEl.textContent = `Save Vantage failed: ${data.error || resp.status}`;
+                    return;
+                }
+                statusEl.textContent = `Vantage saved: ${data.vantage.id} — (${x}, ${y}) +${elevation}ft, dir ${direction}°, tilt ${tilt}°`;
+                console.log('👁 vantage saved:', data.vantage);
+                loadVantageButtons();   // the new button appears immediately
+            } catch (e) {
+                statusEl.textContent = `Save Vantage failed: ${e.message}`;
+            }
         }
 
         function setCameraView(cameraId, buttonElement) {
