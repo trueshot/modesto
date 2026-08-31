@@ -1956,8 +1956,12 @@ function validateWarehouseSpec(spec) {
         message: `Duplicate vantage ID "${v.id}" - each vantage must have a unique identifier` });
     }
     seenVantageIds.add(v.id);
-    if (v.direction !== undefined &&
-        (typeof v.direction !== 'number' || v.direction < 0 || v.direction >= 360)) {
+    // direction REQUIRED (§5.15 amendment 2026-08-31: a viewpoint without a heading is not
+    // a view). 2D still draws dot-only when absent — warn, never guess a heading.
+    if (v.direction === undefined) {
+      violations.push({ type: 'vantage', id: v.id,
+        message: `Vantage "${v.id}" missing direction (degrees cw from North) - required; a viewpoint without a heading is not a view (§5.15)` });
+    } else if (typeof v.direction !== 'number' || v.direction < 0 || v.direction >= 360) {
       violations.push({ type: 'vantage', id: v.id,
         message: `Vantage "${v.id}" direction ${v.direction} out of range - must be in [0, 360)` });
     }
