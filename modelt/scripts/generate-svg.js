@@ -1002,8 +1002,8 @@ function generateMarkings(markings, wellsById, doorsById) {
 // driveways are ground, they run under aprons; fences stay in the after-slabs site group.
 // parking is RESERVED — nothing is invented ahead of data, so it emits an empty group only.
 const FENCE_POST_PITCH = 8;
-// Appendix A driveway fills; an unlisted surface (e.g. 'other') gets a neutral #cccccc —
-// no App. A row for it yet (flagged to the spec owner).
+// Appendix A driveway fills; an unlisted surface (e.g. 'other') gets neutral #cccccc,
+// per App. A (ruled in 2026-08-31).
 const DRIVEWAY_FILLS = { gravel: '#c9c2b2', asphalt: '#9a9a9a', concrete: '#c0c0c8', dirt: '#b59b7a' };
 function generateSiteFeature(f, i) {
   const round = v => Math.round(v * 1000) / 1000;
