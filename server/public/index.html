@@ -642,8 +642,21 @@
         <button id="placeCameraBtn" class="placeCameraBtn" onclick="togglePlaceCameraMode()" style="margin-left: 15px;">Place Camera</button>
         <button id="mapCameraBtn" class="mapCameraBtn" onclick="openMappingPanel()" style="margin-left: 15px;" disabled>Map Camera</button>
         <button id="saveVantageBtn" class="vantageBtn" onclick="saveVantagePose()" style="margin-left: 15px;">Save Vantage</button>
+        <button id="moveMountBtn" class="placeCameraBtn" onclick="toggleMountMoveMode()" style="margin-left: 15px;">Move Mount</button>
     </div>
     <div id="placementStatus">Click a wall or column to set camera mount point</div>
+    <!-- Move Mount: drag a red camera ball onto a wall/column face, then fine-edit
+         the numbers before saving. modeltbabylon gen-16 (George: "mount a mount") -->
+    <div id="mountEditPanel" style="display:none; position:absolute; bottom:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.85); border:2px solid rgba(0,200,200,0.8); border-radius:5px; padding:12px 15px; color:white; font-family:'Courier New',monospace; font-size:13px; z-index:120;">
+        <div style="color:rgba(0,220,220,1); font-weight:bold; margin-bottom:8px;">Mount: <span id="mountEditName">-</span></div>
+        <div style="display:flex; gap:10px; align-items:center;">
+            <label>X <input type="number" class="value-input" id="mountEditX" step="0.5" onchange="applyMountPanelToBall()"></label>
+            <label>Y <input type="number" class="value-input" id="mountEditY" step="0.5" onchange="applyMountPanelToBall()"></label>
+            <label>Elev <input type="number" class="value-input" id="mountEditElev" step="0.5" onchange="applyMountPanelToBall()"></label>
+            <button onclick="saveMountPosition()" style="padding:6px 14px; background:rgba(100,200,100,0.85); color:white; border:none; border-radius:3px; cursor:pointer; font-weight:bold;">Save</button>
+            <button onclick="cancelMountMove()" style="padding:6px 10px; background:rgba(200,100,100,0.85); color:white; border:none; border-radius:3px; cursor:pointer;">Cancel</button>
+        </div>
+    </div>
     <div id="debug">
         <strong>Debug Info:</strong><br>
         <div id="debugContent"></div>
@@ -1307,6 +1320,127 @@
             }
         }
 
+        // ---- Move Mount: drag-snap a camera ball onto walls/columns ----
+        // George: "the ball of a camera should be attracted to a wall or pole
+        // side and want to snap to it. Then we need to edit the position."
+        // v1: in Move Mount mode, grab a red ball in Overview; while dragging it
+        // rides the wall/column face under the cursor (that IS the snap), sitting
+        // ball-radius proud of the face; drop -> numeric X/Y/Elev panel -> Save
+        // writes through save-camera (server now passes x/y) and reloads so the
+        // frustum/bullseye redraw at the new pose. modeltbabylon gen-16
+        let mountMoveMode = false;
+        let dragMount = null;      // { mesh, camId, slabElevation, origPos }
+        let mountSelected = null;  // after drop: same shape, panel is editing it
+        let mountReloadPending = false;
+        const MOUNT_SNAP_OFFSET = 0.3;   // ball sits just proud of the face
+
+        function mountSurfacePredicate(mesh) {
+            return mesh.name && (
+                mesh.name.includes('_seg') ||
+                mesh.name.includes('column') ||
+                mesh.name.includes('partition')
+            );
+        }
+
+        function toggleMountMoveMode() {
+            const btn = document.getElementById('moveMountBtn');
+            const statusEl = document.getElementById('placementStatus');
+            mountMoveMode = !mountMoveMode;
+            if (mountMoveMode) {
+                if (placementMode) exitPlacementMode();   // modes are exclusive
+                btn.classList.add('active');
+                btn.textContent = 'Done Moving';
+                statusEl.textContent = 'Move Mount: drag a red camera ball onto a wall or column face';
+                statusEl.classList.add('active');
+                if (currentScene.activeCamera !== arcRotateCamera) {
+                    setCameraView('overview', document.querySelector('.overviewBtn'));
+                }
+            } else {
+                cancelMountMove();
+                btn.classList.remove('active');
+                btn.textContent = 'Move Mount';
+                statusEl.classList.remove('active');
+            }
+        }
+
+        function beginMountDrag(mesh) {
+            dragMount = {
+                mesh: mesh,
+                camId: mesh.metadata.id,
+                slabElevation: mesh.metadata.slabElevation || 4,
+                origPos: mesh.position.clone()
+            };
+            arcRotateCamera.detachControl();   // drag must not orbit
+            document.getElementById('placementStatus').textContent =
+                `Dragging ${mesh.metadata.name || dragMount.camId} — release on a wall/column face`;
+        }
+
+        function mountDragMove() {
+            if (!dragMount) return;
+            const pick = currentScene.pick(currentScene.pointerX, currentScene.pointerY,
+                (m) => mountSurfacePredicate(m) && m !== dragMount.mesh);
+            if (pick && pick.hit) {
+                const n = pick.getNormal(true) || BABYLON.Vector3.Up();
+                dragMount.mesh.position = pick.pickedPoint.add(n.scale(MOUNT_SNAP_OFFSET));
+                const p = dragMount.mesh.position;
+                document.getElementById('placementStatus').textContent =
+                    `${dragMount.camId} -> (${p.x.toFixed(1)}, ${(-p.z).toFixed(1)}) elev ${(p.y - dragMount.slabElevation).toFixed(1)}ft on ${pick.pickedMesh.name}`;
+            }
+        }
+
+        function endMountDrag() {
+            if (!dragMount) return;
+            arcRotateCamera.attachControl(canvas, true);
+            mountSelected = dragMount;
+            dragMount = null;
+            const p = mountSelected.mesh.position;
+            document.getElementById('mountEditName').textContent =
+                `${mountSelected.mesh.metadata.name || mountSelected.camId}`;
+            document.getElementById('mountEditX').value = p.x.toFixed(1);
+            document.getElementById('mountEditY').value = (-p.z).toFixed(1);
+            document.getElementById('mountEditElev').value = (p.y - mountSelected.slabElevation).toFixed(1);
+            document.getElementById('mountEditPanel').style.display = 'block';
+        }
+
+        function applyMountPanelToBall() {
+            if (!mountSelected) return;
+            const x = parseFloat(document.getElementById('mountEditX').value) || 0;
+            const y = parseFloat(document.getElementById('mountEditY').value) || 0;
+            const elev = parseFloat(document.getElementById('mountEditElev').value) || 0;
+            mountSelected.mesh.position.set(x, mountSelected.slabElevation + elev, -y);
+        }
+
+        function saveMountPosition() {
+            if (!mountSelected || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const x = parseFloat(document.getElementById('mountEditX').value);
+            const y = parseFloat(document.getElementById('mountEditY').value);
+            const elevation = parseFloat(document.getElementById('mountEditElev').value);
+            mountReloadPending = true;
+            ws.send(JSON.stringify({
+                type: 'save-camera',
+                warehouseId: currentWarehouseId,
+                cameraId: mountSelected.camId,
+                updates: { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, elevation: Math.round(elevation * 10) / 10 }
+            }));
+            document.getElementById('placementStatus').textContent =
+                `Saving ${mountSelected.camId} at (${x}, ${y}) elev ${elevation}ft...`;
+            document.getElementById('mountEditPanel').style.display = 'none';
+            mountSelected = null;
+        }
+
+        function cancelMountMove() {
+            if (dragMount) {
+                dragMount.mesh.position = dragMount.origPos;
+                arcRotateCamera.attachControl(canvas, true);
+                dragMount = null;
+            }
+            if (mountSelected) {
+                mountSelected.mesh.position = mountSelected.origPos;
+                mountSelected = null;
+            }
+            document.getElementById('mountEditPanel').style.display = 'none';
+        }
+
         // Gaylord Bin Functions — modeltbabylon gen-10 (instanced for thousands)
         function initBinTemplates(scene) {
             if (binTemplateMesh) return;  // already initialized
@@ -1438,6 +1572,14 @@
                         console.log('🔄 RELOADING WAREHOUSE:', data.warehouseId);
                         // Camera view will be automatically restored from sessionStorage after reload
                         loadWarehouse(data.warehouseId);
+                    }
+
+                    // Mount move saved -> redraw so frustum/bullseye follow the ball
+                    else if (data.type === 'save-confirmed') {
+                        if (mountReloadPending) {
+                            mountReloadPending = false;
+                            loadWarehouse(currentWarehouseId);
+                        }
                     }
 
                     // Handle gaylord bin placement from AprilTag pipeline
@@ -2332,9 +2474,16 @@
         // Door editing functions
         let currentDoorData = null;
 
-        // Setup scene pointer for door labels and camera placement
+        // Setup scene pointer for door labels, camera placement, and mount dragging
         function setupDoorLabelClicking(scene) {
             scene.onPointerDown = function(evt, pickResult) {
+                // Move Mount mode: grab a red camera ball
+                if (mountMoveMode && pickResult.hit && pickResult.pickedMesh &&
+                    pickResult.pickedMesh.metadata && pickResult.pickedMesh.metadata.type === 'camera') {
+                    beginMountDrag(pickResult.pickedMesh);
+                    return;
+                }
+
                 // First, check if we're in placement mode
                 if (placementMode && pickResult.hit) {
                     const consumed = handlePlacementClick(pickResult);
@@ -2355,6 +2504,10 @@
                     }
                 }
             };
+
+            // Mount drag: ball rides surfaces while the pointer is down
+            scene.onPointerMove = function() { mountDragMove(); };
+            scene.onPointerUp = function() { endMountDrag(); };
         }
 
         // Make showDoorPanel global so warehouseParser.js can call it

@@ -250,6 +250,10 @@ wss.on('connection', (ws) => {
         try {
           // Build CLI command with updates
           let cmd = `node "${cliPath}" ${data.warehouseId} update-camera ${data.cameraId}`;
+          // x/y: mount position moves from the viewer's Move Mount drag-snap.
+          // Coerced to finite numbers — these land in an execSync string. — modeltbabylon gen-16
+          if (data.updates.x !== undefined && Number.isFinite(Number(data.updates.x))) cmd += ` --x ${Number(data.updates.x)}`;
+          if (data.updates.y !== undefined && Number.isFinite(Number(data.updates.y))) cmd += ` --y ${Number(data.updates.y)}`;
           if (data.updates.elevation !== undefined) cmd += ` --elevation ${data.updates.elevation}`;
           if (data.updates.direction !== undefined) cmd += ` --direction ${data.updates.direction}`;
           if (data.updates.tilt !== undefined) cmd += ` --tilt ${data.updates.tilt}`;

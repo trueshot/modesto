@@ -2254,13 +2254,15 @@ class ModelTBuilder {
         cameraBody.material = cameraMaterial;
 
         cameraBody.metadata = {
+            id: camera.id,               // for Move Mount drag — modeltbabylon gen-16
             name: camera.name,
             number: camera.number,
             direction: direction,
             tilt: tilt,
             viewingAngle: viewingAngle,
             type: 'camera',
-            slabId: slabId
+            slabId: slabId,
+            slabElevation: slabTop       // drop height -> elevation above slab
         };
 
         this.meshes.cameras.push(cameraBody);
