@@ -1,0 +1,9 @@
+{
+  "_comment": "ModelT asset catalog — one entry per asset, resolved lazily by registry.js. Adding an asset = drop the file + one entry here; no viewer code changes. source.type: script (self-registering, or legacy 'global' factory shim) | glb. Authoring contract in registry.js header. Owners: pilotbirdcat (assets + this manifest), modeltbabylon (registry runtime).",
+  "zt421": {
+    "kind": "printer",
+    "model": "ZT421",
+    "version": 3,
+    "source": { "type": "script", "path": "/js/assets/zt421.js", "global": "createZT421" }
+  }
+}

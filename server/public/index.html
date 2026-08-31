@@ -589,8 +589,11 @@
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
     <script src="https://unpkg.com/earcut@2.2.4/dist/earcut.min.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
     <script src="/js/warehouseParser.js"></script>
-    <script src="/js/assets/zt421.js"></script>   <!-- pilotbirdcat's asset factories -->
+    <!-- Generalized asset registry (George: no per-asset script tags).
+         Assets live in /js/assets/ + manifest.json and lazy-load on use. -->
+    <script src="/js/assets/registry.js"></script>
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
@@ -1639,31 +1642,35 @@
                 post.material = steel;
                 equipmentMeshes.push(post);
 
-                // printer on the bed (if linked + known). ZT421 uses
-                // pilotbirdcat's asset factory (front faces +Z at zero rotation;
-                // its 19.5in runs front-to-back). On basil the long axis must lie
-                // E-W (the 16in N-S bed can't hold 19.5in deep), so the printer
-                // faces EAST — estimate: operator stands east of the stand (only
-                // 1 ft between stand and the west wall). Tagged in equipment.json.
+                // printer on the bed (if linked + known) — resolved through the
+                // ModelTAssets registry (asset key = record's `asset` field, else
+                // lowercased model). On basil the ZT421's long axis lies E-W (the
+                // 16in N-S bed can't hold 19.5in deep) facing EAST — estimate:
+                // operator stands east of the stand (1 ft to the west wall);
+                // tagged in equipment.json. Placement epsilon-lifts 0.02in so
+                // asset bottoms never sit coplanar on the bed (shimmer rule).
                 const p = printers && (printers.printers || []).find(pp => pp.id === item.holds_printer);
                 if (p) {
-                    if (p.model === 'ZT421' && typeof createZT421 === 'function') {
-                        const printer = createZT421(scene, 'equip_' + item.id + '_printer');
-                        printer.position.set(cx, bedTop, -item.y_center);   // bottom-center pivot on the bed
-                        printer.rotation.y = 90 * Math.PI / 180;            // front (+Z) -> EAST (estimate)
+                    const LIFT = 0.02 / 12;
+                    const assetKey = p.asset || (p.model || '').toLowerCase();
+                    ModelTAssets.get(assetKey, scene).then(def => {
+                        const printer = def.create(scene, 'equip_' + item.id + '_printer');
+                        printer.position.set(cx, bedTop + LIFT, -item.y_center);  // bottom-center pivot
+                        printer.rotation.y = 90 * Math.PI / 180;                  // front (+Z) -> EAST (estimate)
                         equipmentMeshes.push(printer);
                         printer.getChildMeshes().forEach(m => equipmentMeshes.push(m));
-                    } else if (p.dims_in) {
+                    }).catch(() => {
+                        if (!p.dims_in) return;
                         // generic fallback box from registry dims
                         const pw = p.dims_in.length * IN, pd = p.dims_in.width * IN, ph = p.dims_in.height * IN;
                         const mat = new BABYLON.StandardMaterial('eqPrinter_' + p.id, scene);
                         mat.diffuseColor = new BABYLON.Color3(0.18, 0.18, 0.2);
                         const box = BABYLON.MeshBuilder.CreateBox('equip_' + item.id + '_printer',
                             { width: pw, height: ph, depth: pd }, scene);
-                        box.position.set(cx, bedTop + ph / 2, -item.y_center);
+                        box.position.set(cx, bedTop + LIFT + ph / 2, -item.y_center);
                         box.material = mat;
                         equipmentMeshes.push(box);
-                    }
+                    });
                 }
 
                 if (item.estimates && item.estimates.length) {
