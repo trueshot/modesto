@@ -136,6 +136,30 @@ function forwardToWarehouse(data) {
   return sent;
 }
 
+// --- modelt-cli invocation (no shell) ---------------------------------------
+// Run modelt-cli with an ARGUMENT ARRAY via execFileSync — node is spawned
+// directly, no shell is involved, so warehouse/door/camera ids and numeric
+// fields taken from WS payloads cannot inject shell commands. This replaces the
+// old execSync string-building, which interpolated those values raw into a
+// shell command. Returns the CLI's stdout. — modestomulti gen-6
+const { execFileSync } = require('child_process');
+function runModeltCli(args) {
+  const cliPath = path.join(__dirname, '..', 'tools', 'modelt-cli.js');
+  return execFileSync(process.execPath, [cliPath, ...args], { encoding: 'utf8' });
+}
+// Append `--flag value` to args iff value is set. numeric=true coerces and
+// drops a non-finite value (garbage number skipped, never passed as text).
+function pushFlag(args, flag, value, numeric) {
+  if (value === undefined || value === null) return;
+  if (numeric) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return;
+    args.push(flag, String(n));
+  } else {
+    args.push(flag, String(value));
+  }
+}
+
 wss.on('connection', (ws) => {
   console.log('WebSocket client connected (unidentified)');
   let clientWarehouseId = null;
@@ -202,25 +226,21 @@ wss.on('connection', (ws) => {
       else if (data.type === 'save-door') {
         console.log(`💾 Saving door ${data.doorId} for ${data.warehouseId}:`, data.updates);
 
-        const { execSync } = require('child_process');
-        const cliPath = path.join(__dirname, '..', 'tools', 'modelt-cli.js');
-
         try {
-          // Build CLI command with updates
-          let cmd = `node "${cliPath}" ${data.warehouseId} update-door ${data.doorId}`;
-          if (data.updates.x !== undefined) cmd += ` --x ${data.updates.x}`;
-          if (data.updates.y !== undefined) cmd += ` --y ${data.updates.y}`;
-          if (data.updates.type !== undefined) cmd += ` --type ${data.updates.type}`;
-          if (data.updates.orientation !== undefined) cmd += ` --orientation ${data.updates.orientation}`;
-          if (data.updates.facing !== undefined) cmd += ` --facing ${data.updates.facing}`;
-          if (data.updates.width !== undefined) cmd += ` --width ${data.updates.width}`;
-          if (data.updates.height !== undefined) cmd += ` --height ${data.updates.height}`;
-          if (data.updates.bayWidth !== undefined) cmd += ` --bayWidth ${data.updates.bayWidth}`;
-          if (data.updates.doorWidth !== undefined) cmd += ` --doorWidth ${data.updates.doorWidth}`;
-          if (data.updates.portal !== undefined) cmd += ` --portal ${data.updates.portal}`;
+          const args = [String(data.warehouseId), 'update-door', String(data.doorId)];
+          pushFlag(args, '--x', data.updates.x, true);
+          pushFlag(args, '--y', data.updates.y, true);
+          pushFlag(args, '--type', data.updates.type);
+          pushFlag(args, '--orientation', data.updates.orientation);
+          pushFlag(args, '--facing', data.updates.facing);
+          pushFlag(args, '--width', data.updates.width, true);
+          pushFlag(args, '--height', data.updates.height, true);
+          pushFlag(args, '--bayWidth', data.updates.bayWidth, true);
+          pushFlag(args, '--doorWidth', data.updates.doorWidth, true);
+          pushFlag(args, '--portal', data.updates.portal);
 
-          console.log(`   Running: ${cmd}`);
-          const result = execSync(cmd, { encoding: 'utf8' });
+          console.log(`   Running: modelt-cli ${args.join(' ')}`);
+          const result = runModeltCli(args);
           console.log(`   ✓ Door saved successfully`);
 
           ws.send(JSON.stringify({
@@ -244,24 +264,21 @@ wss.on('connection', (ws) => {
       else if (data.type === 'save-camera') {
         console.log(`💾 Saving camera ${data.cameraId} for ${data.warehouseId}:`, data.updates);
 
-        const { execSync } = require('child_process');
-        const cliPath = path.join(__dirname, '..', 'tools', 'modelt-cli.js');
-
         try {
-          // Build CLI command with updates
-          let cmd = `node "${cliPath}" ${data.warehouseId} update-camera ${data.cameraId}`;
-          // x/y: mount position moves from the viewer's Move Mount drag-snap.
-          // Coerced to finite numbers — these land in an execSync string. — modeltbabylon gen-16
-          if (data.updates.x !== undefined && Number.isFinite(Number(data.updates.x))) cmd += ` --x ${Number(data.updates.x)}`;
-          if (data.updates.y !== undefined && Number.isFinite(Number(data.updates.y))) cmd += ` --y ${Number(data.updates.y)}`;
-          if (data.updates.elevation !== undefined) cmd += ` --elevation ${data.updates.elevation}`;
-          if (data.updates.direction !== undefined) cmd += ` --direction ${data.updates.direction}`;
-          if (data.updates.tilt !== undefined) cmd += ` --tilt ${data.updates.tilt}`;
-          if (data.updates.roll !== undefined) cmd += ` --roll ${data.updates.roll}`;
-          if (data.updates.viewingAngle !== undefined) cmd += ` --viewingAngle ${data.updates.viewingAngle}`;
+          const args = [String(data.warehouseId), 'update-camera', String(data.cameraId)];
+          // x/y: mount position from the viewer's Move Mount drag-snap (modeltbabylon
+          // gen-16). All numeric fields are finite-coerced by pushFlag; execFileSync
+          // takes them as array args, so none of this touches a shell. — modestomulti gen-6
+          pushFlag(args, '--x', data.updates.x, true);
+          pushFlag(args, '--y', data.updates.y, true);
+          pushFlag(args, '--elevation', data.updates.elevation, true);
+          pushFlag(args, '--direction', data.updates.direction, true);
+          pushFlag(args, '--tilt', data.updates.tilt, true);
+          pushFlag(args, '--roll', data.updates.roll, true);
+          pushFlag(args, '--viewingAngle', data.updates.viewingAngle, true);
 
-          console.log(`   Running: ${cmd}`);
-          const result = execSync(cmd, { encoding: 'utf8' });
+          console.log(`   Running: modelt-cli ${args.join(' ')}`);
+          const result = runModeltCli(args);
           console.log(`   ✓ Camera saved successfully`);
 
           ws.send(JSON.stringify({
@@ -285,23 +302,20 @@ wss.on('connection', (ws) => {
       else if (data.type === 'create-camera') {
         console.log(`📷 Creating camera for ${data.warehouseId}:`, data.camera);
 
-        const { execSync } = require('child_process');
-        const cliPath = path.join(__dirname, '..', 'tools', 'modelt-cli.js');
-
         try {
-          // Build CLI command - add-camera requires slab, use first slab (mercury) by default
+          // add-camera requires a slab; use first slab (mercury) by default
           const cam = data.camera;
-          let cmd = `node "${cliPath}" ${data.warehouseId} add-camera --slab mercury`;
-          cmd += ` --x ${cam.x}`;
-          cmd += ` --y ${cam.y}`;
-          cmd += ` --elevation ${cam.elevation}`;
-          cmd += ` --direction ${cam.direction}`;
-          cmd += ` --tilt ${cam.tilt}`;
-          if (cam.viewingAngle !== undefined) cmd += ` --viewingAngle ${cam.viewingAngle}`;
-          if (cam.range !== undefined) cmd += ` --range ${cam.range}`;
+          const args = [String(data.warehouseId), 'add-camera', '--slab', 'mercury'];
+          pushFlag(args, '--x', cam.x, true);
+          pushFlag(args, '--y', cam.y, true);
+          pushFlag(args, '--elevation', cam.elevation, true);
+          pushFlag(args, '--direction', cam.direction, true);
+          pushFlag(args, '--tilt', cam.tilt, true);
+          pushFlag(args, '--viewingAngle', cam.viewingAngle, true);
+          pushFlag(args, '--range', cam.range, true);
 
-          console.log(`   Running: ${cmd}`);
-          const result = execSync(cmd, { encoding: 'utf8' });
+          console.log(`   Running: modelt-cli ${args.join(' ')}`);
+          const result = runModeltCli(args);
           console.log(`   ✓ Camera created successfully`);
 
           // Parse result to get new camera ID
