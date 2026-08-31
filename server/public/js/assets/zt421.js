@@ -56,18 +56,23 @@ function createZT421(scene, name) {
   // Main sheet-metal body — sides, top, rear (front face recessed 1.2in)
   box('body', 13.25, 12.75, 18.3, 0, 6.375, -0.6, grayMat);
 
+  // Front panels are inset 0.02in from every body plane they'd otherwise share
+  // (top y=12.75, bottom y=0, sides x=+/-6.625) — coplanar faces z-fight.
+
   // Control-panel column — front operator-left (+X), slightly proud of body
-  box('panel', 4.6, 12.75, 1.5, 4.325, 6.375, 8.99, darkMat);
+  // x span 2.025..6.605, y span 0.02..12.73
+  box('panel', 4.58, 12.71, 1.5, 4.315, 6.375, 8.99, darkMat);
 
   // Touchscreen on the panel — emissive teal, proud of panel face
-  box('screen', 2.2, 3.6, 0.25, 4.325, 8.6, 9.85, screenMat);
+  box('screen', 2.2, 3.6, 0.25, 4.315, 8.6, 9.85, screenMat);
 
   // Printhead cover — upper front media section
-  box('printhead', 8.65, 5.8, 1.5, -2.3, 9.85, 8.99, darkMat);
+  // x span -6.605..2.015 (0.01 gap to panel column), y span 6.95..12.73
+  box('printhead', 8.62, 5.78, 1.5, -2.295, 9.84, 8.99, darkMat);
 
   // Media door — lower front media section (gap above = print-exit slot,
-  // recessed gray body face shows through the 1.55in slot)
-  box('mediadoor', 8.65, 5.4, 1.5, -2.3, 2.7, 8.99, darkMat);
+  // recessed gray body face shows through the 1.55in slot), y span 0.02..5.40
+  box('mediadoor', 8.62, 5.38, 1.5, -2.295, 2.71, 8.99, darkMat);
 
   // Tear bar — silver strip inside the slot
   box('tearbar', 8.3, 0.5, 0.7, -2.3, 6.65, 9.0, silverMat);
