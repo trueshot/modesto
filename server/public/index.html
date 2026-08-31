@@ -1350,11 +1350,10 @@
                 if (placementMode) exitPlacementMode();   // modes are exclusive
                 btn.classList.add('active');
                 btn.textContent = 'Done Moving';
-                statusEl.textContent = 'Move Mount: drag a red camera ball onto a wall or column face';
+                statusEl.textContent = currentScene.activeCamera === universalCamera
+                    ? 'Move Mount: click a camera button to choose WHICH mount, then aim + click the green ball'
+                    : 'Move Mount: drag a red camera ball onto a wall/column — or enter a camera/vantage view to place by aiming';
                 statusEl.classList.add('active');
-                if (currentScene.activeCamera !== arcRotateCamera) {
-                    setCameraView('overview', document.querySelector('.overviewBtn'));
-                }
             } else {
                 cancelMountMove();
                 btn.classList.remove('active');
@@ -1382,6 +1381,7 @@
             if (pick && pick.hit) {
                 const n = pick.getNormal(true) || BABYLON.Vector3.Up();
                 dragMount.mesh.position = pick.pickedPoint.add(n.scale(MOUNT_SNAP_OFFSET));
+                positionMountPlate(dragMount.mesh, pick.pickedPoint.clone(), n.clone());   // plate rides along
                 const p = dragMount.mesh.position;
                 document.getElementById('placementStatus').textContent =
                     `${dragMount.camId} -> (${p.x.toFixed(1)}, ${(-p.z).toFixed(1)}) elev ${(p.y - dragMount.slabElevation).toFixed(1)}ft on ${pick.pickedMesh.name}`;
@@ -1438,7 +1438,97 @@
                 mountSelected.mesh.position = mountSelected.origPos;
                 mountSelected = null;
             }
+            fpPlaceTarget = null;
             document.getElementById('mountEditPanel').style.display = 'none';
+        }
+
+        // ---- First-person mount placement (George's workflow rework) ----
+        // "Go into a mode where I can move around like I can when I am a camera.
+        //  I choose a camera, then place it on a wall or object." In Move Mount
+        // mode while first-person (camera OR vantage view): camera buttons pick
+        // the TARGET mount instead of jumping views; aim the green ball at a
+        // wall/column; CLICK THE BALL to place the mount there; then the numeric
+        // panel + Save, and reorient with the existing tools. modeltbabylon gen-16
+        let fpPlaceTarget = null;        // camera record being placed
+        let viewMarkerNormal = null;     // aim-surface normal (world)
+        let viewMarkerSurfaceOk = false; // aim is on a mountable face
+
+        function findMountMesh(camId) {
+            return currentScene.meshes.find(m =>
+                m.metadata && m.metadata.type === 'camera' && m.metadata.id === camId);
+        }
+
+        function selectMountTargetFP(cam) {
+            fpPlaceTarget = cam;
+            document.getElementById('placementStatus').textContent =
+                `Placing ${cam.name || cam.id} — aim the green ball at a wall/column, then click the ball`;
+        }
+
+        function placeMountAtMarker() {
+            if (!fpPlaceTarget || !viewMarker) return;
+            if (!viewMarkerSurfaceOk) {
+                document.getElementById('placementStatus').textContent =
+                    `Placing ${fpPlaceTarget.name || fpPlaceTarget.id} — aim at a WALL or COLUMN face first`;
+                return;
+            }
+            const mesh = findMountMesh(fpPlaceTarget.id);
+            if (!mesh) return;
+            const n = viewMarkerNormal || BABYLON.Vector3.Up();
+            mesh.position = viewMarker.position.add(n.scale(MOUNT_SNAP_OFFSET));
+            positionMountPlate(mesh, viewMarker.position.clone(), n.clone());
+            mountSelected = {
+                mesh: mesh,
+                camId: fpPlaceTarget.id,
+                slabElevation: mesh.metadata.slabElevation || 4,
+                origPos: mesh.position.clone()   // orig = pre-edit; Cancel keeps the placement
+            };
+            const p = mesh.position;
+            document.getElementById('mountEditName').textContent = fpPlaceTarget.name || fpPlaceTarget.id;
+            document.getElementById('mountEditX').value = p.x.toFixed(1);
+            document.getElementById('mountEditY').value = (-p.z).toFixed(1);
+            document.getElementById('mountEditElev').value = (p.y - mountSelected.slabElevation).toFixed(1);
+            document.getElementById('mountEditPanel').style.display = 'block';
+            document.getElementById('placementStatus').textContent =
+                `${fpPlaceTarget.id} placed — adjust numbers and Save, then orient from its camera view`;
+        }
+
+        // ---- Mount plates: 0.5 x 0.5 x 0.1 ft prism flush on the mounting face,
+        // red ball embedded (George's mount visual). The face is DERIVED at render
+        // time: short rays from the ball find the nearest wall/column within 1 ft
+        // (render inference, not stored data — flagged to modestocat). Mounts with
+        // no nearby face stay ball-only. modeltbabylon gen-16
+        function positionMountPlate(ballMesh, surfacePoint, normal) {
+            const name = ballMesh.name + '_plate';
+            let plate = currentScene.getMeshByName(name);
+            if (!plate) {
+                plate = BABYLON.MeshBuilder.CreateBox(name, { width: 0.5, height: 0.5, depth: 0.1 }, currentScene);
+                const mat = new BABYLON.StandardMaterial(name + 'Mat', currentScene);
+                mat.diffuseColor = new BABYLON.Color3(0.25, 0.25, 0.28);   // dark steel plate
+                plate.material = mat;
+                plate.metadata = { type: 'mountPlate', id: ballMesh.metadata.id };
+            }
+            plate.position = surfacePoint.add(normal.scale(0.05));   // back face flush on the wall
+            plate.lookAt(plate.position.add(normal));                // +Z (depth) along the face normal
+        }
+
+        function enhanceMountVisuals() {
+            const balls = currentScene.meshes.filter(m => m.metadata && m.metadata.type === 'camera');
+            const dirs = [
+                new BABYLON.Vector3(1, 0, 0), new BABYLON.Vector3(-1, 0, 0),
+                new BABYLON.Vector3(0, 0, 1), new BABYLON.Vector3(0, 0, -1),
+                new BABYLON.Vector3(0, 1, 0)
+            ];
+            balls.forEach(ball => {
+                let best = null;
+                dirs.forEach(d => {
+                    const ray = new BABYLON.Ray(ball.position, d, 1.0);
+                    const hit = currentScene.pickWithRay(ray, mountSurfacePredicate);
+                    if (hit && hit.hit && (!best || hit.distance < best.distance)) best = hit;
+                });
+                if (best) {
+                    positionMountPlate(ball, best.pickedPoint, best.getNormal(true) || BABYLON.Vector3.Up());
+                }
+            });
         }
 
         // Gaylord Bin Functions — modeltbabylon gen-10 (instanced for thousands)
@@ -2060,6 +2150,10 @@
                 // Setup door label click detection
                 setupDoorLabelClicking(scene);
 
+                // Mount plates (0.5x0.5x0.1 on the mounting face) — derived from
+                // the nearest wall/column within 1 ft of each ball
+                enhanceMountVisuals();
+
                 // Populate camera buttons
                 populateCameraButtons(warehouseData, isModelT);
 
@@ -2392,6 +2486,8 @@
                 // Stick to the wall at intersection point
                 viewMarker.position = hit.pickedPoint;
                 viewMarker.isVisible = true;
+                viewMarkerNormal = hit.getNormal(true);   // for FP mount placement (plate flush on face)
+                viewMarkerSurfaceOk = mountSurfacePredicate(hit.pickedMesh);
 
                 // Update info panel in real-time
                 const svgX = hit.pickedPoint.x.toFixed(1);
@@ -2416,6 +2512,7 @@
                 document.getElementById('targetDistance').textContent = '-';
 
                 lastHitMeshName = null;
+                viewMarkerSurfaceOk = false;   // floating in space = not a mountable face
             }
         }
 
@@ -2758,6 +2855,7 @@
                 universalCamera.rotation.copyFrom(targetRot);
                 universalCamera.fov = targetFov;
             }
+            ensureViewMarker();   // green aim ball works from vantages too
             console.log(`👁 vantage ${v.id}: (${v.x}, ${v.y}) +${v.elevation}ft, dir ${v.direction}°, tilt ${v.tilt}°, fov ${v.fov || 60}°`);
         }
 
@@ -2880,6 +2978,13 @@
                 return;
             }
 
+            // Move Mount mode + first-person: camera buttons choose the TARGET
+            // mount to place (George's workflow) instead of jumping views.
+            if (mountMoveMode && currentScene.activeCamera === universalCamera) {
+                selectMountTargetFP(cam);
+                return;
+            }
+
             updateCameraInfoPanel(cam);
 
             const wasFirstPerson = currentScene.activeCamera === universalCamera;
@@ -2916,6 +3021,15 @@
             console.log(`Camera ${cam.id} roll: ${cam.roll || 0}° -> ${rollRad} rad`);
 
             // Create floating view marker sphere
+            ensureViewMarker();
+        }
+
+        // Green aim ball — shared by camera views AND vantage views (George:
+        // "If I go to a vantage, I don't have a green ball to use for
+        // placement"). Clicking it: in Move Mount mode it PLACES the chosen
+        // mount at the aim point; otherwise the original mark-position send.
+        // modeltbabylon gen-16
+        function ensureViewMarker() {
             if (!viewMarker) {
                 viewMarker = BABYLON.MeshBuilder.CreateSphere(
                     'viewMarker',
@@ -2933,6 +3047,11 @@
                     new BABYLON.ExecuteCodeAction(
                         BABYLON.ActionManager.OnPickTrigger,
                         function() {
+                            // Move Mount (first-person): the green ball IS the placement tool
+                            if (mountMoveMode && fpPlaceTarget) {
+                                placeMountAtMarker();
+                                return;
+                            }
                             // Get current target info from info panel
                             const targetSurface = document.getElementById('targetSurface').textContent;
                             const targetCoords = document.getElementById('targetCoords').textContent;
@@ -2990,7 +3109,6 @@
                 );
             }
 
-            // fov is applied above (instant) or animated by flyCameraTo — no snap here.
         }
 
         function setSvgZoom(zoomLevel) {
