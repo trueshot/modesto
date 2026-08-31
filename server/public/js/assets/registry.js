@@ -66,6 +66,12 @@ window.ModelTAssets = (function () {
             var man = await ensureManifest();
             var entry = man[id];
             if (!entry || !entry.source) throw new Error('asset "' + id + '" not in manifest');
+            // LICENSE IS MANDATORY (modestocat ruling 2026-08-31, NAIP-vs-Google
+            // lesson): every asset carries license+attribution or it does not
+            // load — unlicensed visuals must never sneak into a shipped product.
+            // A rendered credits surface is a SHIP-BLOCKER before any
+            // customer-facing release (dev console credit suffices until then).
+            if (!entry.license) throw new Error('asset "' + id + '" has no license field — license+attribution is mandatory');
             if (entry.source.type === 'script') {
                 await injectScript(entry.source.path);
                 if (!defs[id] && entry.source.global && typeof window[entry.source.global] === 'function') {

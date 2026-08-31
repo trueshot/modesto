@@ -7,7 +7,8 @@
     "source": {
       "type": "script",
       "path": "/js/assets/zt421.js"
-    }
+    },
+    "license": "original work — pilotbirdcat (ProduceFlow), modeled from Zebra product photos"
   },
   "forklift": {
     "kind": "vehicle",
@@ -16,8 +17,22 @@
     "source": {
       "type": "glb",
       "path": "/js/assets/forklift-kolos.glb",
-      "transform": { "scale": 3.2808, "rotateY": 0, "pivot": "bottom-center" }
+      "transform": {
+        "scale": 3.2808,
+        "rotateY": 0,
+        "pivot": "bottom-center"
+      }
     },
     "license": "CC-BY 3.0 — Forklift by KolosStudios, https://poly.pizza/m/DTQBuenKJY"
+  },
+  "tractor-trailer": {
+    "kind": "vehicle",
+    "model": "tractor-trailer-53",
+    "version": 1,
+    "source": {
+      "type": "script",
+      "path": "/js/assets/tractor-trailer.js"
+    },
+    "license": "original work — pilotbirdcat (ProduceFlow), hand-built to real dims"
   }
 }
