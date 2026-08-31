@@ -1539,6 +1539,75 @@
             createGaylordBin(currentScene, binId, svgX, svgY, options);
         }
 
+        // ---- Equipment companion (provisional) — fixed plant equipment ----
+        // Reads /warehouses/<id>/equipment.json (express serves warehouses/
+        // statically — no server change). kind 'stand': welded plate on a post,
+        // dims in INCHES; if holds_printer names an entry in printers.json, the
+        // printer renders on the bed. Estimates ride in the data and are logged
+        // so George can see exactly what was guessed. modeltbabylon gen-16
+        let equipmentMeshes = [];
+        async function loadEquipment(scene) {
+            equipmentMeshes.forEach(m => m.dispose());
+            equipmentMeshes = [];
+            const wh = currentWarehouseId || 'lodge';
+            let eq = null, printers = null;
+            try {
+                const r = await fetch(`/warehouses/${wh}/equipment.json?t=${Date.now()}`);
+                if (!r.ok) return;                     // no equipment file -> nothing to draw
+                eq = await r.json();
+            } catch (e) { return; }
+            try {
+                const rp = await fetch(`/warehouses/${wh}/printers.json?t=${Date.now()}`);
+                if (rp.ok) printers = await rp.json();
+            } catch (e) { /* printers optional */ }
+
+            (eq.equipment || []).forEach(item => {
+                if (item.kind !== 'stand') return;
+                const IN = 1 / 12;
+                const cx = (item.x1 + item.x2) / 2;
+                const widthEW = Math.abs(item.x2 - item.x1);                    // ft (24in -> 2)
+                const depthNS = (item.bed_in?.depth_ns || 16) * IN;
+                const bedTop = SLAB_TOP + (item.bed_top_height_in || 28) * IN;  // above slab
+                const t = (item.plate_thickness_in || 0.5) * IN;
+
+                const steel = new BABYLON.StandardMaterial('eqSteel_' + item.id, scene);
+                steel.diffuseColor = new BABYLON.Color3(0.45, 0.47, 0.5);
+                steel.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+
+                // plate (bed)
+                const plate = BABYLON.MeshBuilder.CreateBox('equip_' + item.id + '_plate',
+                    { width: widthEW, height: t, depth: depthNS }, scene);
+                plate.position.set(cx, bedTop - t / 2, -item.y_center);
+                plate.material = steel;
+                equipmentMeshes.push(plate);
+
+                // support post (estimate: single centered 4in sq tube, welded)
+                const postW = 4 * IN;
+                const post = BABYLON.MeshBuilder.CreateBox('equip_' + item.id + '_post',
+                    { width: postW, height: bedTop - t - SLAB_TOP, depth: postW }, scene);
+                post.position.set(cx, SLAB_TOP + (bedTop - t - SLAB_TOP) / 2, -item.y_center);
+                post.material = steel;
+                equipmentMeshes.push(post);
+
+                // printer on the bed (if linked + known)
+                const p = printers && (printers.printers || []).find(pp => pp.id === item.holds_printer);
+                if (p && p.dims_in) {
+                    const pw = p.dims_in.length * IN, pd = p.dims_in.width * IN, ph = p.dims_in.height * IN;
+                    const mat = new BABYLON.StandardMaterial('eqPrinter_' + p.id, scene);
+                    mat.diffuseColor = new BABYLON.Color3(0.18, 0.18, 0.2);    // charcoal
+                    const box = BABYLON.MeshBuilder.CreateBox('equip_' + item.id + '_printer',
+                        { width: pw, height: ph, depth: pd }, scene);          // long side E-W, like the bed
+                    box.position.set(cx, bedTop + ph / 2, -item.y_center);
+                    box.material = mat;
+                    equipmentMeshes.push(box);
+                }
+
+                if (item.estimates && item.estimates.length) {
+                    console.log(`🔩 ${item.id} rendered with ${item.estimates.length} ESTIMATES:\n - ` + item.estimates.join('\n - '));
+                }
+            });
+        }
+
         // WebSocket setup
         function initWebSocket() {
             ws = new WebSocket(`ws://${window.location.hostname}:8080`);
@@ -1982,6 +2051,11 @@
 
                 // Create scene
                 const scene = createScene(warehouseData, isModelT);
+
+                // Equipment companion (provisional, like printers.json) —
+                // fixed plant equipment awaiting its spec kind. Renders George's
+                // welded printer stand so he can see + adjust the guessed facts.
+                loadEquipment(scene);
 
                 // Setup door label click detection
                 setupDoorLabelClicking(scene);
