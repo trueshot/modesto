@@ -81,12 +81,33 @@ window.ModelTAssets = (function () {
                 if (!BABYLON.SceneLoader) throw new Error('babylonjs.loaders not available for .glb');
                 var container = await BABYLON.SceneLoader.LoadAssetContainerAsync(
                     '', entry.source.path, scene);
+                if (entry.license) console.log('📜 asset "' + id + '" license: ' + entry.license);
                 defs[id] = {
                     kind: entry.kind, model: entry.model || id, version: entry.version || 1,
+                    license: entry.license,
                     create: function (scene2, name) {
                         var inst = container.instantiateModelsToScene(function (n) { return name + '_' + n; });
                         var root = new BABYLON.TransformNode(name, scene2);
                         inst.rootNodes.forEach(function (rn) { rn.parent = root; });
+                        // source.transform: normalize a web-sourced glb onto the
+                        // contract (ft units, +Z front, bottom-center pivot).
+                        //   scale:   uniform (e.g. 3.2808 for a meters-authored file)
+                        //   rotateY: degrees, spins the model so its front faces +Z
+                        //   pivot:   'bottom-center' recenters — footprint center at
+                        //            origin, bottom at y=0 (kolos forklift's origin
+                        //            is ~54 raw units off-center in X)
+                        var t = entry.source.transform;
+                        if (t) {
+                            if (t.pivot === 'bottom-center') {
+                                root.computeWorldMatrix(true);
+                                var hb = root.getHierarchyBoundingVectors(true);
+                                var off = new BABYLON.Vector3(
+                                    -(hb.min.x + hb.max.x) / 2, -hb.min.y, -(hb.min.z + hb.max.z) / 2);
+                                inst.rootNodes.forEach(function (rn) { rn.position.addInPlace(off); });
+                            }
+                            if (t.rotateY) root.rotation.y = t.rotateY * Math.PI / 180;
+                            if (t.scale) root.scaling.setAll(t.scale);
+                        }
                         root.metadata = { type: entry.kind, assetId: name, model: entry.model || id };
                         return root;
                     }

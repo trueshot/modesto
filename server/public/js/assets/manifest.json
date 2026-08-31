@@ -8,5 +8,16 @@
       "type": "script",
       "path": "/js/assets/zt421.js"
     }
+  },
+  "forklift": {
+    "kind": "vehicle",
+    "model": "counterbalance forklift",
+    "version": 1,
+    "source": {
+      "type": "glb",
+      "path": "/js/assets/forklift-kolos.glb",
+      "transform": { "scale": 3.2808, "rotateY": 0, "pivot": "bottom-center" }
+    },
+    "license": "CC-BY 3.0 — Forklift by KolosStudios, https://poly.pizza/m/DTQBuenKJY"
   }
 }
