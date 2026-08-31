@@ -4,6 +4,9 @@
     "kind": "printer",
     "model": "ZT421",
     "version": 3,
-    "source": { "type": "script", "path": "/js/assets/zt421.js", "global": "createZT421" }
+    "source": {
+      "type": "script",
+      "path": "/js/assets/zt421.js"
+    }
   }
 }

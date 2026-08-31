@@ -79,3 +79,9 @@ function createZT421(scene, name) {
 
   return root;
 }
+
+// Self-register with the ModelTAssets registry when present (guarded so the
+// file also runs standalone, e.g. in the codex/test harness).
+if (typeof ModelTAssets !== 'undefined') {
+  ModelTAssets.register('zt421', { kind: 'printer', model: 'ZT421', version: 3, create: createZT421 });
+}
