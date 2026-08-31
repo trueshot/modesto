@@ -151,6 +151,31 @@ async function main() {
         break;
       }
 
+      // Add a vantage (§5.15) — a virtual viewpoint, NOT a camera. Pose:
+      // --x --y --elevation (whole ft above the DATUM) --direction (0=N cw,
+      // [0,360)) --tilt ([0,90] down); optional --fov --name --source --id.
+      // modeltbabylon gen-16
+      case 'add-vantage': {
+        const vantage = editor.addVantage({
+          id: options.id,
+          name: options.name,
+          x: options.x,
+          y: options.y,
+          elevation: options.elevation,
+          direction: options.direction,
+          tilt: options.tilt,
+          fov: options.fov,
+          source: options.source
+        });
+        editor.commit();
+        result = {
+          success: true,
+          action: 'add-vantage',
+          component: vantage
+        };
+        break;
+      }
+
       case 'move-camera': {
         const cameraId = options._positional[0];
         const deltaX = options._positional[1] || 0;

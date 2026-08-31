@@ -238,6 +238,51 @@ class ModelTEditor {
   }
 
   /**
+   * Add a vantage (§5.15) — a virtual viewpoint, NOT a camera: separate
+   * facility-level vantages[] array, bird-name id, pose above the DATUM,
+   * may float anywhere on the property. Validation per 8.3: direction
+   * [0,360), tilt [0,90] down, whole-foot x/y/elevation. Out-of-range pose
+   * is REJECTED, never clamped — a silently altered aim is a false fact.
+   * — modeltbabylon gen-16
+   */
+  addVantage(spec) {
+    if (!this.data.vantages) this.data.vantages = [];
+    const existing = this.data.vantages;
+    let id = spec.id;
+    if (!id) {
+      if (typeof this.nameManager.getNextVantageName === 'function') {
+        id = this.nameManager.getNextVantageName(existing);
+      } else {
+        throw new Error('bird-name pool not available yet — pass an explicit id (hawk, eagle, owl, ...)');
+      }
+    }
+    if (existing.some(v => v.id === id)) {
+      throw new Error(`Vantage "${id}" already exists`);
+    }
+    for (const k of ['x', 'y', 'elevation', 'direction', 'tilt']) {
+      if (spec[k] === undefined || spec[k] === null || isNaN(parseFloat(spec[k]))) {
+        throw new Error(`${k} is required (number)`);
+      }
+    }
+    const rawDirection = parseFloat(spec.direction);
+    if (rawDirection < 0 || rawDirection >= 360) throw new Error(`direction ${rawDirection} out of [0, 360)`);
+    const direction = Math.round(rawDirection) % 360;   // 359.6 rounds to 360 -> wraps to 0
+    const tilt = Math.round(parseFloat(spec.tilt));
+    if (tilt < 0 || tilt > 90) throw new Error(`tilt ${tilt} out of [0, 90] (degrees DOWN; aim level or down, never up)`);
+    const vantage = { id };
+    if (spec.name) vantage.name = spec.name;
+    vantage.x = Math.round(parseFloat(spec.x));
+    vantage.y = Math.round(parseFloat(spec.y));
+    vantage.elevation = Math.round(parseFloat(spec.elevation));
+    vantage.direction = direction;
+    vantage.tilt = tilt;
+    if (spec.fov !== undefined && spec.fov !== null) vantage.fov = Math.round(parseFloat(spec.fov));
+    if (spec.source) vantage.source = spec.source;
+    existing.push(vantage);
+    return vantage;
+  }
+
+  /**
    * Move a camera by delta
    */
   moveCamera(cameraId, deltaX, deltaY) {

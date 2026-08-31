@@ -191,6 +191,26 @@
             border: 1px solid rgba(255, 255, 255, 0.9);
             color: black;
         }
+        /* Vantage buttons — muted purple (5.15: must not read as hardware) */
+        .vantageBtn {
+            background: rgba(122, 95, 160, 0.85);
+            color: white;
+            border: 1px solid transparent;
+            padding: 4px 8px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: bold;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .vantageBtn:hover {
+            background: rgba(150, 120, 190, 1);
+        }
+        .vantageBtn.selected {
+            background: rgba(180, 150, 220, 1);
+            border: 1px solid rgba(255, 255, 255, 0.9);
+            color: black;
+        }
         .viewToggleBtn {
             background: rgba(100, 200, 100, 0.8);
             color: white;
@@ -621,6 +641,7 @@
         <button id="overlayToggleBtn" class="overlayBtn" onclick="toggleOverlay()" style="margin-left: 15px;">Show Image</button>
         <button id="placeCameraBtn" class="placeCameraBtn" onclick="togglePlaceCameraMode()" style="margin-left: 15px;">Place Camera</button>
         <button id="mapCameraBtn" class="mapCameraBtn" onclick="openMappingPanel()" style="margin-left: 15px;" disabled>Map Camera</button>
+        <button id="saveVantageBtn" class="vantageBtn" onclick="saveVantagePose()" style="margin-left: 15px;">Save Vantage</button>
     </div>
     <div id="placementStatus">Click a wall or column to set camera mount point</div>
     <div id="debug">
@@ -1844,7 +1865,7 @@
                     console.log(`Restoring camera view: ${savedCameraId}`);
                     // Give the scene a moment to fully initialize
                     setTimeout(() => {
-                        const buttons = document.querySelectorAll('.cameraBtn');
+                        const buttons = document.querySelectorAll('.cameraBtn, .vantageBtn:not(#saveVantageBtn)');
                         buttons.forEach(btn => {
                             if (btn.textContent.toLowerCase().includes(savedCameraId.toLowerCase()) ||
                                 (savedCameraId === 'overview' && btn.classList.contains('overviewBtn'))) {
@@ -2087,6 +2108,18 @@
                 btn.className = 'cameraBtn';
                 btn.textContent = `${cam.name || cam.id} (#${cam.number || '?'})`;
                 btn.onclick = (e) => setCameraView(cam.id, e.target);
+                controlsDiv.appendChild(btn);
+            });
+
+            // Vantages (5.15) — virtual viewpoints, facility-level, NOT cameras.
+            // Muted purple so they never read as hardware. modeltbabylon gen-16
+            controlsDiv.querySelectorAll('.vantageBtn:not(#saveVantageBtn)').forEach(b => b.remove());
+            (warehouseData.vantages || []).forEach(v => {
+                const btn = document.createElement('button');
+                btn.className = 'vantageBtn';
+                btn.textContent = v.name ? `${v.id} — ${v.name}` : v.id;
+                btn.title = `vantage ${v.id}: (${v.x}, ${v.y}) +${v.elevation}ft, dir ${v.direction}°, tilt ${v.tilt}°`;
+                btn.onclick = (e) => setVantageView(v, e.target);
                 controlsDiv.appendChild(btn);
             });
 
@@ -2422,6 +2455,78 @@
                 btn.textContent = 'Save Door';
                 btn.style.background = 'rgba(100, 200, 100, 0.8)';
             }, 1500);
+        }
+
+        // ---- Vantages (5.15): virtual viewpoints — jump-to + pose capture ----
+        // A vantage is data (id/x/y/elevation/direction/tilt/fov); how the camera
+        // GETS there is renderer behavior (spec: "the viewer owns the ride").
+        // v1: instant jump. Pose is above the DATUM (slab-top plane, y=SLAB_TOP).
+        // modeltbabylon gen-16
+        function setVantageView(v, buttonElement) {
+            if (!currentScene || !universalCamera) return;
+
+            sessionStorage.setItem('currentCameraId', v.id);
+            if (currentSelectedButton) currentSelectedButton.classList.remove('selected');
+            if (buttonElement) { buttonElement.classList.add('selected'); currentSelectedButton = buttonElement; }
+
+            // Not a camera: no camera panel (its Save writes cameras[]), no mapping
+            document.getElementById('cameraInfo').style.display = 'none';
+            document.getElementById('mapCameraBtn').disabled = true;
+            currentCameraData = null;
+
+            if (currentScene.activeCamera !== universalCamera) {
+                currentCamera.detachControl();
+                currentScene.activeCamera = universalCamera;
+                universalCamera.attachControl(canvas, true);
+                currentCamera = universalCamera;
+            }
+
+            universalCamera.position = new BABYLON.Vector3(v.x, SLAB_TOP + v.elevation, -v.y);
+            universalCamera.rotation.y = v.direction * Math.PI / 180;   // 0=N(+Z), cw (unified 2026-08-26)
+            universalCamera.rotation.x = v.tilt * Math.PI / 180;        // down-positive
+            universalCamera.rotation.z = 0;                             // vantages have no roll
+
+            const hFovRad = (v.fov || 60) * Math.PI / 180;              // spec default 60
+            const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
+            universalCamera.fov = 2 * Math.atan(Math.tan(hFovRad / 2) / aspectRatio);
+            console.log(`👁 vantage ${v.id}: (${v.x}, ${v.y}) +${v.elevation}ft, dir ${v.direction}°, tilt ${v.tilt}°, fov ${v.fov || 60}°`);
+        }
+
+        // Capture the CURRENT free-fly pose as a vantage. Same pipeline as site
+        // features: the viewer never writes the model — the pose is logged as an
+        // exact modelt-cli command + stored in pendingVantages_<wh>; modeltbabylon
+        // runs the CLI (George supplies the name), the SVG regens, the button
+        // appears on reload. Out-of-range tilt (looking UP) is refused with the
+        // true value shown — never silently clamped.
+        function saveVantagePose() {
+            const statusEl = document.getElementById('status');
+            if (!universalCamera || currentScene.activeCamera !== universalCamera) {
+                statusEl.textContent = 'Save Vantage: fly to the view first (pick a camera or vantage, then move)';
+                return;
+            }
+            const pos = universalCamera.position;
+            const x = Math.round(pos.x), y = Math.round(-pos.z);
+            const elevation = Math.round(pos.y - SLAB_TOP);   // above the DATUM
+            let direction = Math.round(universalCamera.rotation.y * 180 / Math.PI) % 360;
+            if (direction < 0) direction += 360;
+            const tilt = Math.round(universalCamera.rotation.x * 180 / Math.PI);
+            if (tilt < 0 || tilt > 90) {
+                statusEl.textContent = `Save Vantage: tilt ${tilt}° is outside [0, 90] down — aim level or downward, then save`;
+                return;
+            }
+            const aspectRatio = engine.getRenderWidth() / engine.getRenderHeight();
+            const fov = Math.round(2 * Math.atan(Math.tan(universalCamera.fov / 2) * aspectRatio) * 180 / Math.PI);
+            const wh = currentWarehouseId || 'lodge';
+            const pending = { x, y, elevation, direction, tilt, fov, capturedAt: new Date().toISOString() };
+            try {
+                const key = 'pendingVantages_' + wh;
+                const list = JSON.parse(localStorage.getItem(key) || '[]');
+                list.push(pending);
+                localStorage.setItem(key, JSON.stringify(list));
+            } catch (e) {}
+            const cmd = `node tools/modelt-cli.js ${wh} add-vantage --x ${x} --y ${y} --elevation ${elevation} --direction ${direction} --tilt ${tilt} --fov ${fov} --name "<what is this view for?>"`;
+            console.log(`[CAPTURE] vantage pose saved (pending). Write it into the model with:\n${cmd}`);
+            statusEl.textContent = `Vantage pose captured: (${x}, ${y}) +${elevation}ft, dir ${direction}°, tilt ${tilt}° — tell modeltbabylon the name`;
         }
 
         function setCameraView(cameraId, buttonElement) {
