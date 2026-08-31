@@ -1025,57 +1025,19 @@
         // server so it works over the VPN), falling back to the last static
         // snapshot in cameras/full/ if the live grab fails.
         // modeltbabylon gen-10, 2026-08-26 (George: "grab the associated feed")
-        // Saved-view overlay alignment (modeltbabylon gen-15, 2026-08-30) --------
-        // George aligns a camera's full-res frame in modeltcamerascat's 2D viewer
-        // (zoom / rotate / pan); it is saved per-IP to cameras/views/. When the
-        // overlay is shown for a camera that has a saved view, reproduce his exact
-        // framing on the overlay image — scale by screen_px_per_image_px and rotate
-        // rotate_deg about center_image_px (CSS clockwise-positive) — instead of the
-        // default stretch-to-fill, so it lines up with the 3D camera view.
-        let currentSavedView = null;
-
-        async function loadSavedViewTransform(ip) {
-            currentSavedView = null;
-            if (!ip) return;
-            try {
-                const r = await fetch(`/api/warehouses/${currentWarehouseId}/views/${ip}`);
-                if (!r.ok) return;                       // 404 = no saved view -> fill mode
-                const data = await r.json();
-                const v = data && data.view;
-                if (v && Array.isArray(v.center_image_px) && v.screen_px_per_image_px) {
-                    currentSavedView = v;
-                }
-            } catch (e) { /* no saved view -> fill mode */ }
-        }
-
-        function applyOverlayAlignment() {
-            const img = document.getElementById('overlayImage');
-            if (!img) return;
-            const v = currentSavedView;
-            if (v && img.naturalWidth) {
-                const cx = v.center_image_px[0], cy = v.center_image_px[1];
-                img.style.width = img.naturalWidth + 'px';
-                img.style.height = img.naturalHeight + 'px';
-                img.style.maxWidth = 'none';
-                img.style.objectFit = 'none';
-                img.style.position = 'absolute';
-                img.style.left = `calc(50% - ${cx}px)`;
-                img.style.top = `calc(50% - ${cy}px)`;
-                img.style.transformOrigin = `${cx}px ${cy}px`;
-                img.style.transform = `rotate(${v.rotate_deg || 0}deg) scale(${v.screen_px_per_image_px})`;
-            } else {
-                // default stretch-to-fill (no saved view)
-                img.style.width = '100%'; img.style.height = '100%';
-                img.style.maxWidth = ''; img.style.objectFit = 'fill';
-                img.style.position = ''; img.style.left = ''; img.style.top = '';
-                img.style.transformOrigin = ''; img.style.transform = '';
-            }
-        }
+        //
+        // SAVED-VIEW FRAMINGS ARE NOT APPLIED HERE (George ruling 2026-08-31,
+        // reverting gen-15's auto-alignment): the per-IP records in
+        // cameras/views/ carry the zoom/ROTATE/pan George used while aligning
+        // frames to the AERIAL/property in the 2D viewer — a different context.
+        // Replaying them here rotated the .7 feed -71deg in the 3D overlay.
+        // "Different things." The 3D overlay always shows the RAW frame,
+        // stretch-to-fill.
 
         // Show Image: LIVE frame from the mapped camera (proxied through this
         // server so it works over the VPN), falling back to the last static
         // snapshot in cameras/full/ if the live grab fails. Reproduces George's
-        // saved framing when one exists. modeltbabylon gen-10/gen-15
+        // Always the RAW frame, stretch-to-fill. modeltbabylon gen-10/gen-16
         async function loadCameraImage() {
             const img = document.getElementById('overlayImage');
             const srcEl = document.getElementById('overlaySource');
@@ -1088,7 +1050,6 @@
             }
             const fullIp = mapping.fullIp ||
                 (mapping.ip && String(mapping.ip).includes('.') ? mapping.ip : `192.168.0.${mapping.ip}`);
-            await loadSavedViewTransform(fullIp);   // George's aligned framing, if saved
             const liveUrl = `/api/warehouses/${currentWarehouseId}/live/${fullIp}?t=${Date.now()}`;
             if (srcEl) srcEl.textContent = `Grabbing live frame from ${fullIp}…`;
             img.onerror = () => {
@@ -1101,10 +1062,8 @@
                 if (srcEl) srcEl.textContent = `SNAPSHOT (live grab failed) — ${fullIp}`;
             };
             img.onload = () => {
-                applyOverlayAlignment();
-                const aligned = currentSavedView ? ' · aligned to saved view' : '';
                 if (srcEl && img.src.includes('/live/')) {
-                    srcEl.textContent = `LIVE — ${fullIp} @ ${new Date().toLocaleTimeString()}${aligned}`;
+                    srcEl.textContent = `LIVE — ${fullIp} @ ${new Date().toLocaleTimeString()}`;
                 }
             };
             img.src = liveUrl;
