@@ -101,13 +101,16 @@ class ModelTBuilder {
         return this.meshes;
     }
 
-    // Site features (§5.14) — facility-level fences (driveway/parking reserved).
-    // modeltbabylon gen-15
+    // Site features (§5.14) — facility-level fences + driveways (parking reserved).
+    // modeltbabylon gen-15/gen-16
     buildSiteFeatures() {
         const features = this.spec.siteFeatures || [];
         if (!features.length) return;
         const groundY = 4 - ModelTBuilder.GRADE_LIP;   // grade, matches the ground plane
-        features.forEach(f => { if (f.kind === 'fence') this.buildFence(f, groundY); });
+        features.forEach(f => {
+            if (f.kind === 'fence') this.buildFence(f, groundY);
+            else if (f.kind === 'driveway') this.buildDriveway(f, groundY);
+        });
     }
 
     // A fence: a height-tall panel (0.5 ft thick) along the path, standing on grade.
@@ -136,6 +139,30 @@ class ModelTBuilder {
             panel.metadata = { siteFeature: fence.id, kind: 'fence' };
             this.meshes.siteFeatures.push(panel);
         }
+    }
+
+    // A driveway (§5.14 AREA kind): flat polygon AT GRADE, colored by surface,
+    // no thickness, no walls. Sits a hair (0.02 ft) above the ground plane so
+    // the two coplanar surfaces don't z-fight — render offset, not data.
+    // Appendix A surface fills. — modeltbabylon gen-16
+    buildDriveway(drive, groundY) {
+        const SURFACE_COLORS = {
+            gravel:   new BABYLON.Color3(0.788, 0.761, 0.698),  // #c9c2b2
+            asphalt:  new BABYLON.Color3(0.604, 0.604, 0.604),  // #9a9a9a
+            concrete: new BABYLON.Color3(0.753, 0.753, 0.784),  // #c0c0c8
+            dirt:     new BABYLON.Color3(0.710, 0.608, 0.478)   // #b59b7a
+        };
+        const pts = (drive.path || []).map(p => new BABYLON.Vector3(p.x, 0, -p.y));  // SVG->Babylon (negate Y)
+        if (pts.length < 3) return;
+        const mat = new BABYLON.StandardMaterial('driveMat_' + drive.id, this.scene);
+        mat.diffuseColor = SURFACE_COLORS[drive.surface] || new BABYLON.Color3(0.6, 0.58, 0.55);  // other/unknown
+        mat.specularColor = new BABYLON.Color3(0.03, 0.03, 0.03);
+        const poly = BABYLON.MeshBuilder.CreatePolygon('driveway_' + drive.id,
+            { shape: pts, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, this.scene);
+        poly.position.y = groundY + 0.02;   // just above the grass, still under the slab lip
+        poly.material = mat;
+        poly.metadata = { siteFeature: drive.id, kind: 'driveway', surface: drive.surface };
+        this.meshes.siteFeatures.push(poly);
     }
 
     /**

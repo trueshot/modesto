@@ -189,9 +189,10 @@ class ModelTEditor {
   }
 
   /**
-   * Add a site feature (§5.14) — fence now; driveway/parking reserved.
-   * Facility-level siteFeatures[]. Vertices rounded to WHOLE FEET (fences are
-   * plant, and a trace off a 0.6 m/px aerial is only +/-2 ft). — modeltbabylon gen-15
+   * Add a site feature (§5.14) — kinds: fence (linear) and driveway (area,
+   * ruled 2026-08-31); parking reserved. Facility-level siteFeatures[].
+   * Vertices rounded to WHOLE FEET (site features are traced off a 0.6 m/px
+   * aerial, known to +/-2 ft). — modeltbabylon gen-15/gen-16
    */
   addSiteFeature(spec) {
     if (!this.data.siteFeatures) this.data.siteFeatures = [];
@@ -201,23 +202,37 @@ class ModelTEditor {
       throw new Error(`Site feature "${id}" already exists`);
     }
     const kind = spec.kind || 'fence';
-    if (kind !== 'fence') {
-      throw new Error(`kind "${kind}" not implemented (driveway/parking reserved until traced)`);
-    }
-    if (!spec.material) throw new Error('material is required (wooden|chainlink|wire|block|other)');
-    if (spec.height === undefined || spec.height === null) throw new Error('height is required (whole feet)');
     const path = (spec.path || []).map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
-    if (path.length < 2) throw new Error('path needs at least 2 vertices');
-    const feature = {
-      id,
-      kind,
-      material: spec.material,
-      height: Math.round(spec.height),
-      path,
-      closed: spec.closed === true,
-      gaps: spec.gaps || [],
-      source: spec.source || 'traced:aerial'
-    };
+    let feature;
+    if (kind === 'fence') {
+      if (!spec.material) throw new Error('material is required (wooden|chainlink|wire|block|other)');
+      if (spec.height === undefined || spec.height === null) throw new Error('height is required (whole feet)');
+      if (path.length < 2) throw new Error('fence path needs at least 2 vertices');
+      feature = {
+        id,
+        kind,
+        material: spec.material,
+        height: Math.round(spec.height),
+        path,
+        closed: spec.closed === true,
+        gaps: spec.gaps || [],
+        source: spec.source || 'traced:aerial'
+      };
+    } else if (kind === 'driveway') {
+      // AREA kind (5.14): closed free-geometry polygon, any angles. The
+      // polygon is ALWAYS closed — no `closed` field; no height, no gaps.
+      if (!spec.surface) throw new Error('surface is required (gravel|asphalt|concrete|dirt|other)');
+      if (path.length < 3) throw new Error('driveway path needs at least 3 vertices (a 2-point area is a line)');
+      feature = {
+        id,
+        kind,
+        surface: spec.surface,
+        path,
+        source: spec.source || 'traced:aerial'
+      };
+    } else {
+      throw new Error(`kind "${kind}" not implemented (parking reserved until traced)`);
+    }
     existing.push(feature);
     return feature;
   }

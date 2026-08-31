@@ -126,15 +126,18 @@ async function main() {
         break;
       }
 
-      // Add a site feature (§5.14) — fence now. Path: "x,y x,y x,y" (whole-foot
-      // vertices, rounded on write). id auto-assigned from the mountain pool.
-      // modeltbabylon gen-15
+      // Add a site feature (§5.14) — fence (linear) or driveway (area).
+      // Path: "x,y x,y x,y" (whole-foot vertices, rounded on write). id
+      // auto-assigned from the mountain pool. Fence: --material --height
+      // [--closed]. Driveway: --surface (polygon always closed, >= 3 pts).
+      // modeltbabylon gen-15/gen-16
       case 'add-site-feature': {
         const feature = editor.addSiteFeature({
           id: options.id,
           kind: options.kind || 'fence',
           material: options.material,
           height: options.height,
+          surface: options.surface,
           path: parsePath(options.path),
           closed: options.closed === true || options.closed === 'true',
           source: options.source

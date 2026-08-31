@@ -600,10 +600,11 @@
             </span>
             <span id="drawControls" style="margin-left:16px; padding-left:16px; border-left:1px solid #ccc;">
                 <span style="color:#888; font-weight:bold;">Draw:</span>
-                <button class="zoomBtn" id="drawFenceBtn" onclick="toggleFenceDraw()">Fence</button>
-                <button class="zoomBtn" id="drawDoneBtn" onclick="finishFence()" style="display:none;">Finish</button>
-                <button class="zoomBtn" id="drawCancelBtn" onclick="cancelFenceDraw()" style="display:none;">Cancel</button>
-                <button class="zoomBtn" onclick="clearFences()">Clear</button>
+                <button class="zoomBtn" id="drawFenceBtn" onclick="toggleDraw('fence')">Fence</button>
+                <button class="zoomBtn" id="drawDrivewayBtn" onclick="toggleDraw('driveway')">Driveway</button>
+                <button class="zoomBtn" id="drawDoneBtn" onclick="finishDraw()" style="display:none;">Finish</button>
+                <button class="zoomBtn" id="drawCancelBtn" onclick="cancelDraw()" style="display:none;">Cancel</button>
+                <button class="zoomBtn" onclick="clearPendingCaptures()">Clear</button>
                 <span id="drawHint" style="color:#888; font-size:11px;"></span>
             </span>
         </div>
@@ -2689,10 +2690,10 @@
             // Inject the aerial topo underlay, then fit the whole plan on screen
             initAerialUnderlay();
             fitSvgToScreen();
-            // Site-feature drawing (fences, etc.) — wire once, redraw saved features
+            // Site-feature capture tools — wire once, redraw pending (unwritten) traces
             initDrawTools();
-            loadFences();
-            renderFences();
+            loadPendingCaptures();
+            renderPendingCaptures();
         }
 
         // ---- Aerial topo underlay (tracing guide) — modeltbabylon gen-15, 2026-08-30 ----
@@ -2818,17 +2819,22 @@
             }, { passive: false });
         }
 
-        // ---- Site-feature drawing: register points -> polyline. Fence first. ----
+        // ---- Site-feature CAPTURE: trace points on the aerial -> pending capture ----
         // Click points along the feature ON THE PHOTO; each click is converted to
-        // real plan feet via the SVG's screen CTM, so it lands in model coordinates.
-        // Stored per-warehouse (localStorage for now; model persistence is the next
-        // step, needs a fences schema from modestocat). modeltbabylon gen-15
+        // real plan feet via the SVG's screen CTM. The viewer is a CAPTURE SURFACE,
+        // never a writer (5.14): a finished trace becomes a PENDING capture (dashed
+        // orange) and the exact modelt-cli command is logged to console; the CLI
+        // writes the model, the SVG regenerates, and the model's own site /
+        // site_ground groups are the real render. (gen-15's localStorage fence
+        // render is retired — it double-drew against the model.) Kinds: fence
+        // (open polyline, >=2 pts) and driveway (closed area, >=3 pts).
+        // modeltbabylon gen-15/gen-16
         const SVGNS = 'http://www.w3.org/2000/svg';
-        let drawMode = false, drawPoints = [];
-        let fences = [];
-        function fencesKey() { return 'siteFences_' + (currentWarehouseId || 'lodge'); }
-        function loadFences() { try { fences = JSON.parse(localStorage.getItem(fencesKey())) || []; } catch (e) { fences = []; } }
-        function saveFences() { try { localStorage.setItem(fencesKey(), JSON.stringify(fences)); } catch (e) {} }
+        let drawMode = false, drawKind = null, drawPoints = [];
+        let pendingCaptures = [];
+        function pendingKey() { return 'pendingCaptures_' + (currentWarehouseId || 'lodge'); }
+        function loadPendingCaptures() { try { pendingCaptures = JSON.parse(localStorage.getItem(pendingKey())) || []; } catch (e) { pendingCaptures = []; } }
+        function savePendingCaptures() { try { localStorage.setItem(pendingKey(), JSON.stringify(pendingCaptures)); } catch (e) {} }
 
         function siteLayer() {
             const svg = document.querySelector('#svgViewer svg');
@@ -2848,70 +2854,84 @@
         function setDrawHint() {
             const h = document.getElementById('drawHint');
             if (h) h.textContent = drawMode
-                ? `click points (${drawPoints.length}) · Finish or Enter to end · Backspace undo · Esc cancel`
+                ? `${drawKind}: click points (${drawPoints.length}) · Finish or Enter to end · Backspace undo · Esc cancel`
                 : '';
         }
-        function toggleFenceDraw() { drawMode ? cancelFenceDraw() : startFenceDraw(); }
-        function startFenceDraw() {
-            drawMode = true; drawPoints = [];
-            document.getElementById('drawFenceBtn')?.classList.add('active');
+        function toggleDraw(kind) { (drawMode && drawKind === kind) ? cancelDraw() : startDraw(kind); }
+        function drawKindBtn(kind) { return document.getElementById(kind === 'driveway' ? 'drawDrivewayBtn' : 'drawFenceBtn'); }
+        function startDraw(kind) {
+            if (drawMode) cancelDraw();   // switching kinds mid-draw resets
+            drawMode = true; drawKind = kind; drawPoints = [];
+            drawKindBtn(kind)?.classList.add('active');
             const d = document.getElementById('drawDoneBtn'), c = document.getElementById('drawCancelBtn');
             if (d) d.style.display = ''; if (c) c.style.display = '';
             const img = document.getElementById('aerialUnderlay'); if (img) img.style.pointerEvents = 'none';
             const v = document.getElementById('svgViewer'); if (v) v.style.cursor = 'crosshair';
             renderDrawPreview(); setDrawHint();
         }
-        function cancelFenceDraw() {
+        function cancelDraw() {
             drawMode = false; drawPoints = [];
-            document.getElementById('drawFenceBtn')?.classList.remove('active');
+            drawKindBtn('fence')?.classList.remove('active');
+            drawKindBtn('driveway')?.classList.remove('active');
+            drawKind = null;
             const d = document.getElementById('drawDoneBtn'), c = document.getElementById('drawCancelBtn');
             if (d) d.style.display = 'none'; if (c) c.style.display = 'none';
             const img = document.getElementById('aerialUnderlay'); if (img) img.style.pointerEvents = '';
             const v = document.getElementById('svgViewer'); if (v) v.style.cursor = '';
             renderDrawPreview(); setDrawHint();
         }
-        function finishFence() {
-            if (drawPoints.length >= 2) { fences.push({ points: drawPoints.slice() }); saveFences(); }
-            cancelFenceDraw(); renderFences();
+        function finishDraw() {
+            const minPts = drawKind === 'driveway' ? 3 : 2;   // a 2-point area is a line (5.14)
+            if (drawKind && drawPoints.length >= minPts) {
+                const cap = { kind: drawKind, points: drawPoints.slice(), capturedAt: new Date().toISOString() };
+                pendingCaptures.push(cap); savePendingCaptures();
+                const wh = currentWarehouseId || 'lodge';
+                const pathArg = cap.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(' ');
+                const cmd = cap.kind === 'driveway'
+                    ? `node tools/modelt-cli.js ${wh} add-site-feature --kind driveway --surface <gravel|asphalt|concrete|dirt|other> --path "${pathArg}"`
+                    : `node tools/modelt-cli.js ${wh} add-site-feature --kind fence --material <wooden|chainlink|wire|block|other> --height <ft> --path "${pathArg}"`;
+                console.log(`[CAPTURE] ${cap.kind} traced, ${cap.points.length} pts. Write it into the model with:\n${cmd}`);
+            }
+            cancelDraw(); renderPendingCaptures();
         }
         function undoDrawPoint() { if (drawMode && drawPoints.length) { drawPoints.pop(); renderDrawPreview(); setDrawHint(); } }
-        function clearFences() {
-            if (!fences.length) return;
-            if (!confirm('Remove all drawn fences?')) return;
-            fences = []; saveFences(); renderFences();
+        function clearPendingCaptures() {
+            if (!pendingCaptures.length) return;
+            if (!confirm('Remove all pending (unwritten) traces?')) return;
+            pendingCaptures = []; savePendingCaptures(); renderPendingCaptures();
         }
         function renderDrawPreview() {
             const g = siteLayer(); if (!g) return;
-            g.querySelectorAll('.fence-preview').forEach(n => n.remove());
+            g.querySelectorAll('.capture-preview').forEach(n => n.remove());
             if (drawPoints.length >= 2) {
-                const pl = document.createElementNS(SVGNS, 'polyline');
+                const closed = drawKind === 'driveway' && drawPoints.length >= 3;
+                const pl = document.createElementNS(SVGNS, closed ? 'polygon' : 'polyline');
                 pl.setAttribute('points', drawPoints.map(p => p.x + ',' + p.y).join(' '));
-                pl.setAttribute('class', 'fence-preview'); pl.setAttribute('fill', 'none');
+                pl.setAttribute('class', 'capture-preview');
+                pl.setAttribute('fill', closed ? 'rgba(255,122,0,0.15)' : 'none');
                 pl.setAttribute('stroke', '#ff7a00'); pl.setAttribute('stroke-width', '0.8'); pl.setAttribute('stroke-dasharray', '2,1.5');
                 g.appendChild(pl);
             }
             drawPoints.forEach(p => {
                 const c = document.createElementNS(SVGNS, 'circle');
                 c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', '1.1');
-                c.setAttribute('class', 'fence-preview'); c.setAttribute('fill', '#ff7a00');
+                c.setAttribute('class', 'capture-preview'); c.setAttribute('fill', '#ff7a00');
                 g.appendChild(c);
             });
         }
-        function renderFences() {
+        // Pending captures: traced but not yet written through the CLI. Dashed so
+        // they can't be mistaken for model features (which come in via the SVG).
+        function renderPendingCaptures() {
             const g = siteLayer(); if (!g) return;
-            g.querySelectorAll('.fence-final').forEach(n => n.remove());
-            fences.forEach(f => {
-                const pl = document.createElementNS(SVGNS, 'polyline');
+            g.querySelectorAll('.capture-pending').forEach(n => n.remove());
+            pendingCaptures.forEach(f => {
+                const closed = f.kind === 'driveway';
+                const pl = document.createElementNS(SVGNS, closed ? 'polygon' : 'polyline');
                 pl.setAttribute('points', f.points.map(p => p.x + ',' + p.y).join(' '));
-                pl.setAttribute('class', 'fence-final'); pl.setAttribute('fill', 'none');
-                pl.setAttribute('stroke', '#5a2d00'); pl.setAttribute('stroke-width', '0.7');
+                pl.setAttribute('class', 'capture-pending');
+                pl.setAttribute('fill', closed ? 'rgba(255,122,0,0.12)' : 'none');
+                pl.setAttribute('stroke', '#cc6200'); pl.setAttribute('stroke-width', '0.6'); pl.setAttribute('stroke-dasharray', '3,2');
                 g.appendChild(pl);
-                f.points.forEach(p => {
-                    const c = document.createElementNS(SVGNS, 'circle');
-                    c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', '0.55');
-                    c.setAttribute('class', 'fence-final'); c.setAttribute('fill', '#5a2d00');
-                    g.appendChild(c);
-                });
             });
         }
         let drawToolsWired = false;
@@ -2927,9 +2947,9 @@
             });
             window.addEventListener('keydown', (e) => {
                 if (!drawMode) return;
-                if (e.key === 'Escape') cancelFenceDraw();
+                if (e.key === 'Escape') cancelDraw();
                 else if (e.key === 'Backspace') { e.preventDefault(); undoDrawPoint(); }
-                else if (e.key === 'Enter') { e.preventDefault(); finishFence(); }
+                else if (e.key === 'Enter') { e.preventDefault(); finishDraw(); }
             });
         }
 
