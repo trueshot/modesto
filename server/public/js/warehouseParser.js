@@ -157,9 +157,15 @@ class ModelTBuilder {
         const mat = new BABYLON.StandardMaterial('driveMat_' + drive.id, this.scene);
         mat.diffuseColor = SURFACE_COLORS[drive.surface] || new BABYLON.Color3(0.6, 0.58, 0.55);  // other/unknown
         mat.specularColor = new BABYLON.Color3(0.03, 0.03, 0.03);
-        const poly = BABYLON.MeshBuilder.CreatePolygon('driveway_' + drive.id,
-            { shape: pts, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, this.scene);
-        poly.position.y = groundY + 0.02;   // just above the grass, still under the slab lip
+        // 1 in of render thickness (George 2026-08-31: the flat polygon's 0.02
+        // offset still bled through the grass at distance — depth-buffer
+        // precision). Extrudes DOWNWARD from position.y, so top sits 1 in above
+        // the grass, bottom on it. Render constant, not data — the driveway is
+        // still ground in the model.
+        const DRIVE_LIFT = 1 / 12;
+        const poly = BABYLON.MeshBuilder.ExtrudePolygon('driveway_' + drive.id,
+            { shape: pts, depth: DRIVE_LIFT, sideOrientation: BABYLON.Mesh.DOUBLESIDE }, this.scene);
+        poly.position.y = groundY + DRIVE_LIFT;   // top 1 in proud of the grass, under the slab lip
         poly.material = mat;
         poly.metadata = { siteFeature: drive.id, kind: 'driveway', surface: drive.surface };
         this.meshes.siteFeatures.push(poly);
