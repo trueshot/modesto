@@ -788,6 +788,34 @@ function generateColumns(columns) {
   return columns.map((column) => generateColumn(column)).join('');
 }
 
+// Printing platforms (§5.16, 2026-08-31): FIXED PLANT anchors for printer devices, slab-bound
+// like columns (slabs[].printingPlatforms[]). The platform is the plant ANCHOR; the printer
+// is a DEVICE in the device registry (printers.json / operating layer) — the linkage never
+// enters the ModelT (the mount<->device pattern, like camera MAC/IP). 2D = the plate
+// footprint: WHOLE-INCH dims converted to feet at render, a rect centered on (x,y) with the
+// long side per longAxis, fill #8899bb @0.9 stroke #333 0.1, id label below (column style).
+// height_in + support are 3D-only. A platform missing plate_in or a valid longAxis renders
+// NOTHING (no invented size or orientation — the validator names the gap).
+function generatePlatform(p) {
+  const round = v => Math.round(v * 1000) / 1000;
+  const { id, x, y, longAxis } = p;
+  if (!p.plate_in || p.plate_in.length === undefined || p.plate_in.width === undefined) return '';
+  if (longAxis !== 'east-west' && longAxis !== 'north-south') return '';
+  const Lft = p.plate_in.length / 12, Wft = p.plate_in.width / 12;   // length lies along the long axis
+  const w = longAxis === 'east-west' ? Lft : Wft;                    // extent along x
+  const h = longAxis === 'east-west' ? Wft : Lft;                    // extent along y
+  return `
+  <g id="platform_${id}"${sourceAttr(p)}>
+    <rect x="${round(x - w / 2)}" y="${round(y - h / 2)}" width="${round(w)}" height="${round(h)}" fill="#8899bb" fill-opacity="0.9" stroke="#333" stroke-width="0.1"/>
+    <text x="${round(x)}" y="${round(y + h / 2 + 1.2)}" font-size="1" text-anchor="middle" fill="#333" font-weight="bold">${id}</text>
+  </g>`;
+}
+
+function generatePlatforms(platforms) {
+  if (!platforms || platforms.length === 0) return '';
+  return platforms.map(p => generatePlatform(p)).join('');
+}
+
 // Generate a packing line (§5.11): elements in FLOW ORDER — RUNs (conveyor segments) and
 // STATIONs (machines). Run = a band of `width` along the path with downstream chevrons
 // ~every 8 ft; station = its footprint (rect or disc) lettered by kind with inlet/outlet
@@ -1266,7 +1294,7 @@ ${embeddedJSON}
  * Generate SVG for a single slab (v2 format)
  */
 function generateSlabSVG(slab) {
-  const { id, name, corners, walls = [], columns = [], doors = [], cameras = [], packingLines = [], truckWells = [], markings = [] } = slab;
+  const { id, name, corners, walls = [], columns = [], doors = [], cameras = [], packingLines = [], truckWells = [], markings = [], printingPlatforms = [] } = slab;
 
   // Generate slab footprint
   const slabSVG = generateSlab(corners);
@@ -1284,6 +1312,7 @@ function generateSlabSVG(slab) {
   // Generate other components
   const partitionIds = new Set(partitionWalls.map(w => w.id));
   const columnsSVG = generateColumns(columns);
+  const platformsSVG = generatePlatforms(printingPlatforms);
   const doorsSVG = generateDoors(doors, partitionIds);
   const camerasSVG = generateCameras(cameras);
   const linesSVG = generateLines(packingLines);
@@ -1301,6 +1330,11 @@ function generateSlabSVG(slab) {
       <!-- Structural Columns -->
       <g id="${id}_columns" style="display:inline">
         ${columnsSVG}
+      </g>
+
+      <!-- Printing Platforms -->
+      <g id="${id}_platforms" style="display:inline">
+        ${platformsSVG}
       </g>
 
       <!-- Walls -->
@@ -1444,6 +1478,7 @@ function validateWarehouseSpec(spec) {
   const packingLines = [];
   const truckWells = [];
   const markings = [];
+  const printingPlatforms = [];
   const doorsBySlab = {};  // slabId -> { doorId -> door }, for truck-well door cross-reference
   const wellsBySlab = {};  // slabId -> Set(wellId), for truckBay-marking well cross-reference
 
@@ -1457,6 +1492,7 @@ function validateWarehouseSpec(spec) {
     (s.packingLines || []).forEach(pl => packingLines.push({ ...pl, _slab: s.id }));
     (s.truckWells || []).forEach(tw => { truckWells.push({ ...tw, _slab: s.id }); wellsBySlab[s.id].add(tw.id); });
     (s.markings || []).forEach((mk, i) => markings.push({ ...mk, _slab: s.id, _index: i }));
+    (s.printingPlatforms || []).forEach(pp => printingPlatforms.push({ ...pp, _slab: s.id }));
   });
   (spec.doors || []).forEach(d => doors.push(d));
   (spec.cameras || []).forEach(c => cameras.push(c));
@@ -1904,6 +1940,56 @@ function validateWarehouseSpec(spec) {
     } else if (f.kind === 'parking') {
       violations.push({ type: 'siteFeature', id: fid,
         message: `Site feature "${fid}" kind "parking" is RESERVED (§5.14) - not defined or drawn yet; nothing rendered` });
+    }
+  });
+
+  // Validate printing platforms (§5.16 + 8.3, 2026-08-31): slab-bound plant anchors, herb
+  // pool. x/y whole FEET (plate CENTER — store centers, 3.1); plate_in.length/width and
+  // height_in whole INCHES (the 3.1 insulation precedent: tape-level facts stay in inches,
+  // never falsified into feet — do NOT apply the whole-feet rule to inch fields); longAxis
+  // REQUIRED (an orientation is a physical fact — the slideDirection rule); missing support
+  // WARNS as an OPEN FACT, not an error (a labeled estimate: source is legal per George).
+  const seenPlatformIds = new Set();
+  printingPlatforms.forEach(p => {
+    if (validNames.printingPlatforms && !validNames.printingPlatforms.includes(p.id)) {
+      violations.push({
+        type: 'printingPlatform',
+        id: p.id,
+        message: `Invalid printing-platform name "${p.id}"${where(p)} - must use herb name from naming conventions`,
+        validNames: validNames.printingPlatforms
+      });
+    }
+    if (seenPlatformIds.has(p.id)) {
+      violations.push({ type: 'printingPlatform', id: p.id,
+        message: `Duplicate printing-platform ID "${p.id}"${where(p)} - each platform must have a unique identifier` });
+    }
+    seenPlatformIds.add(p.id);
+    ['x', 'y'].forEach(f => fracWarn('printingPlatform', p.id, f, p[f], where(p)));
+    if (p.longAxis !== 'east-west' && p.longAxis !== 'north-south') {
+      violations.push({ type: 'printingPlatform', id: p.id,
+        message: `Printing platform "${p.id}"${where(p)} longAxis "${p.longAxis}" invalid - required, east-west|north-south; an orientation must not be defaulted (§5.16)` });
+    }
+    if (!p.plate_in || p.plate_in.length === undefined || p.plate_in.width === undefined) {
+      violations.push({ type: 'printingPlatform', id: p.id,
+        message: `Printing platform "${p.id}"${where(p)} missing plate_in {length, width} (whole inches) - required (§5.16)` });
+    } else {
+      ['length', 'width'].forEach(f => {
+        if (isFraction(p.plate_in[f])) {
+          violations.push({ type: 'printingPlatform', id: p.id,
+            message: `Printing platform "${p.id}"${where(p)} plate_in.${f} = ${p.plate_in[f]} must be a whole number of inches (§5.16)` });
+        }
+      });
+    }
+    if (p.height_in === undefined) {
+      violations.push({ type: 'printingPlatform', id: p.id,
+        message: `Printing platform "${p.id}"${where(p)} missing height_in (whole inches above the slab) - required (§5.16)` });
+    } else if (isFraction(p.height_in)) {
+      violations.push({ type: 'printingPlatform', id: p.id,
+        message: `Printing platform "${p.id}"${where(p)} height_in = ${p.height_in} must be a whole number of inches (§5.16)` });
+    }
+    if (p.support === undefined) {
+      violations.push({ type: 'printingPlatform', id: p.id,
+        message: `Printing platform "${p.id}"${where(p)} support unknown - open fact (§5.16): what is the plate welded to? A labeled estimate (source: "estimate:<who>") is legal` });
     }
   });
 

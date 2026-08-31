@@ -24,6 +24,8 @@ class NameManager {
     this.siteFeatureNames = this.loadConventionPool('siteFeatures');
     // Vantages (bird pool, §5.15): virtual viewpoints, NOT cameras.
     this.vantageNames = this.loadConventionPool('vantages');
+    // Printing platforms (herb pool, §5.16): slab-bound plant anchors for printer devices.
+    this.printingPlatformNames = this.loadConventionPool('printingPlatforms');
   }
 
   /**
@@ -130,6 +132,20 @@ class NameManager {
 
     if (!availableName) {
       throw new Error('No available packing-line names remaining in the packingLines pool');
+    }
+
+    return availableName;
+  }
+
+  /**
+   * Get the next available printing-platform name (herb pool, §5.16)
+   */
+  getNextPrintingPlatformName(existingPlatforms) {
+    const usedNames = new Set(existingPlatforms.map(p => p.id));
+    const availableName = this.printingPlatformNames.find(name => !usedNames.has(name));
+
+    if (!availableName) {
+      throw new Error('No available printing-platform names remaining in the printingPlatforms pool');
     }
 
     return availableName;

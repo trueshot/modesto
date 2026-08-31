@@ -359,6 +359,28 @@
       "marcy",
       "mansfield"
     ],
+    "printingPlatforms": [
+      "basil",
+      "sage",
+      "thyme",
+      "oregano",
+      "mint",
+      "rosemary",
+      "dill",
+      "fennel",
+      "chive",
+      "parsley",
+      "cilantro",
+      "tarragon",
+      "marjoram",
+      "chervil",
+      "sorrel",
+      "lovage",
+      "savory",
+      "borage",
+      "hyssop",
+      "angelica"
+    ],
     "vantages": [
       "hawk",
       "eagle",
