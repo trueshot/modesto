@@ -990,20 +990,32 @@ function generateMarkings(markings, wellsById, doorsById) {
   return markings.map((mk, i) => generateMarking(mk, i, wellsById, doorsById)).join('');
 }
 
-// Site features (§5.14, 2026-08-30): FACILITY-level plant on the property, not slab-bound
-// (spec.siteFeatures[], a sibling of slabs/property). First kind = FENCE, drawn as the
-// architect's symbol: one 0.25-stroke line along the path with 0.5x0.5 square posts at
-// every vertex and every FENCE_POST_PITCH ft along each segment (a render constant, not
-// data). `closed` joins the last vertex back to the first; `gaps` are RESERVED and not
-// drawn. Colors (Appendix A): wooden #6b4f2a, any other material #666. driveway/parking
-// are RESERVED — nothing is invented ahead of data, so they emit an empty group only.
+// Site features (§5.14, 2026-08-30; driveway added 2026-08-31): FACILITY-level plant on the
+// property, not slab-bound (spec.siteFeatures[], a sibling of slabs/property). Site features
+// are free geometry — ANY angles are legal (the §5.1 orthogonality rule binds slabs only).
+// LINEAR kind FENCE: the architect's symbol — one 0.25-stroke line along the path with
+// 0.5x0.5 square posts at every vertex and every FENCE_POST_PITCH ft along each segment (a
+// render constant, not data). `closed` joins the last vertex back to the first; `gaps` are
+// RESERVED and not drawn. Colors (Appendix A): wooden #6b4f2a, any other material #666.
+// AREA kind DRIVEWAY: an always-closed filled polygon (`closed` unused), fill by surface
+// (Appendix A) @0.8, stroke #888 0.1, drawn in <g id="site_ground"> BEFORE the slabs —
+// driveways are ground, they run under aprons; fences stay in the after-slabs site group.
+// parking is RESERVED — nothing is invented ahead of data, so it emits an empty group only.
 const FENCE_POST_PITCH = 8;
+// Appendix A driveway fills; an unlisted surface (e.g. 'other') gets a neutral #cccccc —
+// no App. A row for it yet (flagged to the spec owner).
+const DRIVEWAY_FILLS = { gravel: '#c9c2b2', asphalt: '#9a9a9a', concrete: '#c0c0c8', dirt: '#b59b7a' };
 function generateSiteFeature(f, i) {
   const round = v => Math.round(v * 1000) / 1000;
   const id = f.id || `${f.kind || 'feature'}_${i}`;
-  const attrs = `data-kind="${f.kind}"` + (f.material ? ` data-material="${f.material}"` : '') + sourceAttr(f);
+  const attrs = `data-kind="${f.kind}"` + (f.material ? ` data-material="${f.material}"` : '')
+    + (f.surface ? ` data-surface="${f.surface}"` : '') + sourceAttr(f);
   let svg = `\n    <g id="site_${id}" ${attrs}>`;
-  if (f.kind === 'fence' && Array.isArray(f.path) && f.path.length >= 2) {
+  if (f.kind === 'driveway' && Array.isArray(f.path) && f.path.length >= 3) {
+    const fill = DRIVEWAY_FILLS[f.surface] || '#cccccc';
+    const d = f.path.map((p, k) => `${k === 0 ? 'M' : 'L'} ${round(p.x)},${round(p.y)}`).join(' ') + ' Z';
+    svg += `\n      <path d="${d}" fill="${fill}" fill-opacity="0.8" stroke="#888" stroke-width="0.1"/>`;
+  } else if (f.kind === 'fence' && Array.isArray(f.path) && f.path.length >= 2) {
     const color = (f.material === 'wooden') ? '#6b4f2a' : '#666';
     const pts = f.closed ? [...f.path, f.path[0]] : f.path;
     const d = pts.map((p, k) => `${k === 0 ? 'M' : 'L'} ${round(p.x)},${round(p.y)}`).join(' ');
@@ -1023,10 +1035,23 @@ function generateSiteFeature(f, i) {
   return svg;
 }
 
+// AREA kinds draw under the slabs in site_ground; everything else in the after-slabs site group.
+// (parking joins SITE_GROUND_KINDS when it is defined — it follows the driveway area model.)
+const SITE_GROUND_KINDS = ['driveway'];
+
 // Facility-level <g id="site">, drawn AFTER the slabs (on top — a fence is thin and crosses pavement).
 function generateSiteFeatures(siteFeatures) {
-  const inner = (siteFeatures || []).map((f, i) => generateSiteFeature(f, i)).join('');
+  const inner = (siteFeatures || []).filter(f => !SITE_GROUND_KINDS.includes(f.kind))
+    .map((f, i) => generateSiteFeature(f, i)).join('');
   return `\n  <g id="site">${inner}\n  </g>`;
+}
+
+// Facility-level <g id="site_ground">, drawn BEFORE the slabs (§5.14: driveways are ground —
+// they run under aprons and up to the building).
+function generateSiteGround(siteFeatures) {
+  const inner = (siteFeatures || []).filter(f => SITE_GROUND_KINDS.includes(f.kind))
+    .map((f, i) => generateSiteFeature(f, i)).join('');
+  return `\n    <g id="site_ground">${inner}\n    </g>`;
 }
 
 // Convert turtle graphics segments to points
@@ -1198,8 +1223,10 @@ function generateModelTSVG(spec) {
   const width = (viewBoxWidth * 3.78).toFixed(1);
   const height = (viewBoxHeight * 3.78).toFixed(1);
 
-  // Generate SVG for each slab, then the facility-level site features (§5.14, drawn on top)
+  // Generate SVG for each slab, plus the facility-level site features (§5.14):
+  // area kinds (site_ground) under the slabs, linear kinds (site) on top.
   const slabsSVG = slabs.map(slab => generateSlabSVG(slab)).join('\n');
+  const siteGroundSVG = generateSiteGround(siteFeatures);
   const siteSVG = generateSiteFeatures(siteFeatures);
 
   // Embed the source JSON
@@ -1215,6 +1242,8 @@ function generateModelTSVG(spec) {
   <g id="layer1">
     <!-- Property boundary -->
     <rect id="land" width="${viewBoxWidth}" height="${viewBoxHeight}" x="${minX}" y="${minY}" style="fill:#e0e0e0;fill-opacity:0.3;stroke:none"/>
+
+    <!-- Site ground (5.14): area site features, drawn before the slabs -->${siteGroundSVG}
 
     ${slabsSVG}
 
@@ -1780,13 +1809,15 @@ function validateWarehouseSpec(spec) {
     }
   });
 
-  // Validate site features (§5.14 + 8.3, 2026-08-30): facility-level; mountain-name id (one
-  // pool for all kinds); kind in fence|driveway|parking (driveway/parking RESERVED — no rules
-  // invented ahead of data, so only id/kind/source apply); a FENCE needs material (no
+  // Validate site features (§5.14 + 8.3; driveway added 2026-08-31): facility-level;
+  // mountain-name id (one pool for all kinds); kind in fence|driveway|parking (parking
+  // RESERVED — no rules invented ahead of data, so only id/kind/source apply); `source` is
+  // REQUIRED on every site feature (usually traced:aerial). A FENCE needs material (no
   // default — a guessed material is a false fact), whole-foot height, a path of >= 2
-  // WHOLE-FOOT vertices (plant; +/-2 ft tracing precision makes decimals false), and every
-  // vertex inside property.boundary when explicit (a fence off the property is a tracing
-  // error). `source` is REQUIRED on every site feature (usually traced:aerial).
+  // WHOLE-FOOT vertices; a DRIVEWAY needs surface (no default; 'other' needs a label) and a
+  // path of >= 3 whole-foot vertices (a 2-point area is a line). Every vertex must sit
+  // inside property.boundary when explicit (off the property = tracing error). DIAGONAL
+  // EDGES ARE LEGAL on site features — the §5.1 slab orthogonality rule does NOT apply.
   const SITE_KINDS = ['fence', 'driveway', 'parking'];
   const seenSiteIds = new Set();
   siteFeatures.forEach((f, i) => {
@@ -1840,9 +1871,34 @@ function validateWarehouseSpec(spec) {
           }
         }
       }
-    } else if (SITE_KINDS.includes(f.kind)) {
+    } else if (f.kind === 'driveway') {
+      if (f.surface === undefined) {
+        violations.push({ type: 'siteFeature', id: fid,
+          message: `Driveway "${fid}" missing surface (gravel|asphalt|concrete|dirt|other) - required; a surface must not be defaulted (§5.14)` });
+      } else if (f.surface === 'other' && !f.label) {
+        violations.push({ type: 'siteFeature', id: fid,
+          message: `Driveway "${fid}" surface 'other' requires a label (§5.14)` });
+      }
+      if (!Array.isArray(f.path) || f.path.length < 3) {
+        violations.push({ type: 'siteFeature', id: fid,
+          message: `Driveway "${fid}" needs a path of >= 3 vertices - a 2-point area is a line (§5.14)` });
+      } else {
+        f.path.forEach((p, k) => {
+          fracWarn('driveway', fid, `path[${k}].x`, p.x, '');
+          fracWarn('driveway', fid, `path[${k}].y`, p.y, '');
+        });
+        const bnd = spec.property && spec.property.boundary;
+        if (bnd) {
+          const off = f.path.filter(p => p.x < bnd.x || p.x > bnd.x + bnd.width || p.y < bnd.y || p.y > bnd.y + bnd.height);
+          if (off.length) {
+            violations.push({ type: 'siteFeature', id: fid,
+              message: `Driveway "${fid}" has ${off.length} vertex(es) outside property.boundary (first: ${off[0].x},${off[0].y}) - a driveway off the property is a tracing error (§8.3)` });
+          }
+        }
+      }
+    } else if (f.kind === 'parking') {
       violations.push({ type: 'siteFeature', id: fid,
-        message: `Site feature "${fid}" kind "${f.kind}" is RESERVED (§5.14) - not defined or drawn yet; nothing rendered` });
+        message: `Site feature "${fid}" kind "parking" is RESERVED (§5.14) - not defined or drawn yet; nothing rendered` });
     }
   });
 
