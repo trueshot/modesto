@@ -5,6 +5,16 @@ const config = require('../../config/config');
 
 const router = express.Router();
 
+// Warehouse ids are directory names under warehousesPath. Reject anything that
+// isn't a plain slug so ':id' can't be used to traverse out of that folder
+// (path safety for every :id route below). — modestomulti gen-6
+const VALID_ID = /^[A-Za-z0-9_-]+$/;
+function badId(id, res) {
+  if (VALID_ID.test(id)) return false;
+  res.status(400).json({ error: 'invalid warehouse id' });
+  return true;
+}
+
 /**
  * GET /api/warehouses
  * List all available warehouses
@@ -50,6 +60,7 @@ router.get('/', (req, res) => {
 router.get('/:id', (req, res) => {
   try {
     const { id } = req.params;
+    if (badId(id, res)) return;
     const warehouseSpecPath = path.join(config.warehousesPath, id, 'warehouse.json');
     const metadataPath = path.join(config.warehousesPath, id, 'metadata.json');
 
@@ -89,6 +100,7 @@ router.get('/:id', (req, res) => {
 router.get('/:id/thumbnails', (req, res) => {
   try {
     const { id } = req.params;
+    if (badId(id, res)) return;
     const { nvr } = req.query;
     const thumbnailsPath = path.join(config.warehousesPath, id, 'cameras', 'thumb');
     const configPath = path.join(config.warehousesPath, id, 'cameras', 'config.json');
@@ -151,6 +163,7 @@ router.get('/:id/thumbnails', (req, res) => {
 router.get('/:id/metadata', (req, res) => {
   try {
     const { id } = req.params;
+    if (badId(id, res)) return;
     const metadataPath = path.join(config.warehousesPath, id, 'metadata.json');
 
     if (!fs.existsSync(metadataPath)) {
@@ -174,6 +187,7 @@ router.get('/:id/metadata', (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/:id/linkages', (req, res) => {
   const { id } = req.params;
+  if (badId(id, res)) return;
   const dbPath = path.join(config.warehousesPath, id, `${id}.db`);
   if (!fs.existsSync(dbPath)) return res.json({ linkages: {} });
   try {
@@ -232,6 +246,7 @@ router.get('/:id/live/:ip', async (req, res) => {
 // ---------------------------------------------------------------------------
 router.get('/:id/views/:ip', (req, res) => {
   const { id, ip } = req.params;
+  if (badId(id, res)) return;
   if (!/^[0-9]{1,3}([.][0-9]{1,3}){3}$/.test(ip)) return res.status(400).json({ error: 'bad ip' });
   const dir = path.join(config.warehousesPath, id, 'cameras', 'views');
   try {
