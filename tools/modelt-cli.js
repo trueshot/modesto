@@ -58,6 +58,18 @@ function parseOptions(args) {
 }
 
 /**
+ * Parse a polyline path: "424,501 506,499 520,137" -> [{x,y},...]
+ * modeltbabylon gen-15 (§5.14 site features)
+ */
+function parsePath(pathStr) {
+  if (!pathStr || typeof pathStr !== 'string') return [];
+  return pathStr.trim().split(/\s+/).filter(Boolean).map(pair => {
+    const [x, y] = pair.split(',').map(Number);
+    return { x, y };
+  });
+}
+
+/**
  * Parse segment string format: "east:50,south:20" -> [{direction:'east',length:50},...]
  */
 function parseSegments(segmentStr) {
@@ -95,6 +107,7 @@ async function main() {
       // ==================== CAMERAS ====================
       case 'add-camera': {
         const camera = editor.addCamera(options.slab, {
+          id: options.id,   // optional externally-allocated mount id (rec C) — modeltbabylon gen-15
           x: options.x,
           y: options.y,
           elevation: options.elevation,
@@ -109,6 +122,28 @@ async function main() {
           success: true,
           action: 'add-camera',
           component: camera
+        };
+        break;
+      }
+
+      // Add a site feature (§5.14) — fence now. Path: "x,y x,y x,y" (whole-foot
+      // vertices, rounded on write). id auto-assigned from the mountain pool.
+      // modeltbabylon gen-15
+      case 'add-site-feature': {
+        const feature = editor.addSiteFeature({
+          id: options.id,
+          kind: options.kind || 'fence',
+          material: options.material,
+          height: options.height,
+          path: parsePath(options.path),
+          closed: options.closed === true || options.closed === 'true',
+          source: options.source
+        });
+        editor.commit();
+        result = {
+          success: true,
+          action: 'add-site-feature',
+          component: feature
         };
         break;
       }

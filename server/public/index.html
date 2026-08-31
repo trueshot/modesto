@@ -257,7 +257,37 @@
             padding: 20px;
             transform-origin: top left;
             transition: transform 0.1s;
+            position: relative;
         }
+        /* Aerial topo underlay in the 2D plan — tracing guide. modeltbabylon gen-15 */
+        #aerialUnderlay {
+            position: absolute;
+            left: 20px;   /* matches #svgViewer padding so 0,0 aligns with the SVG box */
+            top: 20px;
+            transform-origin: center center;   /* rotate/scale about the image centre, like the prototype */
+            user-select: none;
+            -webkit-user-drag: none;
+            cursor: grab;
+            z-index: 0;
+        }
+        #aerialUnderlay.dragging { cursor: grabbing; }
+        #aerialUnderlay.locked { cursor: default; pointer-events: none; }
+        /* plan draws on top of the aerial but must NOT eat the mouse, or you can't
+           grab the photo underneath to drag it (prototype did the same). */
+        #svgViewer svg { position: relative; z-index: 1; pointer-events: none; }
+        #underlayControls {
+            display: inline-flex;
+            gap: 12px;
+            align-items: center;
+            margin-left: 22px;
+            padding-left: 22px;
+            border-left: 1px solid #ccc;
+            font-size: 12px;
+            color: #666;
+        }
+        #underlayControls label { display: inline-flex; align-items: center; gap: 5px; }
+        #underlayControls input[type=range] { width: 84px; }
+        #underlayControls .uv { min-width: 34px; text-align: right; color: #333; font-variant-numeric: tabular-nums; }
         /* Camera Image Overlay */
         #cameraImageOverlay {
             position: absolute;
@@ -554,9 +584,28 @@
         <div id="svgControls">
             <button class="viewToggleBtn" onclick="toggleView()">View 3D Model</button>
             <span style="margin-left: 20px; color: #666;">Zoom:</span>
-            <button class="zoomBtn active" onclick="setSvgZoom(1)">1x</button>
+            <button id="svgFitBtn" class="zoomBtn active" onclick="fitSvgToScreen()">Fit</button>
+            <button class="zoomBtn" onclick="setSvgZoom(1)">1x</button>
             <button class="zoomBtn" onclick="setSvgZoom(2)">2x</button>
             <button class="zoomBtn" onclick="setSvgZoom(3)">3x</button>
+            <span id="underlayControls">
+                <span style="color:#888; font-weight:bold;">Aerial:</span>
+                <label>photo <input id="ulPhoto" type="range" min="0" max="1" step="0.02" value="1" oninput="setUnderlay('photo', this.value)"><span class="uv" id="ulPhotoV">100%</span></label>
+                <label>plan <input id="ulPlan" type="range" min="0" max="1" step="0.02" value="0.6" oninput="setUnderlay('plan', this.value)"><span class="uv" id="ulPlanV">60%</span></label>
+                <label>scale <input id="ulScale" type="range" min="0.05" max="6" step="0.005" value="1" oninput="setUnderlay('scale', this.value)"><span class="uv" id="ulScaleV">1.00x</span></label>
+                <label>rotate <input id="ulRot" type="range" min="-180" max="180" step="0.5" value="0" oninput="setUnderlay('rot', this.value)"><span class="uv" id="ulRotV">0&deg;</span></label>
+                <button class="zoomBtn" onclick="resetUnderlay()">Reset</button>
+                <button class="zoomBtn" id="ulToggleBtn" onclick="toggleUnderlay()">Hide</button>
+                <button class="zoomBtn" id="ulLockBtn" onclick="toggleUnderlayLock()">Lock</button>
+            </span>
+            <span id="drawControls" style="margin-left:16px; padding-left:16px; border-left:1px solid #ccc;">
+                <span style="color:#888; font-weight:bold;">Draw:</span>
+                <button class="zoomBtn" id="drawFenceBtn" onclick="toggleFenceDraw()">Fence</button>
+                <button class="zoomBtn" id="drawDoneBtn" onclick="finishFence()" style="display:none;">Finish</button>
+                <button class="zoomBtn" id="drawCancelBtn" onclick="cancelFenceDraw()" style="display:none;">Cancel</button>
+                <button class="zoomBtn" onclick="clearFences()">Clear</button>
+                <span id="drawHint" style="color:#888; font-size:11px;"></span>
+            </span>
         </div>
         <div id="svgViewerContainer">
             <div id="svgViewer"></div>
@@ -940,7 +989,58 @@
         // server so it works over the VPN), falling back to the last static
         // snapshot in cameras/full/ if the live grab fails.
         // modeltbabylon gen-10, 2026-08-26 (George: "grab the associated feed")
-        function loadCameraImage() {
+        // Saved-view overlay alignment (modeltbabylon gen-15, 2026-08-30) --------
+        // George aligns a camera's full-res frame in modeltcamerascat's 2D viewer
+        // (zoom / rotate / pan); it is saved per-IP to cameras/views/. When the
+        // overlay is shown for a camera that has a saved view, reproduce his exact
+        // framing on the overlay image — scale by screen_px_per_image_px and rotate
+        // rotate_deg about center_image_px (CSS clockwise-positive) — instead of the
+        // default stretch-to-fill, so it lines up with the 3D camera view.
+        let currentSavedView = null;
+
+        async function loadSavedViewTransform(ip) {
+            currentSavedView = null;
+            if (!ip) return;
+            try {
+                const r = await fetch(`/api/warehouses/${currentWarehouseId}/views/${ip}`);
+                if (!r.ok) return;                       // 404 = no saved view -> fill mode
+                const data = await r.json();
+                const v = data && data.view;
+                if (v && Array.isArray(v.center_image_px) && v.screen_px_per_image_px) {
+                    currentSavedView = v;
+                }
+            } catch (e) { /* no saved view -> fill mode */ }
+        }
+
+        function applyOverlayAlignment() {
+            const img = document.getElementById('overlayImage');
+            if (!img) return;
+            const v = currentSavedView;
+            if (v && img.naturalWidth) {
+                const cx = v.center_image_px[0], cy = v.center_image_px[1];
+                img.style.width = img.naturalWidth + 'px';
+                img.style.height = img.naturalHeight + 'px';
+                img.style.maxWidth = 'none';
+                img.style.objectFit = 'none';
+                img.style.position = 'absolute';
+                img.style.left = `calc(50% - ${cx}px)`;
+                img.style.top = `calc(50% - ${cy}px)`;
+                img.style.transformOrigin = `${cx}px ${cy}px`;
+                img.style.transform = `rotate(${v.rotate_deg || 0}deg) scale(${v.screen_px_per_image_px})`;
+            } else {
+                // default stretch-to-fill (no saved view)
+                img.style.width = '100%'; img.style.height = '100%';
+                img.style.maxWidth = ''; img.style.objectFit = 'fill';
+                img.style.position = ''; img.style.left = ''; img.style.top = '';
+                img.style.transformOrigin = ''; img.style.transform = '';
+            }
+        }
+
+        // Show Image: LIVE frame from the mapped camera (proxied through this
+        // server so it works over the VPN), falling back to the last static
+        // snapshot in cameras/full/ if the live grab fails. Reproduces George's
+        // saved framing when one exists. modeltbabylon gen-10/gen-15
+        async function loadCameraImage() {
             const img = document.getElementById('overlayImage');
             const srcEl = document.getElementById('overlaySource');
             const mapping = currentCameraData && currentCameraData.id
@@ -952,6 +1052,7 @@
             }
             const fullIp = mapping.fullIp ||
                 (mapping.ip && String(mapping.ip).includes('.') ? mapping.ip : `192.168.0.${mapping.ip}`);
+            await loadSavedViewTransform(fullIp);   // George's aligned framing, if saved
             const liveUrl = `/api/warehouses/${currentWarehouseId}/live/${fullIp}?t=${Date.now()}`;
             if (srcEl) srcEl.textContent = `Grabbing live frame from ${fullIp}…`;
             img.onerror = () => {
@@ -964,8 +1065,10 @@
                 if (srcEl) srcEl.textContent = `SNAPSHOT (live grab failed) — ${fullIp}`;
             };
             img.onload = () => {
+                applyOverlayAlignment();
+                const aligned = currentSavedView ? ' · aligned to saved view' : '';
                 if (srcEl && img.src.includes('/live/')) {
-                    srcEl.textContent = `LIVE — ${fullIp} @ ${new Date().toLocaleTimeString()}`;
+                    srcEl.textContent = `LIVE — ${fullIp} @ ${new Date().toLocaleTimeString()}${aligned}`;
                 }
             };
             img.src = liveUrl;
@@ -2506,6 +2609,29 @@
             });
         }
 
+        // Fit the ENTIRE plan into the 2D viewport (both dimensions) — the default
+        // when the SVG view opens, so nothing scrolls off the bottom. The topo
+        // overlay will trace onto this. modeltbabylon gen-15, 2026-08-30 (George)
+        function fitSvgToScreen() {
+            const container = document.getElementById('svgViewerContainer');
+            const svgViewer = document.getElementById('svgViewer');
+            const svg = svgViewer && svgViewer.querySelector('svg');
+            if (!svg || !container) return;
+            // measure the SVG at scale 1, then scale to fit the container both ways
+            svgViewer.style.transform = 'scale(1)';
+            const r = svg.getBoundingClientRect();
+            const pad = 24;
+            const cw = container.clientWidth - pad * 2;
+            const ch = container.clientHeight - pad * 2;
+            if (!r.width || !r.height || cw <= 0 || ch <= 0) return;
+            const fit = Math.min(cw / r.width, ch / r.height);
+            currentSvgZoom = fit;
+            svgViewer.style.transform = `scale(${fit})`;
+            document.querySelectorAll('.zoomBtn').forEach(b => b.classList.remove('active'));
+            const fitBtn = document.getElementById('svgFitBtn');
+            if (fitBtn) fitBtn.classList.add('active');
+        }
+
         function toggleView() {
             const renderCanvas = document.getElementById("renderCanvas");
             const svgContainer = document.getElementById("svgContainer");
@@ -2516,6 +2642,10 @@
                 renderCanvas.style.display = "none";
                 svgContainer.classList.add("active");
                 viewToggle.textContent = "View 3D Model";
+
+                // Hide the 3D-only camera/door panels in the flat plan view
+                document.getElementById("cameraInfo").style.display = "none";
+                document.getElementById("doorInfo").style.display = "none";
 
                 // Reset zoom to 1x when switching to SVG view
                 setSvgZoom(1);
@@ -2529,6 +2659,11 @@
                 renderCanvas.style.display = "block";
                 svgContainer.classList.remove("active");
                 viewToggle.textContent = "View 2D SVG";
+
+                // Restore the camera panel if a first-person camera view is active
+                if (currentScene && currentScene.activeCamera === universalCamera && currentCameraData) {
+                    document.getElementById("cameraInfo").style.display = "block";
+                }
 
                 // Resume rendering
                 if (currentScene && engine) {
@@ -2551,8 +2686,251 @@
                 svg.style.border = "1px solid #999";
             }
 
-            // Apply current zoom level
-            setSvgZoom(currentSvgZoom);
+            // Inject the aerial topo underlay, then fit the whole plan on screen
+            initAerialUnderlay();
+            fitSvgToScreen();
+            // Site-feature drawing (fences, etc.) — wire once, redraw saved features
+            initDrawTools();
+            loadFences();
+            renderFences();
+        }
+
+        // ---- Aerial topo underlay (tracing guide) — modeltbabylon gen-15, 2026-08-30 ----
+        // The aerial PNG sits UNDER the plan inside #svgViewer, so it scales/pans WITH
+        // the plan (fitSvgToScreen scales the whole viewer). George aligns it by eye with
+        // photo/plan opacity + scale + rotate + drag; the alignment persists per warehouse.
+        const UNDERLAY_DEFAULT = { tx: 0, ty: 0, scale: 1, rot: 0, photo: 1, plan: 0.6, on: true, locked: false };
+        let underlay = { ...UNDERLAY_DEFAULT };
+
+        function underlayKey() { return 'aerialUnderlay_' + (currentWarehouseId || 'lodge'); }
+        function loadUnderlayState() {
+            try {
+                const s = JSON.parse(localStorage.getItem(underlayKey()));
+                underlay = { ...UNDERLAY_DEFAULT, ...(s || {}) };
+            } catch (e) { underlay = { ...UNDERLAY_DEFAULT }; }
+        }
+        function saveUnderlayState() {
+            try { localStorage.setItem(underlayKey(), JSON.stringify(underlay)); } catch (e) {}
+        }
+
+        function initAerialUnderlay() {
+            const svgViewer = document.getElementById('svgViewer');
+            const svg = svgViewer && svgViewer.querySelector('svg');
+            if (!svg) return;
+            loadUnderlayState();
+
+            let img = document.getElementById('aerialUnderlay');
+            if (img) img.remove();
+            img = document.createElement('img');
+            img.id = 'aerialUnderlay';
+            img.alt = 'aerial underlay';
+            img.draggable = false;
+            // Canonical georeferenced NAIP/UTM basemap (modestocat:--facet-basemap);
+            // pulled by tools/fetch-facility-image.js. modeltbabylon owns the pull.
+            img.src = `/warehouses/${currentWarehouseId || 'lodge'}/basemap/aerial.png`;
+            // start covering the plan box (svg layout px, pre-transform); George scales from there
+            img.onload = () => {
+                if (!img.dataset.sized) {
+                    const w = svg.clientWidth || svg.getBoundingClientRect().width;
+                    if (w) { img.style.width = w + 'px'; img.style.height = 'auto'; }
+                    img.dataset.sized = '1';
+                }
+                applyUnderlay();
+            };
+            svgViewer.insertBefore(img, svg);   // aerial under the plan
+
+            wireUnderlayDrag(img);
+            syncUnderlayControls();
+            applyUnderlay();
+        }
+
+        function applyUnderlay() {
+            const img = document.getElementById('aerialUnderlay');
+            if (!img) return;
+            const u = underlay;
+            img.style.transform = `translate(${u.tx}px, ${u.ty}px) rotate(${u.rot}deg) scale(${u.scale})`;
+            img.style.opacity = u.photo;
+            img.style.display = u.on ? 'block' : 'none';
+            img.classList.toggle('locked', !!u.locked);
+            const svg = document.querySelector('#svgViewer svg');
+            if (svg) svg.style.opacity = u.plan;
+        }
+
+        function syncUnderlayControls() {
+            const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+            set('ulPhoto', underlay.photo); set('ulPlan', underlay.plan);
+            set('ulScale', underlay.scale); set('ulRot', underlay.rot);
+            const t = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+            t('ulPhotoV', Math.round(underlay.photo * 100) + '%');
+            t('ulPlanV', Math.round(underlay.plan * 100) + '%');
+            t('ulScaleV', underlay.scale.toFixed(2) + 'x');
+            t('ulRotV', Math.round(underlay.rot) + '°');
+            const tb = document.getElementById('ulToggleBtn'); if (tb) tb.textContent = underlay.on ? 'Hide' : 'Show';
+            const lb = document.getElementById('ulLockBtn');
+            if (lb) { lb.textContent = underlay.locked ? 'Unlock' : 'Lock'; lb.classList.toggle('active', !!underlay.locked); }
+        }
+
+        function toggleUnderlayLock() {
+            underlay.locked = !underlay.locked;
+            applyUnderlay(); saveUnderlayState(); syncUnderlayControls();
+        }
+
+        function setUnderlay(key, val) {
+            underlay[key] = parseFloat(val);
+            applyUnderlay(); saveUnderlayState(); syncUnderlayControls();
+        }
+        function resetUnderlay() {
+            const on = underlay.on;
+            underlay = { ...UNDERLAY_DEFAULT, on };
+            applyUnderlay(); saveUnderlayState(); syncUnderlayControls();
+        }
+        function toggleUnderlay() {
+            underlay.on = !underlay.on;
+            applyUnderlay(); saveUnderlayState(); syncUnderlayControls();
+        }
+
+        function wireUnderlayDrag(img) {
+            let dragging = false, px = 0, py = 0;
+            img.addEventListener('mousedown', (e) => {
+                if (underlay.locked) return;
+                dragging = true; px = e.clientX; py = e.clientY;
+                img.classList.add('dragging'); e.preventDefault();
+            });
+            window.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                const k = currentSvgZoom || 1;   // convert screen px -> viewer-local px
+                underlay.tx += (e.clientX - px) / k;
+                underlay.ty += (e.clientY - py) / k;
+                px = e.clientX; py = e.clientY;
+                applyUnderlay();
+            });
+            window.addEventListener('mouseup', () => {
+                if (!dragging) return;
+                dragging = false; img.classList.remove('dragging'); saveUnderlayState();
+            });
+            // scroll wheel over the aerial = scale it
+            img.addEventListener('wheel', (e) => {
+                if (underlay.locked) return;
+                e.preventDefault();
+                const f = e.deltaY < 0 ? 1.03 : 1 / 1.03;
+                underlay.scale = Math.min(6, Math.max(0.05, underlay.scale * f));
+                applyUnderlay(); saveUnderlayState(); syncUnderlayControls();
+            }, { passive: false });
+        }
+
+        // ---- Site-feature drawing: register points -> polyline. Fence first. ----
+        // Click points along the feature ON THE PHOTO; each click is converted to
+        // real plan feet via the SVG's screen CTM, so it lands in model coordinates.
+        // Stored per-warehouse (localStorage for now; model persistence is the next
+        // step, needs a fences schema from modestocat). modeltbabylon gen-15
+        const SVGNS = 'http://www.w3.org/2000/svg';
+        let drawMode = false, drawPoints = [];
+        let fences = [];
+        function fencesKey() { return 'siteFences_' + (currentWarehouseId || 'lodge'); }
+        function loadFences() { try { fences = JSON.parse(localStorage.getItem(fencesKey())) || []; } catch (e) { fences = []; } }
+        function saveFences() { try { localStorage.setItem(fencesKey(), JSON.stringify(fences)); } catch (e) {} }
+
+        function siteLayer() {
+            const svg = document.querySelector('#svgViewer svg');
+            if (!svg) return null;
+            let g = svg.querySelector('#siteFeatures');
+            if (!g) { g = document.createElementNS(SVGNS, 'g'); g.id = 'siteFeatures'; svg.appendChild(g); }
+            return g;
+        }
+        function svgPointFromClient(e) {
+            const svg = document.querySelector('#svgViewer svg');
+            if (!svg || !svg.getScreenCTM) return null;
+            const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+            const m = svg.getScreenCTM(); if (!m) return null;
+            const p = pt.matrixTransform(m.inverse());
+            return { x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10 };
+        }
+        function setDrawHint() {
+            const h = document.getElementById('drawHint');
+            if (h) h.textContent = drawMode
+                ? `click points (${drawPoints.length}) · Finish or Enter to end · Backspace undo · Esc cancel`
+                : '';
+        }
+        function toggleFenceDraw() { drawMode ? cancelFenceDraw() : startFenceDraw(); }
+        function startFenceDraw() {
+            drawMode = true; drawPoints = [];
+            document.getElementById('drawFenceBtn')?.classList.add('active');
+            const d = document.getElementById('drawDoneBtn'), c = document.getElementById('drawCancelBtn');
+            if (d) d.style.display = ''; if (c) c.style.display = '';
+            const img = document.getElementById('aerialUnderlay'); if (img) img.style.pointerEvents = 'none';
+            const v = document.getElementById('svgViewer'); if (v) v.style.cursor = 'crosshair';
+            renderDrawPreview(); setDrawHint();
+        }
+        function cancelFenceDraw() {
+            drawMode = false; drawPoints = [];
+            document.getElementById('drawFenceBtn')?.classList.remove('active');
+            const d = document.getElementById('drawDoneBtn'), c = document.getElementById('drawCancelBtn');
+            if (d) d.style.display = 'none'; if (c) c.style.display = 'none';
+            const img = document.getElementById('aerialUnderlay'); if (img) img.style.pointerEvents = '';
+            const v = document.getElementById('svgViewer'); if (v) v.style.cursor = '';
+            renderDrawPreview(); setDrawHint();
+        }
+        function finishFence() {
+            if (drawPoints.length >= 2) { fences.push({ points: drawPoints.slice() }); saveFences(); }
+            cancelFenceDraw(); renderFences();
+        }
+        function undoDrawPoint() { if (drawMode && drawPoints.length) { drawPoints.pop(); renderDrawPreview(); setDrawHint(); } }
+        function clearFences() {
+            if (!fences.length) return;
+            if (!confirm('Remove all drawn fences?')) return;
+            fences = []; saveFences(); renderFences();
+        }
+        function renderDrawPreview() {
+            const g = siteLayer(); if (!g) return;
+            g.querySelectorAll('.fence-preview').forEach(n => n.remove());
+            if (drawPoints.length >= 2) {
+                const pl = document.createElementNS(SVGNS, 'polyline');
+                pl.setAttribute('points', drawPoints.map(p => p.x + ',' + p.y).join(' '));
+                pl.setAttribute('class', 'fence-preview'); pl.setAttribute('fill', 'none');
+                pl.setAttribute('stroke', '#ff7a00'); pl.setAttribute('stroke-width', '0.8'); pl.setAttribute('stroke-dasharray', '2,1.5');
+                g.appendChild(pl);
+            }
+            drawPoints.forEach(p => {
+                const c = document.createElementNS(SVGNS, 'circle');
+                c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', '1.1');
+                c.setAttribute('class', 'fence-preview'); c.setAttribute('fill', '#ff7a00');
+                g.appendChild(c);
+            });
+        }
+        function renderFences() {
+            const g = siteLayer(); if (!g) return;
+            g.querySelectorAll('.fence-final').forEach(n => n.remove());
+            fences.forEach(f => {
+                const pl = document.createElementNS(SVGNS, 'polyline');
+                pl.setAttribute('points', f.points.map(p => p.x + ',' + p.y).join(' '));
+                pl.setAttribute('class', 'fence-final'); pl.setAttribute('fill', 'none');
+                pl.setAttribute('stroke', '#5a2d00'); pl.setAttribute('stroke-width', '0.7');
+                g.appendChild(pl);
+                f.points.forEach(p => {
+                    const c = document.createElementNS(SVGNS, 'circle');
+                    c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', '0.55');
+                    c.setAttribute('class', 'fence-final'); c.setAttribute('fill', '#5a2d00');
+                    g.appendChild(c);
+                });
+            });
+        }
+        let drawToolsWired = false;
+        function initDrawTools() {
+            if (drawToolsWired) return;
+            const v = document.getElementById('svgViewer');
+            if (!v) return;
+            drawToolsWired = true;
+            v.addEventListener('click', (e) => {
+                if (!drawMode) return;
+                const p = svgPointFromClient(e); if (!p) return;
+                drawPoints.push(p); renderDrawPreview(); setDrawHint();
+            });
+            window.addEventListener('keydown', (e) => {
+                if (!drawMode) return;
+                if (e.key === 'Escape') cancelFenceDraw();
+                else if (e.key === 'Backspace') { e.preventDefault(); undoDrawPoint(); }
+                else if (e.key === 'Enter') { e.preventDefault(); finishFence(); }
+            });
         }
 
         // Initialize

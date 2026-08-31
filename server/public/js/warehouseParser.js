@@ -65,7 +65,8 @@ class ModelTBuilder {
             boxes: [],
             packingLines: [],
             truckWells: [],
-            markings: []
+            markings: [],
+            siteFeatures: []
         };
         // Truck-well frames by id (node + geometry) so markings can paint on the slope
         this.wellFrames = {};
@@ -95,7 +96,46 @@ class ModelTBuilder {
             this.buildCameras();
         }
 
+        this.buildSiteFeatures();
+
         return this.meshes;
+    }
+
+    // Site features (§5.14) — facility-level fences (driveway/parking reserved).
+    // modeltbabylon gen-15
+    buildSiteFeatures() {
+        const features = this.spec.siteFeatures || [];
+        if (!features.length) return;
+        const groundY = 4 - ModelTBuilder.GRADE_LIP;   // grade, matches the ground plane
+        features.forEach(f => { if (f.kind === 'fence') this.buildFence(f, groundY); });
+    }
+
+    // A fence: a height-tall panel (0.5 ft thick) along the path, standing on grade.
+    buildFence(fence, groundY) {
+        const h = fence.height || 6;
+        const t = 0.5;   // panel thickness — render constant (§5.14)
+        const mat = new BABYLON.StandardMaterial('fenceMat_' + fence.id, this.scene);
+        mat.diffuseColor = fence.material === 'wooden'
+            ? new BABYLON.Color3(0.42, 0.31, 0.16)   // Appendix A wooden
+            : new BABYLON.Color3(0.45, 0.45, 0.45);  // other materials grey
+        mat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+        const pts = (fence.path || []).map(p => new BABYLON.Vector3(p.x, 0, -p.y));  // SVG->Babylon (negate Y)
+        const segs = fence.closed ? pts.length : pts.length - 1;
+        for (let i = 0; i < segs; i++) {
+            const a = pts[i], b = pts[(i + 1) % pts.length];
+            const dx = b.x - a.x, dz = b.z - a.z;
+            const len = Math.sqrt(dx * dx + dz * dz);
+            if (len < 0.01) continue;
+            const panel = BABYLON.MeshBuilder.CreateBox('fence_' + fence.id + '_' + i,
+                { width: len, height: h, depth: t }, this.scene);
+            panel.position.x = (a.x + b.x) / 2;
+            panel.position.z = (a.z + b.z) / 2;
+            panel.position.y = groundY + h / 2;
+            panel.rotation.y = -Math.atan2(dz, dx);   // align the box width along the segment
+            panel.material = mat;
+            panel.metadata = { siteFeature: fence.id, kind: 'fence' };
+            this.meshes.siteFeatures.push(panel);
+        }
     }
 
     /**

@@ -152,7 +152,20 @@ class ModelTEditor {
     if (!slab.cameras) slab.cameras = [];
 
     const allCameras = this.getAllCameras();
-    const id = this.nameManager.getNextCameraName(allCameras);
+    // Accept an externally-allocated id (spec.id) so the caller can pass a name
+    // vetted against BOTH rosters (lodge.db mounts + modelT). Without it the
+    // generator only sees modelT's subset — that is the gen-15 'cookie' collision
+    // (a name free in modelT but already taken in lodge.db). Endgame: the caller
+    // is modeltcamerascat's allocator endpoint (rec C). — modeltbabylon gen-15
+    let id;
+    if (spec.id) {
+      if (allCameras.some(c => c.id === spec.id)) {
+        throw new Error(`Camera id "${spec.id}" already exists in modelT`);
+      }
+      id = spec.id;
+    } else {
+      id = this.nameManager.getNextCameraName(allCameras);
+    }
     const name = this.nameManager.capitalize(id);
     const number = this.nameManager.getNextCameraNumber(allCameras);
 
@@ -173,6 +186,40 @@ class ModelTEditor {
 
     slab.cameras.push(camera);
     return camera;
+  }
+
+  /**
+   * Add a site feature (§5.14) — fence now; driveway/parking reserved.
+   * Facility-level siteFeatures[]. Vertices rounded to WHOLE FEET (fences are
+   * plant, and a trace off a 0.6 m/px aerial is only +/-2 ft). — modeltbabylon gen-15
+   */
+  addSiteFeature(spec) {
+    if (!this.data.siteFeatures) this.data.siteFeatures = [];
+    const existing = this.data.siteFeatures;
+    const id = spec.id || this.nameManager.getNextSiteFeatureName(existing);
+    if (existing.some(f => f.id === id)) {
+      throw new Error(`Site feature "${id}" already exists`);
+    }
+    const kind = spec.kind || 'fence';
+    if (kind !== 'fence') {
+      throw new Error(`kind "${kind}" not implemented (driveway/parking reserved until traced)`);
+    }
+    if (!spec.material) throw new Error('material is required (wooden|chainlink|wire|block|other)');
+    if (spec.height === undefined || spec.height === null) throw new Error('height is required (whole feet)');
+    const path = (spec.path || []).map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+    if (path.length < 2) throw new Error('path needs at least 2 vertices');
+    const feature = {
+      id,
+      kind,
+      material: spec.material,
+      height: Math.round(spec.height),
+      path,
+      closed: spec.closed === true,
+      gaps: spec.gaps || [],
+      source: spec.source || 'traced:aerial'
+    };
+    existing.push(feature);
+    return feature;
   }
 
   /**

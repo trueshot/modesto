@@ -1082,6 +1082,20 @@
           "viewingAngle": 100,
           "range": 100,
           "location": ""
+        },
+        {
+          "id": "honey",
+          "name": "Honey",
+          "number": 17,
+          "x": 333,
+          "y": 276,
+          "elevation": 20,
+          "direction": 15,
+          "tilt": 22,
+          "roll": 0,
+          "viewingAngle": 100,
+          "range": 120,
+          "location": "East yard SE dock corner - exterior 4K cam .7 (estimate: pose, George to tune)"
         }
       ],
       "corners": [
@@ -1329,6 +1343,77 @@
         }
       ],
       "source": "estimate: 160 ft E-W is a Google Maps ROOF measurement (george 2026-08-29); roof overhang unknown, interior may be less. Not a tape."
+    }
+  ],
+  "siteFeatures": [
+    {
+      "id": "rainier",
+      "kind": "fence",
+      "material": "wooden",
+      "height": 6,
+      "path": [
+        {
+          "x": 424,
+          "y": 501
+        },
+        {
+          "x": 506,
+          "y": 499
+        },
+        {
+          "x": 520,
+          "y": 137
+        }
+      ],
+      "closed": false,
+      "gaps": [],
+      "source": "traced:aerial"
+    },
+    {
+      "id": "shasta",
+      "kind": "fence",
+      "material": "wooden",
+      "height": 6,
+      "path": [
+        {
+          "x": 397,
+          "y": 502
+        },
+        {
+          "x": 209,
+          "y": 507
+        },
+        {
+          "x": 207,
+          "y": 417
+        }
+      ],
+      "closed": false,
+      "gaps": [],
+      "source": "traced:aerial"
+    },
+    {
+      "id": "whitney",
+      "kind": "fence",
+      "material": "wooden",
+      "height": 6,
+      "path": [
+        {
+          "x": 145,
+          "y": 519
+        },
+        {
+          "x": 142,
+          "y": 362
+        },
+        {
+          "x": 43,
+          "y": 362
+        }
+      ],
+      "closed": false,
+      "gaps": [],
+      "source": "traced:aerial"
     }
   ]
 }

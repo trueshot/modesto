@@ -222,4 +222,31 @@ router.get('/:id/live/:ip', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// GET /api/warehouses/:id/views/:ip  -> latest saved-view transform (JSON)
+// modeltcamerascat saves George's aligned camera framings to
+// warehouses/:id/cameras/views/{ip}_{stamp}.json. This same-origin route hands
+// the viewer the latest one so the image overlay can reproduce his framing
+// (rotate/scale about center_image_px). Returns 404 if none saved yet.
+// — modeltbabylon gen-15
+// ---------------------------------------------------------------------------
+router.get('/:id/views/:ip', (req, res) => {
+  const { id, ip } = req.params;
+  if (!/^[0-9]{1,3}([.][0-9]{1,3}){3}$/.test(ip)) return res.status(400).json({ error: 'bad ip' });
+  const dir = path.join(config.warehousesPath, id, 'cameras', 'views');
+  try {
+    if (!fs.existsSync(dir)) return res.status(404).json({ error: 'no views for warehouse' });
+    const files = fs.readdirSync(dir)
+      .filter(f => f.startsWith(`${ip}_`) && f.endsWith('.json'))
+      .sort();  // stamp is ISO -> lexical sort = chronological
+    if (files.length === 0) return res.status(404).json({ error: `no saved view for ${ip}` });
+    const latest = files[files.length - 1];
+    const data = JSON.parse(fs.readFileSync(path.join(dir, latest), 'utf8'));
+    res.set('Cache-Control', 'no-store');
+    res.json({ file: latest, saved_at: data.saved_at, view: data.view });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
