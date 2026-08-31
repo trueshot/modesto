@@ -34,7 +34,14 @@ function load(facilityDir) {
 }
 
 function save(facilityDir, data) {
-  fs.writeFileSync(fileFor(facilityDir), JSON.stringify(data, null, 2) + '\n');
+  // Atomic write (modestomulti's review, 2026-08-31): multiple writers hit
+  // this file (viewer POST + CLI), and a crash mid-writeFileSync would leave
+  // truncated JSON that breaks every later load(). tmp + rename is atomic on
+  // the same volume and closes that window.
+  const file = fileFor(facilityDir);
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n');
+  fs.renameSync(tmp, file);
 }
 
 /**
